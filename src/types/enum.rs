@@ -46,11 +46,11 @@ impl Enum {
     }
 
     pub fn add_member(&mut self, member: EnumMember) {
-        self.members.insert(member.name}
-
-/// EnumMember - represents a.clone(), member);
+        self.members.insert(member.name.clone(), member);
     }
- member of an enum
+}
+
+/// EnumMember - represents a member of an enum
 #[derive(Debug, Clone)]
 pub struct EnumMember {
     /// Node ID for this member

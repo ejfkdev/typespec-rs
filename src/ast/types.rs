@@ -1,11 +1,9 @@
 //! Complete AST node type definitions for TypeSpec-Rust
 //! Ported from TypeSpec compiler/src/core/types.ts
 
+use super::node::NodeId;
 use super::token::Span;
 use std::collections::HashMap;
-
-/// Node identifier type
-pub type NodeId = u32;
 
 /// SyntaxKind enum - identifies the type of AST node
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

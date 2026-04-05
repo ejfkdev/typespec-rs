@@ -7,6 +7,9 @@ mod ast_builder;
 
 pub use ast_builder::AstBuilder;
 
+#[cfg(test)]
+mod tests;
+
 use crate::scanner::{Lexer, TokenKind, TokenFlags};
 use crate::ast::token::{Span, Position};
 use crate::ast::types::*;
@@ -1485,75 +1488,4 @@ impl<'a> Parser<'a> {
 /// Parse TypeSpec source code into an AST
 pub fn parse(source: &str) -> ParseResult {
     Parser::new(source, ParseOptions::default()).parse()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_empty() {
-        let result = parse("");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_model() {
-        let result = parse("model Foo {}");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_model_with_property() {
-        let result = parse("model Foo { bar: string; }");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_namespace() {
-        let result = parse("namespace Test {}");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_interface() {
-        let result = parse("interface Test { }");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_union() {
-        let result = parse("union Test { a: string; b: int32; }");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_enum() {
-        let result = parse("enum Test { a; b; c; }");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_scalar() {
-        let result = parse("scalar MyScalar extends string;");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_alias() {
-        let result = parse("alias Foo = Bar;");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_const() {
-        let result = parse("const foo = 42;");
-        assert!(result.diagnostics.is_empty());
-    }
-
-    #[test]
-    fn test_parse_import() {
-        let result = parse(r#"import "./test";"#);
-        assert!(result.diagnostics.is_empty());
-    }
 }

@@ -613,7 +613,7 @@ impl<'a> Lexer<'a> {
         self.chars.peek().is_none()
     }
 
-    /// Scan the next token
+    /// Scan the next token (skipping trivia - whitespace, comments, newlines)
     pub fn scan(&mut self) -> TokenKind {
         self.token_start = self.position;
         self.current_span_start = self.chars_consumed;
@@ -635,10 +635,15 @@ impl<'a> Lexer<'a> {
                 }
                 self.position.line += 1;
                 self.position.column = 0;
-                self.finish_token(TokenKind::NewLine)
+                // Skip newline and continue to next token
+                return self.scan();
             }
 
-            ' ' | '\t' | '\u{0b}' | '\u{0c}' => self.scan_whitespace(),
+            ' ' | '\t' | '\u{0b}' | '\u{0c}' => {
+                // Skip whitespace and continue to next token
+                self.skip_trivia();
+                return self.scan();
+            }
 
             '(' => self.finish_token(TokenKind::OpenParen),
             ')' => self.finish_token(TokenKind::CloseParen),
@@ -1491,6 +1496,58 @@ mod tests {
         let kind = lexer.scan();
         assert_eq!(kind, TokenKind::Identifier);
         assert_eq!(lexer.token_text(), "myIdentifier");
+    }
+
+    #[test]
+    fn test_model_with_string_property() {
+        let source = "model Car { make: string }";
+        let mut lexer = Lexer::new(source);
+
+        // Print all tokens
+        let mut tokens: Vec<(TokenKind, String)> = Vec::new();
+        loop {
+            let token = lexer.scan();
+            let text = lexer.token_text().to_string();
+            println!("Token: {:?}, text: {:?}", token, text);
+            tokens.push((token.clone(), text));
+            if token == TokenKind::EndOfFile {
+                break;
+            }
+        }
+
+        // Verify first token is model keyword
+        assert!(tokens[0].0.is_keyword(), "First token should be keyword");
+        assert_eq!(tokens[0].1, "model");
+
+        // Second token should be identifier (Car)
+        assert_eq!(tokens[1].0, TokenKind::Identifier, "Second token should be Identifier");
+        assert_eq!(tokens[1].1, "Car");
+
+        // Find the 'string' token - it should be Identifier
+        let string_tokens: Vec<_> = tokens.iter().filter(|t| t.1 == "string").collect();
+        assert!(!string_tokens.is_empty(), "Should have 'string' token");
+        assert_eq!(string_tokens[0].0, TokenKind::Identifier, "string should be Identifier, got {:?}", string_tokens[0].0);
+    }
+
+    #[test]
+    fn test_ellipsis_token() {
+        let source = "...BaseCar";
+        let mut lexer = Lexer::new(source);
+
+        // Print all tokens
+        loop {
+            let token = lexer.scan();
+            let text = lexer.token_text().to_string();
+            println!("Token: {:?}, text: {:?}", token, text);
+            if token == TokenKind::EndOfFile {
+                break;
+            }
+        }
+
+        // Verify first token is Ellipsis
+        let mut lexer2 = Lexer::new("...BaseCar");
+        let first = lexer2.scan();
+        assert_eq!(first, TokenKind::Ellipsis, "First token should be Ellipsis, got {:?}", first);
     }
 
     #[test]

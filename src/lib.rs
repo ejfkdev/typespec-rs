@@ -4,5 +4,6 @@
 
 pub mod ast;
 pub mod program;
+pub mod scanner;
 pub mod std;
 pub mod types;

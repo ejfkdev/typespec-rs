@@ -3,6 +3,7 @@
 //! This crate provides types, parsing, and type checking for TypeSpec.
 
 pub mod ast;
+pub mod parser;
 pub mod program;
 pub mod scanner;
 pub mod std;

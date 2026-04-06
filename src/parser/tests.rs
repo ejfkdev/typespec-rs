@@ -845,4 +845,69 @@ model Foo {}
         let result = parse("op foo(a: string, b: int32,): int32;");
         assert!(result.diagnostics.is_empty());
     }
+
+    // ==================== Additional Edge Case Tests ====================
+
+    #[test]
+    fn test_parse_union_with_string_keys() {
+        // Union with string keys for variants
+        let result = parse(r#"union StringKeys { "hi there": string, "bye": int32 }"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_union_with_mixed_variants() {
+        // Union with named and unnamed variants
+        let result = parse(r#"union Mixed { string, int32, named: boolean }"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_const_with_object_type() {
+        // Const with inline object type annotation
+        let result = parse(r#"const a: {inline: string} = #{inline: "abc"};"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_object_literal_with_multiple_spreads() {
+        // Object literal with multiple spreads
+        let result = parse(r#"const A = #{a: "abc", ...B, c: "ghi"};"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_array_literal_with_mixed_types() {
+        // Array literal with mixed types
+        let result = parse(r#"const A = #["abc", 123, #{nested: true}];"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_valueof_with_complex_type() {
+        // Valueof with complex type
+        let result = parse("model Foo<T extends valueof {a: string, b: int32}> {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_valueof_with_array_type() {
+        // Valueof with array type
+        let result = parse("model Foo<T extends valueof int8[]> {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_parenthesized_union() {
+        // Parenthesized expressions
+        let result = parse("model A { x: ((B | C) & D)[]; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_const_with_template_reference() {
+        // Const with type reference using template
+        let result = parse("const a: string | int32 = int32;");
+        assert!(result.diagnostics.is_empty());
+    }
 }

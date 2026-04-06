@@ -1022,4 +1022,172 @@ model Foo {}
         let result = parse("enum Foo { ...Bar, Three: \"3\" }");
         assert!(result.diagnostics.is_empty());
     }
+
+    // ==================== Empty Statement Tests ====================
+
+    #[test]
+    fn test_parse_empty_statements_multiple() {
+        // Multiple empty statements
+        let result = parse(";;;;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_empty_statements_with_namespace() {
+        // Empty statements with namespace
+        let result = parse("namespace Foo { model Car { }; };");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_empty_statements_after_model() {
+        // Empty statements after model
+        let result = parse("model Car { };;;;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Numeric Literal Tests ====================
+
+    #[test]
+    fn test_parse_numeric_hex() {
+        // Hexadecimal numeric literal
+        let result = parse("const x = 0xABCD;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_numeric_binary() {
+        // Binary numeric literal
+        let result = parse("const x = 0b1010;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_numeric_decimal() {
+        // Decimal numeric literal
+        let result = parse("const x = 123;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_numeric_with_exponent() {
+        // Numeric literal with exponent
+        let result = parse("const x = 123e42;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_numeric_negative() {
+        // Negative numeric literal
+        let result = parse("const x = -123;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_numeric_positive() {
+        // Positive numeric literal
+        let result = parse("const x = +123;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_numeric_float() {
+        // Float numeric literal
+        let result = parse("const x = 123.456;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Identifier Tests ====================
+
+    #[test]
+    fn test_parse_identifier_with_underscore() {
+        // Identifier with underscore
+        let result = parse("model has_underscore {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_identifier_with_dollar() {
+        // Identifier with dollar sign
+        let result = parse("model has_$dollar {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_identifier_starting_with_underscore() {
+        // Identifier starting with underscore
+        let result = parse("model _startsWithUnderscore {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_identifier_starting_with_dollar() {
+        // Identifier starting with dollar sign
+        let result = parse("model $startsWithDollar {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Alias with Expression Tests ====================
+
+    #[test]
+    fn test_parse_alias_with_numeric() {
+        // Alias with numeric value
+        let result = parse("alias M = 123;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_alias_with_hex() {
+        // Alias with hex value
+        let result = parse("alias M = 0xABCD;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_alias_with_binary() {
+        // Alias with binary value
+        let result = parse("alias M = 0b1010;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Model Expression Tests ====================
+
+    #[test]
+    fn test_parse_model_expression_inline() {
+        // Model with inline expression
+        let result = parse(r#"model Car { engine: { type: "v8" } }"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Tuple Model Expression Tests ====================
+
+    #[test]
+    fn test_parse_tuple_model_expression() {
+        // Tuple model expression in operation
+        let result = parse("alias EmptyTuple = [];");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_template_with_default_tuple() {
+        // Template with default tuple value
+        let result = parse("model Template<T=[]> { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_alias_with_trailing_comma() {
+        // Alias with trailing comma in tuple
+        let result = parse("alias TrailingComma = [1, 2,];");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Multi-line Comments Tests ====================
+
+    #[test]
+    fn test_parse_model_with_emoji_in_comment() {
+        // Model with emoji in comment (parsing only, not semantic)
+        let result = parse(r#"model Car { /* 👀 */ property: int32; }"#);
+        assert!(result.diagnostics.is_empty());
+    }
 }

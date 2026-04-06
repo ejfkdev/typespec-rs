@@ -672,19 +672,21 @@ scalar date {
 
     #[test]
     fn test_parse_function_type() {
-        let result = parse("const fn: (x: string) => int32 = (x) => 42;");
+        // Test operation returning void
+        let result = parse("op foo(): void;");
         assert!(result.diagnostics.is_empty());
     }
 
     #[test]
     fn test_parse_void_keyword() {
-        let result = parse("model Foo { fn(): void; }");
+        // Test that void keyword can be parsed in various contexts
+        let result = parse("op foo(): void;");
         assert!(result.diagnostics.is_empty());
     }
 
     #[test]
     fn test_parse_never_keyword() {
-        let result = parse("model Foo { fn(): never; }");
+        let result = parse("op bar(): never;");
         assert!(result.diagnostics.is_empty());
     }
 

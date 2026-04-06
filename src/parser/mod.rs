@@ -434,7 +434,7 @@ impl<'a> Parser<'a> {
             } else {
                 let decorators = self.parse_decorator_list();
                 let pos = self.token_start_position();
-                let name = self.parse_identifier_allow_string();
+                let name = self.parse_model_property_name();
 
                 let optional = self.check_token(TokenKind::Question);
                 if optional {
@@ -486,7 +486,7 @@ impl<'a> Parser<'a> {
             } else {
                 let decorators = self.parse_decorator_list();
                 let pos = self.token_start_position();
-                let name = self.parse_identifier_allow_string();
+                let name = self.parse_model_property_name();
 
                 let optional = self.check_token(TokenKind::Question);
                 if optional {
@@ -1418,16 +1418,22 @@ impl<'a> Parser<'a> {
 
     // ==================== Identifier Parsing ====================
 
+    /// Parse an identifier - allows reserved keywords (like `fn`) which is valid TypeSpec
     fn parse_identifier(&mut self) -> u32 {
-        self.parse_identifier_impl(false)
+        self.parse_identifier_impl(true, false)
     }
 
     /// Parse an identifier, optionally allowing string literals (for model property names)
     fn parse_identifier_allow_string(&mut self) -> u32 {
-        self.parse_identifier_impl(true)
+        self.parse_identifier_impl(true, true)
     }
 
-    fn parse_identifier_impl(&mut self, allow_string_literal: bool) -> u32 {
+    /// Parse model property name - allows identifiers and string literals, and reserved keywords
+    fn parse_model_property_name(&mut self) -> u32 {
+        self.parse_identifier_impl(true, true)
+    }
+
+    fn parse_identifier_impl(&mut self, allow_reserved: bool, allow_string_literal: bool) -> u32 {
         let pos = self.token_start_position();
 
         // Handle string literal as identifier (for quoted property names like "prop-name")
@@ -1438,7 +1444,7 @@ impl<'a> Parser<'a> {
             return self.builder.create_identifier(value, span);
         }
 
-        if !self.is_identifier_token(self.current_token()) {
+        if !self.is_identifier_token(self.current_token(), allow_reserved) {
             self.error("expected-identifier", "Expected an identifier");
             let span = self.make_span(pos, self.previous_token_end);
             return self.builder.create_identifier("<missing>".to_string(), span);
@@ -1450,8 +1456,14 @@ impl<'a> Parser<'a> {
         self.builder.create_identifier(value, span)
     }
 
-    fn is_identifier_token(&self, token: TokenKind) -> bool {
-        matches!(token, TokenKind::Identifier) || self.is_reserved_identifier(token)
+    fn is_identifier_token(&self, token: TokenKind, allow_reserved: bool) -> bool {
+        if token == TokenKind::Identifier {
+            return true;
+        }
+        if allow_reserved {
+            return self.is_reserved_identifier(token);
+        }
+        false
     }
 
     fn is_reserved_identifier(&self, token: TokenKind) -> bool {

@@ -1786,4 +1786,40 @@ model Foo {}
         let result = parse("model Foo { interface: string }");
         assert!(result.diagnostics.is_empty());
     }
+
+    // ==================== Model Multiple Decorators Tests ====================
+
+    #[test]
+    fn test_parse_model_multiple_decorators() {
+        // Model with multiple decorators
+        let result = parse("@foo @bar model Foo {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_model_property_with_multiple_decorators() {
+        // Model property with multiple decorators
+        let result = parse("model Foo { @foo @bar prop: string }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Union Variants Tests ====================
+
+    // ==================== Scalar Multiple Constructors Tests ====================
+
+    #[test]
+    fn test_parse_scalar_multiple_constructors() {
+        // Scalar with multiple constructors
+        let result = parse("scalar MyScalar {\ninit fromString(s: string)\ninit fromInt(i: int32)\n}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Operation Multiple Parameters Tests ====================
+
+    #[test]
+    fn test_parse_operation_multiple_parameters() {
+        // Operation with multiple parameters
+        let result = parse("op foo(a: string, b: int32, c: boolean): void;");
+        assert!(result.diagnostics.is_empty());
+    }
 }

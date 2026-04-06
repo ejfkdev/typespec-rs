@@ -910,4 +910,116 @@ model Foo {}
         let result = parse("const a: string | int32 = int32;");
         assert!(result.diagnostics.is_empty());
     }
+
+    // ==================== Namespace Tests ====================
+
+    #[test]
+    fn test_parse_namespace_nested_with_operations() {
+        // Nested namespace with operations
+        let result = parse("namespace Store { op read(): int32; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_namespace_with_nested_namespaces() {
+        // Namespace with nested namespaces
+        let result = parse("namespace Store { namespace Read { op read(): int32; } }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_namespace_dotted_name() {
+        // Dotted namespace name
+        let result = parse("namespace Store.Read;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_using_before_blockless_namespace() {
+        // Using before blockless namespace
+        let result = parse("using A.B; namespace Foo;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Template Instantiation Tests ====================
+
+    #[test]
+    fn test_parse_template_instantiation_simple() {
+        // Template instantiation
+        let result = parse("model A { x: Foo<number, string>; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_template_instantiation_with_array() {
+        // Template instantiation with array
+        let result = parse("model B { x: Foo<number, string>[]; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Array Type Tests ====================
+
+    #[test]
+    fn test_parse_model_with_single_array_type() {
+        // Model with single array type
+        let result = parse("model A { foo: B[] }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_model_with_nested_array_type() {
+        // Model with nested array type
+        let result = parse("model A { foo: B[][] }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Union Expression Tests ====================
+
+    #[test]
+    fn test_parse_model_with_union_type() {
+        // Model with union type
+        let result = parse("model A { foo: B | C }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_model_with_complex_union_type() {
+        // Model with complex union type
+        let result = parse("model A { foo: B | C & D }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_model_with_empty_union_prefix() {
+        // Model with empty union prefix
+        let result = parse("model A { foo: | B | C }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Intersection Expression Tests ====================
+
+    #[test]
+    fn test_parse_model_with_intersection_type() {
+        // Model with intersection type
+        let result = parse("model A { foo: B & C }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Multiple Statements Tests ====================
+
+    #[test]
+    fn test_parse_multiple_model_statements() {
+        // Multiple model statements
+        let result = parse("model A { }; model B { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Enum Spread Member Tests ====================
+
+    #[test]
+    fn test_parse_enum_with_spread_member() {
+        // Enum with spread member
+        let result = parse("enum Foo { ...Bar, Three: \"3\" }");
+        assert!(result.diagnostics.is_empty());
+    }
 }

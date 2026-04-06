@@ -258,7 +258,7 @@ model Car {
     #[test]
     fn test_parse_model_multiple_decorators_on_property() {
         let result = parse(r#"model Car { @foo @bar prop: string; }"#);
-        assert!(result.diagnostics.is_empty());
+        assert!(result.diagnostics.is_empty(), "Expected no diagnostics but got: {:?}", result.diagnostics);
     }
 
     // ==================== Namespace Tests ====================

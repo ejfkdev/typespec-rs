@@ -179,6 +179,7 @@ impl<'a> Parser<'a> {
                     statements.push(stmt);
                 }
                 TokenKind::UsingKeyword => {
+                    self.next_token(); // advance past `using` keyword
                     let name = self.parse_identifier_or_member_expression(false, false);
                     self.expect_token(TokenKind::Semicolon);
                     let span = self.make_span(pos, self.previous_token_end);
@@ -419,6 +420,59 @@ impl<'a> Parser<'a> {
         self.builder.create_model_declaration(name, properties, extends, is, decorators, body_range, span)
     }
 
+    /// Parse operation parameters (typed parameters inside parentheses)
+    fn parse_operation_parameters(&mut self) -> Vec<u32> {
+        let mut properties = Vec::new();
+
+        while self.current_token() != TokenKind::CloseParen && self.current_token() != TokenKind::EndOfFile {
+            if self.check_token(TokenKind::Ellipsis) {
+                self.next_token();
+                let target = self.parse_expression();
+                let span = self.make_span(self.token_start_position(), self.previous_token_end);
+                let spread_id = self.builder.create_model_spread_property(target, span);
+                properties.push(spread_id);
+            } else {
+                let decorators = self.parse_decorator_list();
+                let pos = self.token_start_position();
+                let name = self.parse_identifier_allow_string();
+
+                let optional = self.check_token(TokenKind::Question);
+                if optional {
+                    self.next_token();
+                }
+
+                self.expect_token(TokenKind::Colon);
+                let value = self.parse_expression();
+
+                let default = if self.check_token(TokenKind::Equals) {
+                    self.next_token();
+                    Some(self.parse_expression())
+                } else {
+                    None
+                };
+
+                let span = self.make_span(pos, self.previous_token_end);
+                let prop_id = self.builder.create_model_property(name, value, decorators, optional, default, span);
+                properties.push(prop_id);
+            }
+
+            // Handle delimiter - comma or semicolon in operation parameters
+            if self.check_token(TokenKind::Comma) {
+                self.next_token();
+            } else if self.check_token(TokenKind::Semicolon) {
+                self.next_token();
+            } else if self.current_token() != TokenKind::CloseParen {
+                // Error recovery - assume missing comma
+                if self.current_token() != TokenKind::EndOfFile {
+                    self.error("expected-comma", "Expected ',' or ')'");
+                }
+                break;
+            }
+        }
+
+        properties
+    }
+
     fn parse_model_property_list(&mut self) -> Vec<u32> {
         let mut properties = Vec::new();
 
@@ -432,7 +486,7 @@ impl<'a> Parser<'a> {
             } else {
                 let decorators = self.parse_decorator_list();
                 let pos = self.token_start_position();
-                let name = self.parse_identifier();
+                let name = self.parse_identifier_allow_string();
 
                 let optional = self.check_token(TokenKind::Question);
                 if optional {
@@ -508,7 +562,10 @@ impl<'a> Parser<'a> {
             let decorators = self.parse_decorator_list();
             let pos = self.token_start_position();
 
-            self.expect_token(TokenKind::OpKeyword);
+            // OpKeyword is optional inside interface body
+            if self.check_token(TokenKind::OpKeyword) {
+                self.next_token();
+            }
             let name = self.parse_identifier();
 
             // Template parameters
@@ -751,7 +808,7 @@ impl<'a> Parser<'a> {
         // Parse operation signature
         let signature = if self.check_token(TokenKind::OpenParen) {
             self.next_token();
-            let params = self.parse_expression_list(TokenKind::CloseParen);
+            let params = self.parse_operation_parameters();
             self.expect_token(TokenKind::CloseParen);
             self.expect_token(TokenKind::Colon);
             let return_type = self.parse_expression();
@@ -1362,7 +1419,24 @@ impl<'a> Parser<'a> {
     // ==================== Identifier Parsing ====================
 
     fn parse_identifier(&mut self) -> u32 {
+        self.parse_identifier_impl(false)
+    }
+
+    /// Parse an identifier, optionally allowing string literals (for model property names)
+    fn parse_identifier_allow_string(&mut self) -> u32 {
+        self.parse_identifier_impl(true)
+    }
+
+    fn parse_identifier_impl(&mut self, allow_string_literal: bool) -> u32 {
         let pos = self.token_start_position();
+
+        // Handle string literal as identifier (for quoted property names like "prop-name")
+        if allow_string_literal && self.current_token() == TokenKind::StringLiteral {
+            let value = self.token_value();
+            let span = self.make_span(pos, self.previous_token_end);
+            self.next_token();
+            return self.builder.create_identifier(value, span);
+        }
 
         if !self.is_identifier_token(self.current_token()) {
             self.error("expected-identifier", "Expected an identifier");

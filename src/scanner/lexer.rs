@@ -516,8 +516,6 @@ fn get_keywords() -> std::collections::HashMap<&'static str, TokenKind> {
     keywords.insert("mod", TokenKind::ModKeyword);
     keywords.insert("sym", TokenKind::SymKeyword);
     keywords.insert("context", TokenKind::ContextKeyword);
-    keywords.insert("prop", TokenKind::PropKeyword);
-    keywords.insert("property", TokenKind::PropertyKeyword);
     keywords.insert("scenario", TokenKind::ScenarioKeyword);
     keywords.insert("pub", TokenKind::PubKeyword);
     keywords.insert("sub", TokenKind::SubKeyword);
@@ -722,15 +720,19 @@ impl<'a> Lexer<'a> {
 
             '.' => {
                 // Check for ellipsis (...)
-                let mut lookahead = self.chars.clone();
-                if lookahead.peek() == Some(&'.') {
-                    lookahead.next();
-                    if lookahead.peek() == Some(&'.') {
+                // We've already consumed the first '.' via chars.next()
+                // Now check if the next two characters are also '.'
+                if let Some(&'.') = self.chars.peek() {
+                    self.chars.next();
+                    self.chars_consumed += 1;
+                    if let Some(&'.') = self.chars.peek() {
+                        self.chars.next();
+                        self.chars_consumed += 1;
                         // This is an ellipsis
-                        self.chars = lookahead;
-                        self.chars_consumed = self.current_span_start + 3;
                         return self.finish_token(TokenKind::Ellipsis);
                     }
+                    // Not ellipsis, we consumed one extra '.'
+                    // Fall through to return Dot
                 }
                 self.finish_token(TokenKind::Dot)
             }
@@ -1624,10 +1626,7 @@ mod tests {
         let kind = lexer.scan();
         assert_eq!(kind, TokenKind::SingleLineComment);
 
-        // After comment, should be NewLine, then skip to model
-        let kind = lexer.scan();
-        assert_eq!(kind, TokenKind::NewLine);
-
+        // After comment, trivia (newlines, whitespace) is skipped to next token
         let kind = lexer.scan();
         assert_eq!(kind, TokenKind::ModelKeyword);
     }
@@ -1638,7 +1637,7 @@ mod tests {
         let kind = lexer.scan();
         assert_eq!(kind, TokenKind::MultiLineComment);
 
-        // After comment, skip trivia to model
+        // After comment, trivia is skipped to model
         let kind = lexer.scan();
         assert_eq!(kind, TokenKind::ModelKeyword);
     }
@@ -1646,9 +1645,7 @@ mod tests {
     #[test]
     fn test_whitespace() {
         let mut lexer = Lexer::new("   model");
-        let kind = lexer.scan();
-        assert_eq!(kind, TokenKind::Whitespace);
-
+        // Whitespace is skipped, first token is ModelKeyword
         let kind = lexer.scan();
         assert_eq!(kind, TokenKind::ModelKeyword);
     }

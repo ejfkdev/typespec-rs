@@ -6,6 +6,7 @@ pub mod ast;
 pub mod checker;
 pub mod parser;
 pub mod program;
+pub mod resolver;
 pub mod scanner;
 pub mod std;
 pub mod types;

@@ -1733,4 +1733,57 @@ model Foo {}
         let result = parse("model Names is string[];");
         assert!(result.diagnostics.is_empty());
     }
+
+    // ==================== Template Arguments Tests ====================
+
+    #[test]
+    fn test_parse_template_argument_simple() {
+        // Simple template argument
+        let result = parse("alias Test = Foo<T>;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_template_argument_trailing_comma() {
+        // Template argument with trailing comma
+        let result = parse("alias TrailingComma = Foo<A, B,>;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_template_argument_with_function() {
+        // Template argument with function type
+        let result = parse("alias Test = Foo<fn()>;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_template_argument_with_function_return_type() {
+        // Template argument with function return type
+        let result = parse("alias Test = Foo<fn() => string>;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_template_argument_with_function_params() {
+        // Template argument with function parameters
+        let result = parse("alias Test = Foo<fn(a: string, b: int) => string>;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_template_argument_with_function_trailing_comma() {
+        // Template argument with function and trailing comma
+        let result = parse("alias TrailingComma = Foo<fn(a: string, b: int) => string,>;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Model Properties with Keywords Tests ====================
+
+    #[test]
+    fn test_parse_model_with_keyword_property_name() {
+        // Model with keyword as property name
+        let result = parse("model Foo { interface: string }");
+        assert!(result.diagnostics.is_empty());
+    }
 }

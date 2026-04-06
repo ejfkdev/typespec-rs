@@ -1190,4 +1190,139 @@ model Foo {}
         let result = parse(r#"model Car { /* 👀 */ property: int32; }"#);
         assert!(result.diagnostics.is_empty());
     }
+
+    // ==================== Enum Statement Tests ====================
+
+    #[test]
+    fn test_parse_enum_empty() {
+        // Empty enum
+        let result = parse("enum Foo { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_enum_with_members() {
+        // Enum with members
+        let result = parse("enum Foo { a, b }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+
+    #[test]
+    fn test_parse_alias_with_union() {
+        // Alias with union
+        let result = parse("alias X = A | B;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_alias_with_template() {
+        // Alias with template
+        let result = parse("alias MaybeUndefined<T> = T | undefined;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Decorator Declaration Tests ====================
+
+    #[test]
+    fn test_parse_decorator_declaration_simple() {
+        // Simple decorator declaration
+        let result = parse("dec myDec(target: Type);");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_decorator_declaration_extern() {
+        // Extern decorator declaration
+        let result = parse("extern dec myDec(target: Type);");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_decorator_declaration_with_args() {
+        // Decorator declaration with arguments
+        let result = parse("extern dec myDec(target: Type, arg1: StringLiteral);");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_decorator_declaration_with_optional() {
+        // Decorator declaration with optional parameter
+        let result = parse("extern dec myDec(target: Type, optional?: StringLiteral);");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_decorator_declaration_with_rest() {
+        // Decorator declaration with rest parameter
+        let result = parse("extern dec myDec(target: Type, ...rest: StringLiteral[]);");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_decorator_declaration_trailing_comma() {
+        // Decorator declaration with trailing comma
+        let result = parse("extern dec trailingComma(target, arg1: other, arg2: string,);");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Function Declaration Tests ====================
+
+    #[test]
+    fn test_parse_function_declaration_simple() {
+        // Simple function declaration
+        let result = parse("fn myDec(): void;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_function_declaration_extern() {
+        // Extern function declaration
+        let result = parse("extern fn myDec(): StringLiteral;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_function_declaration_with_arg() {
+        // Function declaration with argument
+        let result = parse("extern fn myDec(arg1: StringLiteral): void;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_function_declaration_with_optional() {
+        // Function declaration with optional parameter
+        let result = parse("extern fn myDec(optional?: StringLiteral): void;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_function_declaration_with_rest() {
+        // Function declaration with rest parameter
+        let result = parse("extern fn myDec(...rest: StringLiteral[]): void;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Augment Decorator Tests ====================
+
+    #[test]
+    fn test_parse_augment_decorator_simple() {
+        // Simple augment decorator
+        let result = parse("@@tag(Foo);");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_augment_decorator_with_args() {
+        // Augment decorator with arguments
+        let result = parse(r#"@@doc(Foo, "x");"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_augment_decorator_with_member() {
+        // Augment decorator on member
+        let result = parse(r#"@@doc(Foo.prop1, "x");"#);
+        assert!(result.diagnostics.is_empty());
+    }
 }

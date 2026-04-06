@@ -119,6 +119,13 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.scan();
     }
 
+    /// Skip trivia tokens (comments, newlines, whitespace) at the current position
+    fn skip_trivia(&mut self) {
+        while self.current_token().is_trivia() {
+            self.next_token();
+        }
+    }
+
     fn make_span(&self, start: usize, end: usize) -> Span {
         Span {
             start: Position { line: 1, column: 0 },
@@ -160,6 +167,13 @@ impl<'a> Parser<'a> {
         let mut statements = Vec::new();
 
         while self.current_token() != TokenKind::EndOfFile {
+            // Skip trivia (comments, newlines, whitespace) before each statement
+            self.skip_trivia();
+
+            if self.current_token() == TokenKind::EndOfFile {
+                break;
+            }
+
             let decorators = self.parse_decorator_list();
             let pos = self.token_start_position();
 
@@ -773,7 +787,7 @@ impl<'a> Parser<'a> {
 
             let params = if self.check_token(TokenKind::OpenParen) {
                 self.next_token();
-                let params = self.parse_expression_list(TokenKind::CloseParen);
+                let params = self.parse_operation_parameters();
                 self.expect_token(TokenKind::CloseParen);
                 params
             } else {

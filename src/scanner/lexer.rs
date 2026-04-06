@@ -99,6 +99,7 @@ fn is_non_ascii_whitespace_single_line(c: char) -> bool {
         || cc == CharCodes::PARAGRAPH_SEPARATOR
 }
 
+#[allow(dead_code)]
 fn is_whitespace(c: char) -> bool {
     is_ascii_whitespace_single_line(c) || is_line_break(c)
 }

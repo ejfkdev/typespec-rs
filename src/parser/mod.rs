@@ -126,7 +126,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn make_span(&self, start: usize, end: usize) -> Span {
+    fn make_span(&self, _start: usize, _end: usize) -> Span {
         Span {
             start: Position { line: 1, column: 0 },
             end: Position { line: 1, column: 0 },
@@ -392,7 +392,7 @@ impl<'a> Parser<'a> {
         let name = self.parse_identifier();
 
         // Template parameters
-        let template_parameters = if self.check_token(TokenKind::LessThan) {
+        let _template_parameters = if self.check_token(TokenKind::LessThan) {
             self.parse_template_parameter_list()
         } else {
             vec![]
@@ -633,7 +633,7 @@ impl<'a> Parser<'a> {
         let variants = self.parse_union_variant_list();
         let body_start = self.token_start_position();
         self.expect_token(TokenKind::CloseBrace);
-        let body_range = self.make_span(body_start, self.previous_token_end);
+        let _body_range = self.make_span(body_start, self.previous_token_end);
 
         let span = self.make_span(pos, self.previous_token_end);
         self.builder.create_union_declaration(name, variants, decorators, template_parameters, span)
@@ -744,7 +744,7 @@ impl<'a> Parser<'a> {
         let name = self.parse_identifier();
 
         // Template parameters
-        let template_parameters = if self.check_token(TokenKind::LessThan) {
+        let _template_parameters = if self.check_token(TokenKind::LessThan) {
             self.parse_template_parameter_list()
         } else {
             vec![]
@@ -1157,7 +1157,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_identifier_or_member_expression(&mut self, allow_reserved: bool, allow_reserved_in_member: bool) -> u32 {
+    fn parse_identifier_or_member_expression(&mut self, _allow_reserved: bool, _allow_reserved_in_member: bool) -> u32 {
         let pos = self.token_start_position();
         let mut base = self.parse_identifier();
 
@@ -1370,7 +1370,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let body_range = self.make_span(pos, self.previous_token_end);
+        let _body_range = self.make_span(pos, self.previous_token_end);
         self.expect_token(TokenKind::CloseBrace);
         let span = self.make_span(pos, self.previous_token_end);
         self.builder.create_object_literal(properties, span)

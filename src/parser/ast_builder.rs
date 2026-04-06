@@ -198,7 +198,7 @@ impl AstBuilder {
     }
 
     // Helper to create a span from positions
-    pub fn make_span(&self, start_pos: usize, end_pos: usize) -> Span {
+    pub fn make_span(&self, _start_pos: usize, _end_pos: usize) -> Span {
         // Simple span using byte offsets - convert to line/column if needed
         Span {
             start: Position { line: 1, column: 0 },
@@ -1013,7 +1013,7 @@ impl AstBuilder {
         id
     }
 
-    pub fn create_string_template_head(&mut self, value: String, flags: TokenFlags, span: Span) -> u32 {
+    pub fn create_string_template_head(&mut self, value: String, _flags: TokenFlags, span: Span) -> u32 {
         let id = self.node_id_gen.next();
         let node = AstNode::StringTemplateHead(StringTemplateHead {
             id,

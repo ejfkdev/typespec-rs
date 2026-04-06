@@ -146,7 +146,7 @@ impl<'a> Parser<'a> {
     }
 
     fn finish_node(&mut self, pos: usize) -> Span {
-        let flags = if self.parse_error_in_next_node {
+        let _flags = if self.parse_error_in_next_node {
             NodeFlags::ThisNodeHasError
         } else {
             NodeFlags::None
@@ -881,7 +881,7 @@ impl<'a> Parser<'a> {
         self.builder.create_const_statement(name, value, type_annotation, span)
     }
 
-    fn parse_function_declaration_statement(&mut self, pos: usize, modifiers: Vec<u32>) -> u32 {
+    fn parse_function_declaration_statement(&mut self, pos: usize, _modifiers: Vec<u32>) -> u32 {
         self.expect_token(TokenKind::FnKeyword);
         let name = self.parse_identifier();
 
@@ -942,7 +942,7 @@ impl<'a> Parser<'a> {
         params
     }
 
-    fn parse_decorator_declaration_statement(&mut self, pos: usize, modifiers: Vec<u32>) -> u32 {
+    fn parse_decorator_declaration_statement(&mut self, pos: usize, _modifiers: Vec<u32>) -> u32 {
         self.expect_token(TokenKind::DecKeyword);
         let name = self.parse_identifier();
 

@@ -2,9 +2,8 @@
 //!
 //! Comprehensive tests for the TypeSpec parser implementation.
 
-use crate::parser::{parse, ParseResult, Parser, ParseOptions};
+use crate::parser::{parse, ParseResult};
 use crate::ast::types::*;
-use crate::ast::node::NodeId;
 use crate::parser::ast_builder::AstNode;
 
 /// Helper function to check if a node is an identifier and get its value

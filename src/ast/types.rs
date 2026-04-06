@@ -3,7 +3,6 @@
 
 use super::node::NodeId;
 use super::token::Span;
-use std::collections::HashMap;
 
 /// SyntaxKind enum - identifies the type of AST node
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

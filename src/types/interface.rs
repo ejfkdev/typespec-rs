@@ -4,7 +4,7 @@
 use super::decorator::DecoratorApplication;
 use super::primitive::TypeKind;
 use crate::ast::node::NodeId;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Interface - represents a TypeSpec interface type
 /// Contains operations and can extend other interfaces

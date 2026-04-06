@@ -1664,4 +1664,73 @@ model Foo {}
         let result = parse(r#"model Car { engine: { type: "v8" } }"#);
         assert!(result.diagnostics.is_empty());
     }
+
+    // ==================== Model Extends Tests ====================
+
+    #[test]
+    fn test_parse_model_extends_simple() {
+        // Simple model extends
+        let result = parse("model foo extends bar { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_model_extends_member() {
+        // Model extends with member expression
+        let result = parse("model foo extends bar.baz { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_model_extends_template() {
+        // Model extends with template
+        let result = parse("model foo extends bar<T> { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_model_extends_template_with_params() {
+        // Model extends with template and parameters
+        let result = parse("model foo<T> extends bar<T> { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_model_extends_template_member() {
+        // Model extends with template and member
+        let result = parse("model foo<T> extends bar.baz<T> { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Array Type Tests ====================
+
+    #[test]
+    fn test_parse_array_type_simple() {
+        // Simple array type
+        let result = parse("model A { foo: B[] }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_array_type_nested() {
+        // Nested array type
+        let result = parse("model A { foo: B[][] }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Model is Tests ====================
+
+    #[test]
+    fn test_parse_model_is_simple() {
+        // Simple model is
+        let result = parse("model Car is Vehicle;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_model_is_array() {
+        // Model is array
+        let result = parse("model Names is string[];");
+        assert!(result.diagnostics.is_empty());
+    }
 }

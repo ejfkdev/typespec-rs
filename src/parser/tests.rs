@@ -1325,4 +1325,343 @@ model Foo {}
         let result = parse(r#"@@doc(Foo.prop1, "x");"#);
         assert!(result.diagnostics.is_empty());
     }
+
+    // ==================== Import Statement Tests ====================
+
+    #[test]
+    fn test_parse_import_statement() {
+        // Simple import
+        let result = parse(r#"import "x";"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+
+    // ==================== Scalar Statement Tests ====================
+
+    #[test]
+    fn test_parse_scalar_with_decorator() {
+        // Scalar with decorator
+        let result = parse("@foo() scalar uuid extends string;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_scalar_with_init() {
+        // Scalar with init
+        let result = parse("scalar uuid {\n        init fromString(def: string)\n      }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_scalar_with_init_and_extends() {
+        // Scalar extends and has init
+        let result = parse("scalar bar extends uuid {\n        init fromOther(abc: string)\n      }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_scalar_with_init_trailing_comma() {
+        // Scalar with init and trailing comma
+        let result = parse("scalar bar {\n        init trailingComma(abc: string, def: string,)\n      }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Operation Statement Tests ====================
+
+    #[test]
+    fn test_parse_operation_with_trailing_comma() {
+        // Operation with trailing comma
+        let result = parse("op trailingCommas(a: string,b: other,): int32;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Interface Statement Tests ====================
+
+    #[test]
+    fn test_parse_interface_with_template() {
+        // Interface with template
+        let result = parse("interface Foo<T> { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_interface_multi_extends() {
+        // Interface with multiple extends
+        let result = parse("interface Foo extends Bar, Baz<T> { }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_interface_with_multiple_operations() {
+        // Interface with multiple operations
+        let result = parse("interface Foo { foo(): int32; bar(): int32; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_interface_with_op_keyword() {
+        // Interface with op keyword
+        let result = parse("interface Foo { op foo(): int32; op bar(): int32; baz(): int32; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Union Declaration Tests ====================
+
+    #[test]
+    fn test_parse_union_declaration() {
+        // Simple union
+        let result = parse("union A { x: number, y: number } ");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_union_declaration_with_decorator() {
+        // Union with decorator
+        let result = parse("@myDec union A { @myDec a: string }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_union_declaration_string_key() {
+        // Union with string key
+        let result = parse(r#"union A { "hi there": string }"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_union_declaration_with_variants() {
+        // Union with variant types
+        let result = parse("union A { string, int32 }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_union_declaration_with_template_variants() {
+        // Union with template variants
+        let result = parse("union A { B<T>, C<T> }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_union_declaration_with_string_variants() {
+        // Union with string variants
+        let result = parse(r#"union A { "hi", `bye` }"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Const Statement Tests ====================
+
+    #[test]
+    fn test_parse_const_with_type() {
+        // Const with type annotation
+        let result = parse("const a: Info = 123;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_const_with_object() {
+        // Const with object literal
+        let result = parse(r#"const a: {inline: string} = #{inline: "abc"};"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_const_with_union_type() {
+        // Const with union type
+        let result = parse("const a: string | int32 = int32;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Call Expression Tests ====================
+
+    #[test]
+    fn test_parse_call_expression_member() {
+        // Member call expression
+        let result = parse("const a = utcDateTime.fromISO(\"abc\");");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_call_expression_multiple_args() {
+        // Call with multiple args
+        let result = parse(r#"const a = utcDateTime.fromISO("abc", "def");"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_call_expression_trailing_comma() {
+        // Call with trailing comma
+        let result = parse(r#"const trailingComma = utcDateTime.fromISO("abc", "def",);"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Object Literal Tests ====================
+
+    // ==================== Array Literal Tests ====================
+
+    #[test]
+    fn test_parse_array_literal_single() {
+        // Simple array literal
+        let result = parse(r#"const A = #["abc"];"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_array_literal_multiple() {
+        // Array literal with multiple elements
+        let result = parse(r#"const A = #["abc", 123];"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_array_literal_nested() {
+        // Array literal with nested objects
+        let result = parse(r#"const A = #["abc", 123, #{nested: true}];"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_array_literal_trailing_comma() {
+        // Array literal with trailing comma
+        let result = parse(r#"const A = #["abc", 123,];"#);
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Using Statement Tests ====================
+
+    #[test]
+    fn test_parse_using_in_namespace() {
+        // Using inside namespace
+        let result = parse("namespace Foo { using A; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Valueof Expression Tests ====================
+
+    #[test]
+    fn test_parse_valueof_string() {
+        // Valueof string expression
+        let result = parse("model Foo<T extends valueof string> {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_valueof_int32() {
+        // Valueof int32 expression
+        let result = parse("model Foo<T extends valueof int32> {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_valueof_object() {
+        // Valueof object expression
+        let result = parse("model Foo<T extends valueof {a: string, b: int32}> {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_valueof_array() {
+        // Valueof array expression
+        let result = parse("model Foo<T extends valueof int8[]> {}");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Intersection Expression Tests ====================
+
+    #[test]
+    fn test_parse_intersection_simple() {
+        // Simple intersection
+        let result = parse("model A { foo: B & C }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Namespace Statement Tests ====================
+
+    #[test]
+    fn test_parse_namespace_with_operation() {
+        // Namespace with operation
+        let result = parse("namespace Store { op read(): int32; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_namespace_with_multiple_operations() {
+        // Namespace with multiple operations
+        let result = parse("namespace Store { op read(): int32; op write(v: int32): {}; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_namespace_with_decorator() {
+        // Namespace with decorator
+        let result = parse("@foo namespace Store { @myDec op read(): number; @myDec op write(n: number): {}; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_namespace_multiple_decorators() {
+        // Namespace with multiple decorators
+        let result = parse("@foo @bar namespace Store { @foo @bar op read(): number; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_namespace_nested_block() {
+        // Nested block namespaces
+        let result = parse("namespace Store { namespace Read { op read(): int32; } namespace Write { op write(v: int32): {}; } }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_namespace_blockless_nested() {
+        // Blockless nested namespace
+        let result = parse("namespace Store.Read;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_namespace_blockless_with_decorator() {
+        // Blockless namespace with decorator
+        let result = parse("@foo namespace Store.Read;");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_namespace_blockless_with_braces_and_decorator() {
+        // Blockless namespace with braces and decorator
+        let result = parse("@foo namespace Store.Read { };");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Tuple Model Expression Tests ====================
+
+    #[test]
+    fn test_parse_tuple_empty() {
+        // Empty tuple
+        let result = parse("alias EmptyTuple = [];");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_tuple_with_trailing_comma() {
+        // Tuple with trailing comma
+        let result = parse("alias TrailingComma = [1, 2,];");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_tuple_in_operation() {
+        // Tuple in operation parameter
+        let result = parse("namespace A { op b(param: [number, string]): [1, \"hi\"]; }");
+        assert!(result.diagnostics.is_empty());
+    }
+
+    // ==================== Model Expression Tests ====================
+
+    #[test]
+    fn test_parse_model_expression() {
+        // Model expression (inline)
+        let result = parse(r#"model Car { engine: { type: "v8" } }"#);
+        assert!(result.diagnostics.is_empty());
+    }
 }

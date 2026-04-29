@@ -6,6 +6,8 @@ resolver = "3"
 [workspace.metadata.dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.31.0"
+# Rust toolchain version for release builds
+rust-toolchain-version = "1.95.0"
 # Allow customizations to release.yml (test job, UPX compression)
 allow-dirty = ["ci"]
 # CI backends to support

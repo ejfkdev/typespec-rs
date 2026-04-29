@@ -2,7 +2,7 @@
 name = "tspc"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.95"
 description = "TypeSpec compiler CLI — convert .tsp files to JSON, YAML, OpenAPI and more"
 repository = "https://github.com/ejfkdev/typespec-rs"
 homepage = "https://github.com/ejfkdev/typespec-rs"

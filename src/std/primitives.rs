@@ -5,10 +5,10 @@
 //! This module defines all built-in scalar types and their inheritance hierarchy:
 //! - bytes, string, boolean (base types)
 //! - numeric -> integer -> int64 -> int32 -> int16 -> int8
-//!                     -> uint64 -> uint32 -> uint16 -> uint8
-//!                     -> safeint
-//!           -> float -> float64 -> float32
-//!           -> decimal -> decimal128
+//!   -> uint64 -> uint32 -> uint16 -> uint8
+//!   -> safeint
+//!   -> float -> float64 -> float32
+//!   -> decimal -> decimal128
 //! - plainDate, plainTime, utcDateTime, offsetDateTime, duration
 
 use crate::ast::node::NodeId;
@@ -77,6 +77,8 @@ pub enum BuiltInScalarKind {
 
     /// `url` - URL type
     Url,
+    /// `unixTimestamp32` - 32-bit unix timestamp
+    UnixTimestamp32,
 }
 
 impl BuiltInScalarKind {
@@ -108,6 +110,7 @@ impl BuiltInScalarKind {
             BuiltInScalarKind::OffsetDateTime => "offsetDateTime",
             BuiltInScalarKind::Duration => "duration",
             BuiltInScalarKind::Url => "url",
+            BuiltInScalarKind::UnixTimestamp32 => "unixTimestamp32",
         }
     }
 
@@ -150,6 +153,7 @@ impl BuiltInScalarKind {
             BuiltInScalarKind::UtcDateTime => None,
             BuiltInScalarKind::OffsetDateTime => None,
             BuiltInScalarKind::Duration => None,
+            BuiltInScalarKind::UnixTimestamp32 => Some(BuiltInScalarKind::UtcDateTime),
         }
     }
 
@@ -162,6 +166,7 @@ impl BuiltInScalarKind {
                 | BuiltInScalarKind::UtcDateTime
                 | BuiltInScalarKind::OffsetDateTime
                 | BuiltInScalarKind::Duration
+                | BuiltInScalarKind::UnixTimestamp32
         )
     }
 
@@ -268,6 +273,7 @@ pub const SCALAR_HIERARCHY: &[(&str, Option<&str>)] = &[
     ("utcDateTime", None),
     ("offsetDateTime", None),
     ("duration", None),
+    ("unixTimestamp32", Some("utcDateTime")),
 ];
 
 /// Built-in model types with their indexer kinds
@@ -276,3 +282,285 @@ pub const MODEL_INDEXERS: &[(&str, &str, &str)] = &[
     ("Array", "integer", "Element"),
     ("Record", "string", "Element"),
 ];
+
+/// Check if a builtin scalar name belongs to a primitive kind ("string", "numeric", "boolean").
+/// Uses SCALAR_HIERARCHY to walk the parent chain, so it stays complete as types are added.
+pub fn scalar_matches_primitive(scalar_name: &str, primitive: &str) -> bool {
+    if scalar_name == primitive {
+        return true;
+    }
+    // Walk the hierarchy: find the entry, then walk parent chain
+    let mut current = scalar_name;
+    loop {
+        let Some((_, parent)) = SCALAR_HIERARCHY.iter().find(|(name, _)| *name == current) else {
+            return false;
+        };
+        match parent {
+            Some(p) if *p == primitive => return true,
+            Some(p) => current = p,
+            None => return false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // BuiltInScalarKind tests
+    // ========================================================================
+
+    #[test]
+    fn test_scalar_as_str() {
+        assert_eq!(BuiltInScalarKind::Bytes.as_str(), "bytes");
+        assert_eq!(BuiltInScalarKind::String.as_str(), "string");
+        assert_eq!(BuiltInScalarKind::Boolean.as_str(), "boolean");
+        assert_eq!(BuiltInScalarKind::Numeric.as_str(), "numeric");
+        assert_eq!(BuiltInScalarKind::Integer.as_str(), "integer");
+        assert_eq!(BuiltInScalarKind::Int64.as_str(), "int64");
+        assert_eq!(BuiltInScalarKind::Int32.as_str(), "int32");
+        assert_eq!(BuiltInScalarKind::Int16.as_str(), "int16");
+        assert_eq!(BuiltInScalarKind::Int8.as_str(), "int8");
+        assert_eq!(BuiltInScalarKind::Uint64.as_str(), "uint64");
+        assert_eq!(BuiltInScalarKind::Uint32.as_str(), "uint32");
+        assert_eq!(BuiltInScalarKind::Uint16.as_str(), "uint16");
+        assert_eq!(BuiltInScalarKind::Uint8.as_str(), "uint8");
+        assert_eq!(BuiltInScalarKind::Safeint.as_str(), "safeint");
+        assert_eq!(BuiltInScalarKind::Float.as_str(), "float");
+        assert_eq!(BuiltInScalarKind::Float64.as_str(), "float64");
+        assert_eq!(BuiltInScalarKind::Float32.as_str(), "float32");
+        assert_eq!(BuiltInScalarKind::Decimal.as_str(), "decimal");
+        assert_eq!(BuiltInScalarKind::Decimal128.as_str(), "decimal128");
+        assert_eq!(BuiltInScalarKind::PlainDate.as_str(), "plainDate");
+        assert_eq!(BuiltInScalarKind::PlainTime.as_str(), "plainTime");
+        assert_eq!(BuiltInScalarKind::UtcDateTime.as_str(), "utcDateTime");
+        assert_eq!(BuiltInScalarKind::OffsetDateTime.as_str(), "offsetDateTime");
+        assert_eq!(BuiltInScalarKind::Duration.as_str(), "duration");
+        assert_eq!(BuiltInScalarKind::Url.as_str(), "url");
+    }
+
+    #[test]
+    fn test_scalar_extends_hierarchy() {
+        // Base types have no parent
+        assert_eq!(BuiltInScalarKind::Bytes.extends(), None);
+        assert_eq!(BuiltInScalarKind::String.extends(), None);
+        assert_eq!(BuiltInScalarKind::Boolean.extends(), None);
+        assert_eq!(BuiltInScalarKind::Numeric.extends(), None);
+
+        // Integer hierarchy: int8 -> int16 -> int32 -> int64 -> integer -> numeric
+        assert_eq!(
+            BuiltInScalarKind::Int8.extends(),
+            Some(BuiltInScalarKind::Int16)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Int16.extends(),
+            Some(BuiltInScalarKind::Int32)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Int32.extends(),
+            Some(BuiltInScalarKind::Int64)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Int64.extends(),
+            Some(BuiltInScalarKind::Integer)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Integer.extends(),
+            Some(BuiltInScalarKind::Numeric)
+        );
+
+        // Unsigned hierarchy
+        assert_eq!(
+            BuiltInScalarKind::Uint8.extends(),
+            Some(BuiltInScalarKind::Uint16)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Uint16.extends(),
+            Some(BuiltInScalarKind::Uint32)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Uint32.extends(),
+            Some(BuiltInScalarKind::Uint64)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Uint64.extends(),
+            Some(BuiltInScalarKind::Integer)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Safeint.extends(),
+            Some(BuiltInScalarKind::Int64)
+        );
+
+        // Float hierarchy
+        assert_eq!(
+            BuiltInScalarKind::Float32.extends(),
+            Some(BuiltInScalarKind::Float64)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Float64.extends(),
+            Some(BuiltInScalarKind::Float)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Float.extends(),
+            Some(BuiltInScalarKind::Numeric)
+        );
+
+        // Decimal hierarchy
+        assert_eq!(
+            BuiltInScalarKind::Decimal128.extends(),
+            Some(BuiltInScalarKind::Decimal)
+        );
+        assert_eq!(
+            BuiltInScalarKind::Decimal.extends(),
+            Some(BuiltInScalarKind::Numeric)
+        );
+
+        // Date/time types have no parent
+        assert_eq!(BuiltInScalarKind::PlainDate.extends(), None);
+        assert_eq!(BuiltInScalarKind::PlainTime.extends(), None);
+        assert_eq!(BuiltInScalarKind::UtcDateTime.extends(), None);
+        assert_eq!(BuiltInScalarKind::OffsetDateTime.extends(), None);
+        assert_eq!(BuiltInScalarKind::Duration.extends(), None);
+    }
+
+    #[test]
+    fn test_scalar_is_datetime() {
+        assert!(BuiltInScalarKind::PlainDate.is_datetime());
+        assert!(BuiltInScalarKind::PlainTime.is_datetime());
+        assert!(BuiltInScalarKind::UtcDateTime.is_datetime());
+        assert!(BuiltInScalarKind::OffsetDateTime.is_datetime());
+        assert!(BuiltInScalarKind::Duration.is_datetime());
+        assert!(!BuiltInScalarKind::String.is_datetime());
+        assert!(!BuiltInScalarKind::Int32.is_datetime());
+        assert!(!BuiltInScalarKind::Float.is_datetime());
+    }
+
+    #[test]
+    fn test_scalar_has_initializers() {
+        assert!(BuiltInScalarKind::PlainDate.has_initializers());
+        assert!(BuiltInScalarKind::UtcDateTime.has_initializers());
+        assert!(!BuiltInScalarKind::String.has_initializers());
+        assert!(!BuiltInScalarKind::Int32.has_initializers());
+    }
+
+    #[test]
+    fn test_scalar_kind_count() {
+        // Must have exactly 24 built-in scalar types
+        let all_kinds = [
+            BuiltInScalarKind::Bytes,
+            BuiltInScalarKind::String,
+            BuiltInScalarKind::Boolean,
+            BuiltInScalarKind::Numeric,
+            BuiltInScalarKind::Integer,
+            BuiltInScalarKind::Int64,
+            BuiltInScalarKind::Int32,
+            BuiltInScalarKind::Int16,
+            BuiltInScalarKind::Int8,
+            BuiltInScalarKind::Uint64,
+            BuiltInScalarKind::Uint32,
+            BuiltInScalarKind::Uint16,
+            BuiltInScalarKind::Uint8,
+            BuiltInScalarKind::Safeint,
+            BuiltInScalarKind::Float,
+            BuiltInScalarKind::Float64,
+            BuiltInScalarKind::Float32,
+            BuiltInScalarKind::Decimal,
+            BuiltInScalarKind::Decimal128,
+            BuiltInScalarKind::PlainDate,
+            BuiltInScalarKind::PlainTime,
+            BuiltInScalarKind::UtcDateTime,
+            BuiltInScalarKind::OffsetDateTime,
+            BuiltInScalarKind::Duration,
+            BuiltInScalarKind::Url,
+        ];
+        assert_eq!(all_kinds.len(), 25);
+    }
+
+    // ========================================================================
+    // SCALAR_HIERARCHY consistency tests
+    // ========================================================================
+
+    #[test]
+    fn test_scalar_hierarchy_completeness() {
+        // Every BuiltInScalarKind should appear in SCALAR_HIERARCHY
+        let all_names: Vec<&str> = SCALAR_HIERARCHY.iter().map(|(name, _)| *name).collect();
+        assert!(all_names.contains(&"bytes"));
+        assert!(all_names.contains(&"string"));
+        assert!(all_names.contains(&"int8"));
+        assert!(all_names.contains(&"float32"));
+        assert!(all_names.contains(&"decimal128"));
+        assert!(all_names.contains(&"utcDateTime"));
+        assert!(all_names.contains(&"url"));
+    }
+
+    #[test]
+    fn test_scalar_hierarchy_matches_extends() {
+        // SCALAR_HIERARCHY parent names must match BuiltInScalarKind::extends()
+        for (name, parent_name) in SCALAR_HIERARCHY {
+            let kind = super::super::helpers::get_builtin_scalar_kind(name).unwrap();
+            let expected_parent =
+                parent_name.and_then(super::super::helpers::get_builtin_scalar_kind);
+            assert_eq!(kind.extends(), expected_parent, "Mismatch for {}", name);
+        }
+    }
+
+    #[test]
+    fn test_scalar_hierarchy_no_duplicates() {
+        let mut names = std::collections::HashSet::new();
+        for (name, _) in SCALAR_HIERARCHY {
+            assert!(names.insert(name), "Duplicate scalar name: {}", name);
+        }
+    }
+
+    #[test]
+    fn test_scalar_hierarchy_count() {
+        assert_eq!(
+            SCALAR_HIERARCHY.len(),
+            26,
+            "SCALAR_HIERARCHY should have 26 entries"
+        );
+    }
+
+    // ========================================================================
+    // MODEL_INDEXERS tests
+    // ========================================================================
+
+    #[test]
+    fn test_model_indexers() {
+        assert_eq!(MODEL_INDEXERS.len(), 2);
+        assert_eq!(MODEL_INDEXERS[0], ("Array", "integer", "Element"));
+        assert_eq!(MODEL_INDEXERS[1], ("Record", "string", "Element"));
+    }
+
+    // ========================================================================
+    // ScalarInitializer tests
+    // ========================================================================
+
+    #[test]
+    fn test_scalar_initializer_from_iso() {
+        let init = ScalarInitializer::from_iso(1);
+        assert_eq!(init.name, "fromISO");
+        assert!(init.params.is_empty());
+        assert_eq!(init.return_type, 1);
+    }
+
+    #[test]
+    fn test_scalar_initializer_now() {
+        let init = ScalarInitializer::now(2);
+        assert_eq!(init.name, "now");
+        assert!(init.params.is_empty());
+        assert_eq!(init.return_type, 2);
+    }
+
+    // ========================================================================
+    // StandardLibrary tests
+    // ========================================================================
+
+    #[test]
+    fn test_standard_library_new() {
+        let lib = StandardLibrary::new(10, 20);
+        assert_eq!(lib.typespec_namespace, 10);
+        assert_eq!(lib.prototypes_namespace, 20);
+    }
+}

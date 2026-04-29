@@ -1,33 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenKind {
-    // Identifiers and literals
-    Identifier,
-    StringLiteral,
-    NumericLiteral,
-    // Keywords
-    Model,
-    Enum,
-    Interface,
-    Union,
-    Namespace,
-    Using,
-}
+//! Re-exports of token types from the scanner module.
+//!
+//! These types are defined in `scanner/lexer.rs` and re-exported here
+//! for convenience by AST and parser modules.
 
-#[derive(Debug, Clone)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub span: Span,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Span {
-    pub start: Position,
-    pub end: Position,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Position {
-    pub line: u32,
-    pub column: u32,
-}
+pub use crate::scanner::{Position, Span};

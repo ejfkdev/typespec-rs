@@ -1,11 +1,79 @@
+[workspace]
+members = [".", "crates/tspc"]
+resolver = "3"
+
+# Config for 'dist'
+[workspace.metadata.dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.31.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "aarch64-unknown-linux-musl", "aarch64-pc-windows-msvc", "armv7-unknown-linux-gnueabihf", "armv7-unknown-linux-musleabihf", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+# Which actions to run on pull requests
+pr-run-mode = "plan"
+# Whether to install an updater program
+install-updater = false
+# Whether to sign macOS executables
+macos-sign = false
+# Extra artifacts to include in the release
+extra-artifacts = []
+# The archive format to use for non-windows builds (defaults .tar.xz)
+unix-archive = ".tar.gz"
+# The archive format to use for windows builds (defaults .zip)
+windows-archive = ".zip"
+# Whether to merge multiple apps into one artifact
+merge-targets = false
+# Only build the tspc binary, not the library
+only-binary = true
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+
 [package]
-name = "typespec-rs"
+name = "typespec_rs"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "A Rust implementation of the TypeSpec type system — parser, checker, and emitter"
+repository = "https://github.com/ejfkdev/typespec-rs"
+homepage = "https://github.com/ejfkdev/typespec-rs"
+documentation = "https://docs.rs/typespec_rs"
+license = "MIT"
+readme = "README.md"
+keywords = ["typespec", "parser", "type-checker", "compiler", "api"]
+categories = ["parser-implementations", "development-tools", "compilers"]
+exclude = [".github/", ".claude/"]
 
 [dependencies]
-proc-macro2 = "1.0"
-quote = "1.0"
-syn = "2.0"
-thiserror = "1.0"
-anyhow = "1.0"
+regex = "1"
+bitflags = "2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[[example]]
+name = "quick_start"
+
+[[example]]
+name = "model_examples"
+
+[[example]]
+name = "parse_and_inspect"
+
+[[example]]
+name = "petstore"
+
+[[example]]
+name = "tsp_to_json"
+path = "examples/tsp_to_json/parse_and_emit.rs"

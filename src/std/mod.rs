@@ -4,8 +4,10 @@
 //!
 //! This module defines the built-in types and prototypes for TypeSpec.
 
+pub mod decorator_registry;
 pub mod helpers;
 pub mod primitives;
 
+pub use decorator_registry::*;
 pub use helpers::*;
 pub use primitives::*;

@@ -1,145 +1,55 @@
 //! Lexer implementation for TypeSpec
 
+use crate::charcode;
 use std::iter::Peekable;
 use std::str::Chars;
 
-/// Character code constants
-struct CharCodes;
+// Thin wrappers that convert char → u32 and delegate to the canonical charcode module.
+// This avoids duplicating the CharCodes constants and classification logic.
 
-impl CharCodes {
-    const NULL: u32 = 0x00;
-    const MAX_ASCII: u32 = 0x7f;
-    const BYTE_ORDER_MARK: u32 = 0xfeff;
-
-    // Line breaks
-    const LINE_FEED: u32 = 0x0a;
-    const CARRIAGE_RETURN: u32 = 0x0d;
-
-    // ASCII whitespace excluding line breaks
-    const SPACE: u32 = 0x20;
-    const TAB: u32 = 0x09;
-    const VERTICAL_TAB: u32 = 0x0b;
-    const FORM_FEED: u32 = 0x0c;
-
-    // Non-ASCII whitespace excluding line breaks
-    const NEXT_LINE: u32 = 0x0085;
-    const LEFT_TO_RIGHT_MARK: u32 = 0x200e;
-    const RIGHT_TO_LEFT_MARK: u32 = 0x200f;
-    const LINE_SEPARATOR: u32 = 0x2028;
-    const PARAGRAPH_SEPARATOR: u32 = 0x2029;
-
-    // ASCII Digits
-    const DIGIT_0: u32 = 0x30;
-    const DIGIT_9: u32 = 0x39;
-
-    // ASCII lowercase letters
-    const LETTER_A: u32 = 0x61;
-    const LETTER_Z: u32 = 0x7a;
-
-    // ASCII uppercase letters
-    const LETTER_A_UPPER: u32 = 0x41;
-    const LETTER_Z_UPPER: u32 = 0x5a;
-
-    // Non-letter, non-digit ASCII characters valid in identifiers
-    const UNDERSCORE: u32 = 0x5f;
-    const DOLLAR: u32 = 0x24;
-
-    // ASCII punctuation
-    const AMPERSAND: u32 = 0x26;
-    const ASTERISK: u32 = 0x2a;
-    const AT: u32 = 0x40;
-    const BACKSLASH: u32 = 0x5c;
-    const BACKTICK: u32 = 0x60;
-    const BAR: u32 = 0x7c;
-    const CLOSE_BRACE: u32 = 0x7d;
-    const CLOSE_BRACKET: u32 = 0x5d;
-    const CLOSE_PAREN: u32 = 0x29;
-    const COLON: u32 = 0x3a;
-    const COMMA: u32 = 0x2c;
-    const DOT: u32 = 0x2e;
-    const DOUBLE_QUOTE: u32 = 0x22;
-    const EQUALS: u32 = 0x3d;
-    const EXCLAMATION: u32 = 0x21;
-    const GREATER_THAN: u32 = 0x3e;
-    const HASH: u32 = 0x23;
-    const LESS_THAN: u32 = 0x3c;
-    const MINUS: u32 = 0x2d;
-    const OPEN_BRACE: u32 = 0x7b;
-    const OPEN_BRACKET: u32 = 0x5b;
-    const OPEN_PAREN: u32 = 0x28;
-    const PLUS: u32 = 0x2b;
-    const QUESTION: u32 = 0x3f;
-    const SEMICOLON: u32 = 0x3b;
-    const SLASH: u32 = 0x2f;
-}
-
-fn char_code(c: char) -> u32 {
-    c as u32
-}
-
+#[inline]
 fn is_line_break(c: char) -> bool {
-    let cc = char_code(c);
-    cc == CharCodes::LINE_FEED || cc == CharCodes::CARRIAGE_RETURN
+    charcode::is_line_break(c as u32)
 }
 
+#[inline]
 fn is_ascii_whitespace_single_line(c: char) -> bool {
-    let cc = char_code(c);
-    cc == CharCodes::SPACE
-        || cc == CharCodes::TAB
-        || cc == CharCodes::VERTICAL_TAB
-        || cc == CharCodes::FORM_FEED
+    charcode::is_ascii_whitespace_single_line(c as u32)
 }
 
+#[inline]
 fn is_non_ascii_whitespace_single_line(c: char) -> bool {
-    let cc = char_code(c);
-    cc == CharCodes::NEXT_LINE
-        || cc == CharCodes::LEFT_TO_RIGHT_MARK
-        || cc == CharCodes::RIGHT_TO_LEFT_MARK
-        || cc == CharCodes::LINE_SEPARATOR
-        || cc == CharCodes::PARAGRAPH_SEPARATOR
+    charcode::is_non_ascii_whitespace_single_line(c as u32)
 }
 
-#[allow(dead_code)]
-fn is_whitespace(c: char) -> bool {
-    is_ascii_whitespace_single_line(c) || is_line_break(c)
-}
-
+#[inline]
 fn is_digit(c: char) -> bool {
-    let cc = char_code(c);
-    cc >= CharCodes::DIGIT_0 && cc <= CharCodes::DIGIT_9
+    charcode::is_digit(c as u32)
 }
 
+#[inline]
 fn is_hex_digit(c: char) -> bool {
-    let cc = char_code(c);
-    is_digit(c)
-        || (cc >= CharCodes::LETTER_A_UPPER && cc <= CharCodes::LETTER_Z_UPPER)
-        || (cc >= CharCodes::LETTER_A && cc <= CharCodes::LETTER_Z)
+    charcode::is_hex_digit(c as u32)
 }
 
+#[inline]
 fn is_binary_digit(c: char) -> bool {
-    c == '0' || c == '1'
+    charcode::is_binary_digit(c as u32)
 }
 
+#[inline]
 fn is_lowercase_ascii_letter(c: char) -> bool {
-    let cc = char_code(c);
-    cc >= CharCodes::LETTER_A && cc <= CharCodes::LETTER_Z
+    charcode::is_lowercase_ascii_letter(c as u32)
 }
 
+#[inline]
 fn is_ascii_identifier_start(c: char) -> bool {
-    let cc = char_code(c);
-    (cc >= CharCodes::LETTER_A_UPPER && cc <= CharCodes::LETTER_Z_UPPER)
-        || (cc >= CharCodes::LETTER_A && cc <= CharCodes::LETTER_Z)
-        || cc == CharCodes::DOLLAR
-        || cc == CharCodes::UNDERSCORE
+    charcode::is_ascii_identifier_start(c as u32)
 }
 
+#[inline]
 fn is_ascii_identifier_continue(c: char) -> bool {
-    let cc = char_code(c);
-    (cc >= CharCodes::LETTER_A_UPPER && cc <= CharCodes::LETTER_Z_UPPER)
-        || (cc >= CharCodes::LETTER_A && cc <= CharCodes::LETTER_Z)
-        || (cc >= CharCodes::DIGIT_0 && cc <= CharCodes::DIGIT_9)
-        || cc == CharCodes::DOLLAR
-        || cc == CharCodes::UNDERSCORE
+    charcode::is_ascii_identifier_continue(c as u32)
 }
 
 /// Token flags
@@ -150,10 +60,7 @@ impl TokenFlags {
     pub const NONE: TokenFlags = TokenFlags(0);
     pub const ESCAPED: TokenFlags = TokenFlags(1 << 0);
     pub const TRIPLE_QUOTED: TokenFlags = TokenFlags(1 << 1);
-    pub const UNTERMINATED: TokenFlags = TokenFlags(1 << 2);
-    pub const NON_ASCII: TokenFlags = TokenFlags(1 << 3);
     pub const DOC_COMMENT: TokenFlags = TokenFlags(1 << 4);
-    pub const BACKTICKED: TokenFlags = TokenFlags(1 << 5);
 
     pub fn contains(self, other: TokenFlags) -> bool {
         (self.0 & other.0) == other.0
@@ -165,7 +72,7 @@ impl TokenFlags {
 }
 
 /// Token kinds matching TypeSpec's Token enum
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
     None,
     Invalid,
@@ -315,102 +222,109 @@ impl TokenKind {
     }
 
     pub fn is_keyword(&self) -> bool {
-        !self.is_trivia()
-            && !matches!(
+        self.is_statement_keyword()
+            || self.is_modifier()
+            || matches!(
                 self,
-                TokenKind::None
-                    | TokenKind::Invalid
-                    | TokenKind::EndOfFile
-                    | TokenKind::Identifier
-                    | TokenKind::NumericLiteral
-                    | TokenKind::StringLiteral
-                    | TokenKind::StringTemplateHead
-                    | TokenKind::StringTemplateMiddle
-                    | TokenKind::StringTemplateTail
-                    | TokenKind::SingleLineComment
-                    | TokenKind::MultiLineComment
-                    | TokenKind::NewLine
-                    | TokenKind::Whitespace
-                    | TokenKind::ConflictMarker
-                    | TokenKind::DocText
-                    | TokenKind::DocCodeSpan
-                    | TokenKind::DocCodeFenceDelimiter
-                    | TokenKind::OpenBrace
-                    | TokenKind::CloseBrace
-                    | TokenKind::OpenParen
-                    | TokenKind::CloseParen
-                    | TokenKind::OpenBracket
-                    | TokenKind::CloseBracket
-                    | TokenKind::Dot
-                    | TokenKind::Ellipsis
-                    | TokenKind::Semicolon
-                    | TokenKind::Comma
-                    | TokenKind::LessThan
-                    | TokenKind::GreaterThan
-                    | TokenKind::Equals
-                    | TokenKind::Ampersand
-                    | TokenKind::Bar
-                    | TokenKind::Question
-                    | TokenKind::Colon
-                    | TokenKind::ColonColon
-                    | TokenKind::At
-                    | TokenKind::AtAt
-                    | TokenKind::Hash
-                    | TokenKind::HashBrace
-                    | TokenKind::HashBracket
-                    | TokenKind::Star
-                    | TokenKind::ForwardSlash
-                    | TokenKind::Plus
-                    | TokenKind::Hyphen
-                    | TokenKind::Exclamation
-                    | TokenKind::LessThanEquals
-                    | TokenKind::GreaterThanEquals
-                    | TokenKind::AmpersandAmpersand
-                    | TokenKind::BarBar
-                    | TokenKind::EqualsEquals
-                    | TokenKind::ExclamationEquals
-                    | TokenKind::EqualsGreaterThan
+                // Other keywords
+                TokenKind::IsKeyword
+                    | TokenKind::ExtendsKeyword
+                    | TokenKind::FnKeyword
+                    | TokenKind::TrueKeyword
+                    | TokenKind::FalseKeyword
+                    | TokenKind::ReturnKeyword
+                    | TokenKind::VoidKeyword
+                    | TokenKind::NeverKeyword
+                    | TokenKind::UnknownKeyword
+                    | TokenKind::ValueOfKeyword
+                    | TokenKind::TypeOfKeyword
             )
+            || self.is_reserved_keyword()
     }
 
-    pub fn is_punctuation(&self) -> bool {
+    /// Check if this token is a comment (single-line or multi-line).
+    /// Ported from TS scanner.ts isComment().
+    pub fn is_comment(&self) -> bool {
         matches!(
             self,
-            TokenKind::OpenBrace
-                | TokenKind::CloseBrace
-                | TokenKind::OpenParen
-                | TokenKind::CloseParen
-                | TokenKind::OpenBracket
-                | TokenKind::CloseBracket
-                | TokenKind::Dot
-                | TokenKind::Ellipsis
-                | TokenKind::Semicolon
-                | TokenKind::Comma
-                | TokenKind::LessThan
-                | TokenKind::GreaterThan
-                | TokenKind::Equals
-                | TokenKind::Ampersand
-                | TokenKind::Bar
-                | TokenKind::Question
-                | TokenKind::Colon
-                | TokenKind::ColonColon
-                | TokenKind::At
-                | TokenKind::AtAt
-                | TokenKind::Hash
-                | TokenKind::HashBrace
-                | TokenKind::HashBracket
-                | TokenKind::Star
-                | TokenKind::ForwardSlash
-                | TokenKind::Plus
-                | TokenKind::Hyphen
-                | TokenKind::Exclamation
-                | TokenKind::LessThanEquals
-                | TokenKind::GreaterThanEquals
-                | TokenKind::AmpersandAmpersand
-                | TokenKind::BarBar
-                | TokenKind::EqualsEquals
-                | TokenKind::ExclamationEquals
-                | TokenKind::EqualsGreaterThan
+            TokenKind::SingleLineComment | TokenKind::MultiLineComment
+        )
+    }
+
+    /// Check if this token is a modifier keyword (extern, internal).
+    /// Ported from TS scanner.ts isModifier().
+    pub fn is_modifier(&self) -> bool {
+        matches!(self, TokenKind::ExternKeyword | TokenKind::InternalKeyword)
+    }
+
+    /// Check if this token is a statement-level keyword (import, model, namespace, etc.).
+    /// Ported from TS scanner.ts isStatementKeyword().
+    pub fn is_statement_keyword(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::ImportKeyword
+                | TokenKind::ModelKeyword
+                | TokenKind::ScalarKeyword
+                | TokenKind::NamespaceKeyword
+                | TokenKind::UsingKeyword
+                | TokenKind::OpKeyword
+                | TokenKind::EnumKeyword
+                | TokenKind::AliasKeyword
+                | TokenKind::InterfaceKeyword
+                | TokenKind::UnionKeyword
+                | TokenKind::ProjectionKeyword
+                | TokenKind::IfKeyword
+                | TokenKind::ElseKeyword
+                | TokenKind::DecKeyword
+                | TokenKind::ConstKeyword
+                | TokenKind::InitKeyword
+                | TokenKind::FnKeyword
+        )
+    }
+
+    /// Check if this token is a reserved keyword (not currently used but reserved for future use).
+    /// Ported from TS scanner.ts isReservedKeyword().
+    pub fn is_reserved_keyword(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::StatemachineKeyword
+                | TokenKind::MacroKeyword
+                | TokenKind::PackageKeyword
+                | TokenKind::MetadataKeyword
+                | TokenKind::EnvKeyword
+                | TokenKind::ArgKeyword
+                | TokenKind::DeclareKeyword
+                | TokenKind::ArrayKeyword
+                | TokenKind::StructKeyword
+                | TokenKind::RecordKeyword
+                | TokenKind::ModuleKeyword
+                | TokenKind::ModKeyword
+                | TokenKind::SymKeyword
+                | TokenKind::ContextKeyword
+                | TokenKind::PropKeyword
+                | TokenKind::PropertyKeyword
+                | TokenKind::ScenarioKeyword
+                | TokenKind::PubKeyword
+                | TokenKind::SubKeyword
+                | TokenKind::TypeRefKeyword
+                | TokenKind::TraitKeyword
+                | TokenKind::ThisKeyword
+                | TokenKind::SelfKeyword
+                | TokenKind::SuperKeyword
+                | TokenKind::KeyofKeyword
+                | TokenKind::WithKeyword
+                | TokenKind::ImplementsKeyword
+                | TokenKind::ImplKeyword
+                | TokenKind::SatisfiesKeyword
+                | TokenKind::FlagKeyword
+                | TokenKind::AutoKeyword
+                | TokenKind::PartialKeyword
+                | TokenKind::PrivateKeyword
+                | TokenKind::PublicKeyword
+                | TokenKind::ProtectedKeyword
+                | TokenKind::SealedKeyword
+                | TokenKind::LocalKeyword
+                | TokenKind::AsyncKeyword
         )
     }
 }
@@ -424,10 +338,7 @@ pub struct Position {
 
 impl Default for Position {
     fn default() -> Self {
-        Position {
-            line: 1,
-            column: 0,
-        }
+        Position { line: 1, column: 0 }
     }
 }
 
@@ -444,103 +355,85 @@ impl Span {
     }
 }
 
-/// Token with kind, span, and value
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub span: Span,
-    pub value: String,
-    pub flags: TokenFlags,
-}
+/// Keywords lookup map (computed once, shared across all Lexer instances)
+static KEYWORDS: std::sync::LazyLock<std::collections::HashMap<&'static str, TokenKind>> =
+    std::sync::LazyLock::new(|| {
+        let mut keywords = std::collections::HashMap::new();
+        keywords.insert("import", TokenKind::ImportKeyword);
+        keywords.insert("model", TokenKind::ModelKeyword);
+        keywords.insert("scalar", TokenKind::ScalarKeyword);
+        keywords.insert("namespace", TokenKind::NamespaceKeyword);
+        keywords.insert("interface", TokenKind::InterfaceKeyword);
+        keywords.insert("union", TokenKind::UnionKeyword);
+        keywords.insert("if", TokenKind::IfKeyword);
+        keywords.insert("else", TokenKind::ElseKeyword);
+        keywords.insert("projection", TokenKind::ProjectionKeyword);
+        keywords.insert("using", TokenKind::UsingKeyword);
+        keywords.insert("op", TokenKind::OpKeyword);
+        keywords.insert("extends", TokenKind::ExtendsKeyword);
+        keywords.insert("is", TokenKind::IsKeyword);
+        keywords.insert("enum", TokenKind::EnumKeyword);
+        keywords.insert("alias", TokenKind::AliasKeyword);
+        keywords.insert("dec", TokenKind::DecKeyword);
+        keywords.insert("fn", TokenKind::FnKeyword);
+        keywords.insert("valueof", TokenKind::ValueOfKeyword);
+        keywords.insert("typeof", TokenKind::TypeOfKeyword);
+        keywords.insert("const", TokenKind::ConstKeyword);
+        keywords.insert("init", TokenKind::InitKeyword);
+        keywords.insert("true", TokenKind::TrueKeyword);
+        keywords.insert("false", TokenKind::FalseKeyword);
+        keywords.insert("return", TokenKind::ReturnKeyword);
+        keywords.insert("void", TokenKind::VoidKeyword);
+        keywords.insert("never", TokenKind::NeverKeyword);
+        keywords.insert("unknown", TokenKind::UnknownKeyword);
+        keywords.insert("extern", TokenKind::ExternKeyword);
+        keywords.insert("internal", TokenKind::InternalKeyword);
+        keywords.insert("prop", TokenKind::PropKeyword);
+        keywords.insert("property", TokenKind::PropertyKeyword);
 
-impl Token {
-    pub fn new(kind: TokenKind, span: Span, value: String) -> Self {
-        Token {
-            kind,
-            span,
-            value,
-            flags: TokenFlags::NONE,
-        }
-    }
+        // Reserved keywords
+        keywords.insert("statemachine", TokenKind::StatemachineKeyword);
+        keywords.insert("macro", TokenKind::MacroKeyword);
+        keywords.insert("package", TokenKind::PackageKeyword);
+        keywords.insert("metadata", TokenKind::MetadataKeyword);
+        keywords.insert("env", TokenKind::EnvKeyword);
+        keywords.insert("arg", TokenKind::ArgKeyword);
+        keywords.insert("declare", TokenKind::DeclareKeyword);
+        keywords.insert("array", TokenKind::ArrayKeyword);
+        keywords.insert("struct", TokenKind::StructKeyword);
+        keywords.insert("record", TokenKind::RecordKeyword);
+        keywords.insert("module", TokenKind::ModuleKeyword);
+        keywords.insert("mod", TokenKind::ModKeyword);
+        keywords.insert("sym", TokenKind::SymKeyword);
+        keywords.insert("context", TokenKind::ContextKeyword);
+        keywords.insert("scenario", TokenKind::ScenarioKeyword);
+        keywords.insert("pub", TokenKind::PubKeyword);
+        keywords.insert("sub", TokenKind::SubKeyword);
+        keywords.insert("typeref", TokenKind::TypeRefKeyword);
+        keywords.insert("trait", TokenKind::TraitKeyword);
+        keywords.insert("this", TokenKind::ThisKeyword);
+        keywords.insert("self", TokenKind::SelfKeyword);
+        keywords.insert("super", TokenKind::SuperKeyword);
+        keywords.insert("keyof", TokenKind::KeyofKeyword);
+        keywords.insert("with", TokenKind::WithKeyword);
+        keywords.insert("implements", TokenKind::ImplementsKeyword);
+        keywords.insert("impl", TokenKind::ImplKeyword);
+        keywords.insert("satisfies", TokenKind::SatisfiesKeyword);
+        keywords.insert("flag", TokenKind::FlagKeyword);
+        keywords.insert("auto", TokenKind::AutoKeyword);
+        keywords.insert("partial", TokenKind::PartialKeyword);
+        keywords.insert("private", TokenKind::PrivateKeyword);
+        keywords.insert("public", TokenKind::PublicKeyword);
+        keywords.insert("protected", TokenKind::ProtectedKeyword);
+        keywords.insert("sealed", TokenKind::SealedKeyword);
+        keywords.insert("local", TokenKind::LocalKeyword);
+        keywords.insert("async", TokenKind::AsyncKeyword);
 
-    pub fn with_flags(mut self, flags: TokenFlags) -> Self {
-        self.flags = flags;
-        self
-    }
-}
+        keywords
+    });
 
-/// Keywords lookup map
-fn get_keywords() -> std::collections::HashMap<&'static str, TokenKind> {
-    let mut keywords = std::collections::HashMap::new();
-    keywords.insert("import", TokenKind::ImportKeyword);
-    keywords.insert("model", TokenKind::ModelKeyword);
-    keywords.insert("scalar", TokenKind::ScalarKeyword);
-    keywords.insert("namespace", TokenKind::NamespaceKeyword);
-    keywords.insert("interface", TokenKind::InterfaceKeyword);
-    keywords.insert("union", TokenKind::UnionKeyword);
-    keywords.insert("if", TokenKind::IfKeyword);
-    keywords.insert("else", TokenKind::ElseKeyword);
-    keywords.insert("projection", TokenKind::ProjectionKeyword);
-    keywords.insert("using", TokenKind::UsingKeyword);
-    keywords.insert("op", TokenKind::OpKeyword);
-    keywords.insert("extends", TokenKind::ExtendsKeyword);
-    keywords.insert("is", TokenKind::IsKeyword);
-    keywords.insert("enum", TokenKind::EnumKeyword);
-    keywords.insert("alias", TokenKind::AliasKeyword);
-    keywords.insert("dec", TokenKind::DecKeyword);
-    keywords.insert("fn", TokenKind::FnKeyword);
-    keywords.insert("valueof", TokenKind::ValueOfKeyword);
-    keywords.insert("typeof", TokenKind::TypeOfKeyword);
-    keywords.insert("const", TokenKind::ConstKeyword);
-    keywords.insert("init", TokenKind::InitKeyword);
-    keywords.insert("true", TokenKind::TrueKeyword);
-    keywords.insert("false", TokenKind::FalseKeyword);
-    keywords.insert("return", TokenKind::ReturnKeyword);
-    keywords.insert("void", TokenKind::VoidKeyword);
-    keywords.insert("never", TokenKind::NeverKeyword);
-    keywords.insert("unknown", TokenKind::UnknownKeyword);
-    keywords.insert("extern", TokenKind::ExternKeyword);
-    keywords.insert("internal", TokenKind::InternalKeyword);
-
-    // Reserved keywords
-    keywords.insert("statemachine", TokenKind::StatemachineKeyword);
-    keywords.insert("macro", TokenKind::MacroKeyword);
-    keywords.insert("package", TokenKind::PackageKeyword);
-    keywords.insert("metadata", TokenKind::MetadataKeyword);
-    keywords.insert("env", TokenKind::EnvKeyword);
-    keywords.insert("arg", TokenKind::ArgKeyword);
-    keywords.insert("declare", TokenKind::DeclareKeyword);
-    keywords.insert("array", TokenKind::ArrayKeyword);
-    keywords.insert("struct", TokenKind::StructKeyword);
-    keywords.insert("record", TokenKind::RecordKeyword);
-    keywords.insert("module", TokenKind::ModuleKeyword);
-    keywords.insert("mod", TokenKind::ModKeyword);
-    keywords.insert("sym", TokenKind::SymKeyword);
-    keywords.insert("context", TokenKind::ContextKeyword);
-    keywords.insert("scenario", TokenKind::ScenarioKeyword);
-    keywords.insert("pub", TokenKind::PubKeyword);
-    keywords.insert("sub", TokenKind::SubKeyword);
-    keywords.insert("typeref", TokenKind::TypeRefKeyword);
-    keywords.insert("trait", TokenKind::TraitKeyword);
-    keywords.insert("this", TokenKind::ThisKeyword);
-    keywords.insert("self", TokenKind::SelfKeyword);
-    keywords.insert("super", TokenKind::SuperKeyword);
-    keywords.insert("keyof", TokenKind::KeyofKeyword);
-    keywords.insert("with", TokenKind::WithKeyword);
-    keywords.insert("implements", TokenKind::ImplementsKeyword);
-    keywords.insert("impl", TokenKind::ImplKeyword);
-    keywords.insert("satisfies", TokenKind::SatisfiesKeyword);
-    keywords.insert("flag", TokenKind::FlagKeyword);
-    keywords.insert("auto", TokenKind::AutoKeyword);
-    keywords.insert("partial", TokenKind::PartialKeyword);
-    keywords.insert("private", TokenKind::PrivateKeyword);
-    keywords.insert("public", TokenKind::PublicKeyword);
-    keywords.insert("protected", TokenKind::ProtectedKeyword);
-    keywords.insert("sealed", TokenKind::SealedKeyword);
-    keywords.insert("local", TokenKind::LocalKeyword);
-    keywords.insert("async", TokenKind::AsyncKeyword);
-
-    keywords
+fn get_keywords() -> &'static std::collections::HashMap<&'static str, TokenKind> {
+    &KEYWORDS
 }
 
 /// The Lexer for TypeSpec
@@ -552,7 +445,8 @@ pub struct Lexer<'a> {
     current_span_start: usize,
     chars_consumed: usize,
     current_token_kind: TokenKind,
-    keywords: std::collections::HashMap<&'static str, TokenKind>,
+    current_token_flags: TokenFlags,
+    keywords: &'static std::collections::HashMap<&'static str, TokenKind>,
 }
 
 impl<'a> Lexer<'a> {
@@ -573,6 +467,7 @@ impl<'a> Lexer<'a> {
             current_span_start: 0,
             chars_consumed: 0,
             current_token_kind: TokenKind::None,
+            current_token_flags: TokenFlags::NONE,
             keywords: get_keywords(),
         }
     }
@@ -580,6 +475,16 @@ impl<'a> Lexer<'a> {
     /// Get the current position in the source
     pub fn position(&self) -> Position {
         self.position
+    }
+
+    /// Get the current byte offset in the source
+    pub fn offset(&self) -> usize {
+        self.chars_consumed
+    }
+
+    /// Get the byte offset of the current token's start
+    pub fn token_start_offset(&self) -> usize {
+        self.current_span_start
     }
 
     /// Get the current token
@@ -598,12 +503,181 @@ impl<'a> Lexer<'a> {
     pub fn token_value(&self) -> String {
         let text = self.token_text();
         match self.current_token_kind {
-            TokenKind::StringLiteral
-            | TokenKind::StringTemplateHead
-            | TokenKind::StringTemplateMiddle
-            | TokenKind::StringTemplateTail => self.unescape_string(text),
+            TokenKind::StringLiteral => self.unescape_string(text),
+            TokenKind::StringTemplateHead => {
+                // token_text is like "Start ${ — strip opening quote and trailing ${
+                // First strip opening quote
+                let s = self.strip_opening_quote(text);
+                // Then strip trailing ${
+                if s.ends_with("${") {
+                    s[..s.len() - 2].to_string()
+                } else {
+                    s
+                }
+            }
+            TokenKind::StringTemplateMiddle => {
+                // token_text is like }mid${ — strip leading } and trailing ${
+                let mut s = text.to_string();
+                if s.starts_with('}') {
+                    s = s[1..].to_string();
+                }
+                // Strip opening quote (from re_scan_string_template for triple-quoted)
+                if s.starts_with('"') {
+                    s = s[1..].to_string();
+                    if s.starts_with('"') {
+                        s = s[1..].to_string();
+                    }
+                }
+                if s.ends_with("${") {
+                    s = s[..s.len() - 2].to_string();
+                }
+                s
+            }
+            TokenKind::StringTemplateTail => {
+                // token_text is like } tail" or just "" for empty tail
+                let mut s = text.to_string();
+                if s.starts_with('}') {
+                    s = s[1..].to_string();
+                }
+                // Strip opening quote (from re_scan_string_template)
+                if s.starts_with('"') {
+                    s = s[1..].to_string();
+                }
+                // Strip closing quote
+                if s.ends_with('"') {
+                    s.pop();
+                }
+                // Handle triple-quoted
+                if s.ends_with("\"\"") {
+                    s.pop();
+                    s.pop();
+                }
+                s
+            }
             TokenKind::Identifier => text.to_string(),
             _ => text.to_string(),
+        }
+    }
+
+    /// Strip opening quote(s) from a string literal
+    fn strip_opening_quote(&self, text: &str) -> String {
+        let mut chars = text.chars().peekable();
+        if chars.peek() == Some(&'"') {
+            chars.next();
+            if chars.peek() == Some(&'"') {
+                chars.next();
+                if chars.peek() == Some(&'"') {
+                    chars.next();
+                }
+            }
+        }
+        chars.collect()
+    }
+
+    /// Re-scan after `}` in a string template to get the next middle/tail token.
+    /// This is called when the parser encounters a `}` inside a string template
+    /// expression like `$"hello {name} world"`.
+    pub fn re_scan_string_template(&mut self, _flags: TokenFlags) -> TokenKind {
+        self.token_start = self.position;
+        self.current_span_start = self.chars_consumed;
+        self.current_token_flags = TokenFlags::NONE;
+
+        // Check for triple-quoted template
+        // Look ahead for """ to determine if this is a tail or middle
+        let is_triple = if self.chars.peek() == Some(&'"') {
+            let mut lookahead = self.chars.clone();
+            lookahead.next();
+            if lookahead.peek() == Some(&'"') {
+                lookahead.next();
+                lookahead.peek() == Some(&'"')
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if is_triple {
+            // Consume the opening """
+            self.chars.next();
+            self.chars_consumed += 1;
+            self.position.column += 1;
+            self.chars.next();
+            self.chars_consumed += 1;
+            self.position.column += 1;
+            self.chars.next();
+            self.chars_consumed += 1;
+            self.position.column += 1;
+            self.current_token_flags = TokenFlags::TRIPLE_QUOTED;
+        }
+        // For single-quoted templates, do NOT consume the closing `"` here.
+        // The `"` after `}` is the closing quote, not an opening quote.
+        // It will be handled correctly in the scan loop below.
+
+        // Scan the template content
+        loop {
+            if self.eof() {
+                return self.finish_token(TokenKind::StringTemplateTail);
+            }
+
+            let ch = self.chars.next().expect("checked eof above");
+            self.chars_consumed += ch.len_utf8();
+
+            match ch {
+                '\\' => {
+                    if let Some(esc_ch) = self.chars.next() {
+                        self.chars_consumed += esc_ch.len_utf8();
+                        self.position.column += 1;
+                    }
+                    self.current_token_flags.insert(TokenFlags::ESCAPED);
+                }
+                '"' => {
+                    if is_triple {
+                        let mut lookahead = self.chars.clone();
+                        if lookahead.peek() == Some(&'"') {
+                            lookahead.next();
+                            if lookahead.peek() == Some(&'"') {
+                                lookahead.next();
+                                self.chars = lookahead;
+                                self.chars_consumed += 2;
+                                self.position.column += 2;
+                                return self.finish_token(TokenKind::StringTemplateTail);
+                            }
+                        }
+                    } else {
+                        return self.finish_token(TokenKind::StringTemplateTail);
+                    }
+                }
+                '$' => {
+                    if let Some(&'{') = self.chars.peek() {
+                        self.chars.next();
+                        self.chars_consumed += 1;
+                        self.position.column += 1;
+                        return self.finish_token(TokenKind::StringTemplateMiddle);
+                    }
+                }
+                '\n' | '\r' => {
+                    if !is_triple {
+                        self.position.line += 1;
+                        self.position.column = 0;
+                        return self.finish_token(TokenKind::StringTemplateTail);
+                    }
+                    if ch == '\r' {
+                        if let Some(&'\n') = self.chars.peek() {
+                            self.chars.next();
+                            self.chars_consumed += 1;
+                        }
+                        self.position.line += 1;
+                        self.position.column = 0;
+                    } else {
+                        self.position.line += 1;
+                        self.position.column = 0;
+                    }
+                }
+                _ => {
+                    self.position.column += 1;
+                }
+            }
         }
     }
 
@@ -616,32 +690,33 @@ impl<'a> Lexer<'a> {
     pub fn scan(&mut self) -> TokenKind {
         self.token_start = self.position;
         self.current_span_start = self.chars_consumed;
+        self.current_token_flags = TokenFlags::NONE;
 
         if self.eof() {
             return self.finish_token(TokenKind::EndOfFile);
         }
 
-        let ch = self.chars.next().unwrap();
+        let ch = self.chars.next().expect("checked eof above");
         self.chars_consumed += ch.len_utf8();
 
         match ch {
             '\n' | '\r' => {
-                if ch == '\r' {
-                    if let Some(&'\n') = self.chars.peek() {
-                        self.chars.next();
-                        self.chars_consumed += 1;
-                    }
+                if ch == '\r'
+                    && let Some(&'\n') = self.chars.peek()
+                {
+                    self.chars.next();
+                    self.chars_consumed += 1;
                 }
                 self.position.line += 1;
                 self.position.column = 0;
                 // Skip newline and continue to next token
-                return self.scan();
+                self.scan()
             }
 
             ' ' | '\t' | '\u{0b}' | '\u{0c}' => {
                 // Skip whitespace and continue to next token
                 self.skip_trivia();
-                return self.scan();
+                self.scan()
             }
 
             '(' => self.finish_token(TokenKind::OpenParen),
@@ -674,21 +749,19 @@ impl<'a> Lexer<'a> {
                 }
             }
 
-            '#' => {
-                match self.chars.peek().copied() {
-                    Some('{') => {
-                        self.chars.next();
-                        self.chars_consumed += 1;
-                        self.finish_token(TokenKind::HashBrace)
-                    }
-                    Some('[') => {
-                        self.chars.next();
-                        self.chars_consumed += 1;
-                        self.finish_token(TokenKind::HashBracket)
-                    }
-                    _ => self.finish_token(TokenKind::Hash),
+            '#' => match self.chars.peek().copied() {
+                Some('{') => {
+                    self.chars.next();
+                    self.chars_consumed += 1;
+                    self.finish_token(TokenKind::HashBrace)
                 }
-            }
+                Some('[') => {
+                    self.chars.next();
+                    self.chars_consumed += 1;
+                    self.finish_token(TokenKind::HashBracket)
+                }
+                _ => self.finish_token(TokenKind::Hash),
+            },
 
             '+' => {
                 if self.chars.peek().map(|c| is_digit(*c)).unwrap_or(false) {
@@ -720,39 +793,32 @@ impl<'a> Lexer<'a> {
             }
 
             '.' => {
-                // Check for ellipsis (...)
-                // We've already consumed the first '.' via chars.next()
-                // Now check if the next two characters are also '.'
-                if let Some(&'.') = self.chars.peek() {
+                // Check for ellipsis (...) — must see two more dots before consuming them.
+                // If we only see two dots (..), don't consume the second one; just return Dot
+                // so the next scan() call will see the remaining '.'.
+                let mut lookahead = self.chars.clone();
+                if lookahead.next() == Some('.') && lookahead.next() == Some('.') {
+                    // Confirmed three dots total: consume the extra two
                     self.chars.next();
                     self.chars_consumed += 1;
-                    if let Some(&'.') = self.chars.peek() {
-                        self.chars.next();
-                        self.chars_consumed += 1;
-                        // This is an ellipsis
-                        return self.finish_token(TokenKind::Ellipsis);
-                    }
-                    // Not ellipsis, we consumed one extra '.'
-                    // Fall through to return Dot
+                    self.chars.next();
+                    self.chars_consumed += 1;
+                    return self.finish_token(TokenKind::Ellipsis);
                 }
                 self.finish_token(TokenKind::Dot)
             }
 
-            '/' => {
-                match self.chars.peek().copied() {
-                    Some('/') => self.scan_single_line_comment(),
-                    Some('*') => self.scan_multi_line_comment(),
-                    _ => self.finish_token(TokenKind::ForwardSlash),
-                }
-            }
+            '/' => match self.chars.peek().copied() {
+                Some('/') => self.scan_single_line_comment(),
+                Some('*') => self.scan_multi_line_comment(),
+                _ => self.finish_token(TokenKind::ForwardSlash),
+            },
 
-            '0' => {
-                match self.chars.peek().copied() {
-                    Some('x') | Some('X') => self.scan_hex_number(),
-                    Some('b') | Some('B') => self.scan_binary_number(),
-                    _ => self.scan_number(),
-                }
-            }
+            '0' => match self.chars.peek().copied() {
+                Some('x') | Some('X') => self.scan_hex_number(),
+                Some('b') | Some('B') => self.scan_binary_number(),
+                _ => self.scan_number(),
+            },
 
             '1'..='9' => self.scan_number(),
 
@@ -822,6 +888,7 @@ impl<'a> Lexer<'a> {
                         lookahead.next();
                         self.chars = lookahead;
                         self.chars_consumed += 2;
+                        self.current_token_flags = TokenFlags::TRIPLE_QUOTED;
                         self.scan_string(TokenFlags::TRIPLE_QUOTED)
                     } else {
                         self.finish_token(TokenKind::StringLiteral)
@@ -844,89 +911,14 @@ impl<'a> Lexer<'a> {
             '`' => self.scan_backticked_identifier(),
 
             _ => {
-                let cc = char_code(ch);
                 if is_lowercase_ascii_letter(ch) {
                     self.scan_identifier_or_keyword()
                 } else if is_ascii_identifier_start(ch) {
                     self.scan_identifier()
-                } else if cc <= 0x7f {
+                } else if (ch as u32) <= charcode::CharCode::MaxAscii as u32 {
                     self.scan_invalid_character()
                 } else {
                     self.scan_non_ascii_token()
-                }
-            }
-        }
-    }
-
-    /// Scan doc comment content
-    #[allow(dead_code)]
-    pub fn scan_doc(&mut self) -> TokenKind {
-        self.token_start = self.position;
-        self.current_span_start = self.chars_consumed;
-
-        if self.eof() {
-            return self.finish_token(TokenKind::EndOfFile);
-        }
-
-        let ch = self.chars.next().unwrap();
-        self.chars_consumed += ch.len_utf8();
-
-        match ch {
-            '\n' | '\r' => {
-                if ch == '\r' {
-                    if let Some(&'\n') = self.chars.peek() {
-                        self.chars.next();
-                        self.chars_consumed += 1;
-                    }
-                }
-                self.position.line += 1;
-                self.position.column = 0;
-                self.finish_token(TokenKind::NewLine)
-            }
-
-            '\\' => {
-                if let Some(&'@') = self.chars.peek() {
-                    self.chars.next();
-                    self.chars_consumed += 1;
-                    self.finish_token(TokenKind::DocText)
-                } else {
-                    self.finish_token(TokenKind::DocText)
-                }
-            }
-
-            ' ' | '\t' | '\u{0b}' | '\u{0c}' => self.scan_whitespace(),
-
-            '}' => self.finish_token(TokenKind::CloseBrace),
-            '@' => self.finish_token(TokenKind::At),
-            '*' => self.finish_token(TokenKind::Star),
-            '`' => {
-                let mut lookahead = self.chars.clone();
-                if lookahead.peek() == Some(&'`') {
-                    lookahead.next();
-                    if lookahead.peek() == Some(&'`') {
-                        self.chars = lookahead;
-                        self.chars_consumed += 2;
-                        return self.finish_token(TokenKind::DocCodeFenceDelimiter);
-                    }
-                }
-                self.scan_doc_code_span()
-            }
-
-            '<' | '>' | '=' | '|' => {
-                if self.at_conflict_marker() {
-                    self.scan_conflict_marker()
-                } else {
-                    self.finish_token(TokenKind::DocText)
-                }
-            }
-
-            '-' => self.finish_token(TokenKind::Hyphen),
-
-            _ => {
-                if is_ascii_identifier_start(ch) {
-                    self.scan_identifier()
-                } else {
-                    self.finish_token(TokenKind::DocText)
                 }
             }
         }
@@ -1022,6 +1014,12 @@ impl<'a> Lexer<'a> {
         self.chars.next(); // consume *
         self.chars_consumed += 1;
 
+        // Check for doc comment: /**
+        if let Some(&'*') = self.chars.peek() {
+            // This is a doc comment /** ... */
+            self.current_token_flags.insert(TokenFlags::DOC_COMMENT);
+        }
+
         while let Some(ch) = self.chars.next() {
             self.chars_consumed += ch.len_utf8();
             if ch == '*' {
@@ -1056,6 +1054,7 @@ impl<'a> Lexer<'a> {
         if let Some(&'.') = self.chars.peek() {
             self.chars.next();
             self.chars_consumed += 1;
+            self.position.column += 1;
             self.scan_required_digits();
         }
 
@@ -1063,9 +1062,11 @@ impl<'a> Lexer<'a> {
         if let Some(&'e') | Some(&'E') = self.chars.peek() {
             self.chars.next();
             self.chars_consumed += 1;
+            self.position.column += 1;
             if let Some(&'+') | Some(&'-') = self.chars.peek() {
                 self.chars.next();
                 self.chars_consumed += 1;
+                self.position.column += 1;
             }
             self.scan_required_digits();
         }
@@ -1074,43 +1075,46 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_required_digits(&mut self) {
-        if let Some(&ch) = self.chars.peek() {
-            if is_digit(ch) {
-                self.chars.next();
-                self.chars_consumed += ch.len_utf8();
-                while let Some(&ch) = self.chars.peek() {
-                    if is_digit(ch) {
-                        self.chars.next();
-                        self.chars_consumed += ch.len_utf8();
-                    } else {
-                        break;
-                    }
+        if let Some(&ch) = self.chars.peek()
+            && is_digit(ch)
+        {
+            self.chars.next();
+            self.chars_consumed += ch.len_utf8();
+            self.position.column += 1;
+            while let Some(&ch) = self.chars.peek() {
+                if is_digit(ch) {
+                    self.chars.next();
+                    self.chars_consumed += ch.len_utf8();
+                    self.position.column += 1;
+                } else {
+                    break;
                 }
             }
         }
     }
 
     fn scan_signed_number(&mut self) -> TokenKind {
-        self.chars.next(); // consume +/-
-        self.chars_consumed += 1;
+        // +/- already consumed by scan()
         self.scan_number()
     }
 
     fn scan_hex_number(&mut self) -> TokenKind {
         self.chars.next(); // consume x/X
         self.chars_consumed += 1;
+        self.position.column += 1;
 
-        if let Some(&ch) = self.chars.peek() {
-            if !is_hex_digit(ch) {
-                // Error: hex digit expected
-                return self.finish_token(TokenKind::NumericLiteral);
-            }
+        if let Some(&ch) = self.chars.peek()
+            && !is_hex_digit(ch)
+        {
+            // Error: hex digit expected
+            return self.finish_token(TokenKind::NumericLiteral);
         }
 
         while let Some(&ch) = self.chars.peek() {
             if is_hex_digit(ch) {
                 self.chars.next();
                 self.chars_consumed += ch.len_utf8();
+                self.position.column += 1;
             } else {
                 break;
             }
@@ -1122,18 +1126,20 @@ impl<'a> Lexer<'a> {
     fn scan_binary_number(&mut self) -> TokenKind {
         self.chars.next(); // consume b/B
         self.chars_consumed += 1;
+        self.position.column += 1;
 
-        if let Some(&ch) = self.chars.peek() {
-            if !is_binary_digit(ch) {
-                // Error: binary digit expected
-                return self.finish_token(TokenKind::NumericLiteral);
-            }
+        if let Some(&ch) = self.chars.peek()
+            && !is_binary_digit(ch)
+        {
+            // Error: binary digit expected
+            return self.finish_token(TokenKind::NumericLiteral);
         }
 
         while let Some(&ch) = self.chars.peek() {
             if is_binary_digit(ch) {
                 self.chars.next();
                 self.chars_consumed += ch.len_utf8();
+                self.position.column += 1;
             } else {
                 break;
             }
@@ -1144,18 +1150,13 @@ impl<'a> Lexer<'a> {
 
     fn scan_string(&mut self, flags: TokenFlags) -> TokenKind {
         let is_triple = flags.contains(TokenFlags::TRIPLE_QUOTED);
-        let template_part = if is_triple {
-            TokenKind::StringTemplateHead
-        } else {
-            TokenKind::StringLiteral
-        };
 
         loop {
             if self.eof() {
                 return self.finish_token(TokenKind::StringLiteral);
             }
 
-            let ch = self.chars.next().unwrap();
+            let ch = self.chars.next().expect("checked eof above");
             self.chars_consumed += ch.len_utf8();
 
             match ch {
@@ -1163,6 +1164,7 @@ impl<'a> Lexer<'a> {
                     if let Some(esc_ch) = self.chars.next() {
                         self.chars_consumed += esc_ch.len_utf8();
                     }
+                    self.current_token_flags.insert(TokenFlags::ESCAPED);
                 }
                 '"' => {
                     if is_triple {
@@ -1184,7 +1186,7 @@ impl<'a> Lexer<'a> {
                     if let Some(&'{') = self.chars.peek() {
                         self.chars.next();
                         self.chars_consumed += 1;
-                        return template_part;
+                        return self.finish_token(TokenKind::StringTemplateHead);
                     }
                 }
                 '\n' | '\r' => {
@@ -1193,11 +1195,11 @@ impl<'a> Lexer<'a> {
                         self.position.column = 0;
                         return self.finish_token(TokenKind::StringLiteral);
                     }
-                    if ch == '\r' {
-                        if let Some(&'\n') = self.chars.peek() {
-                            self.chars.next();
-                            self.chars_consumed += 1;
-                        }
+                    if ch == '\r'
+                        && let Some(&'\n') = self.chars.peek()
+                    {
+                        self.chars.next();
+                        self.chars_consumed += 1;
                     }
                     self.position.line += 1;
                     self.position.column = 0;
@@ -1213,7 +1215,7 @@ impl<'a> Lexer<'a> {
                 return self.finish_token(TokenKind::Identifier);
             }
 
-            let ch = self.chars.next().unwrap();
+            let ch = self.chars.next().expect("checked eof above");
             self.chars_consumed += ch.len_utf8();
 
             match ch {
@@ -1221,8 +1223,8 @@ impl<'a> Lexer<'a> {
                     return self.finish_token(TokenKind::Identifier);
                 }
                 '\\' => {
-                    if let Some(_) = self.chars.next() {
-                        self.chars_consumed += 1;
+                    if let Some(esc_ch) = self.chars.next() {
+                        self.chars_consumed += esc_ch.len_utf8();
                     }
                 }
                 '\n' | '\r' => {
@@ -1265,10 +1267,10 @@ impl<'a> Lexer<'a> {
         let text = self.token_text();
 
         // Check for keyword
-        if count >= 2 && count <= 12 {
-            if let Some(keyword) = self.keywords.get(text) {
-                return self.finish_token(keyword.clone());
-            }
+        if (2..=12).contains(&count)
+            && let Some(keyword) = self.keywords.get(text)
+        {
+            return self.finish_token(*keyword);
         }
 
         self.finish_token(TokenKind::Identifier)
@@ -1293,9 +1295,7 @@ impl<'a> Lexer<'a> {
         }
 
         // Must be at start of line
-        if self.source.as_bytes()[pos - 1] == b'\n'
-            || self.source.as_bytes()[pos - 1] == b'\r'
-        {
+        if self.source.as_bytes()[pos - 1] == b'\n' || self.source.as_bytes()[pos - 1] == b'\r' {
             // Check for 7 repeated characters
             let marker_len = 7;
             if pos + marker_len > self.source.len() {
@@ -1310,19 +1310,22 @@ impl<'a> Lexer<'a> {
             }
 
             // Valid conflict markers: <<<<<<< or >>>>>>> followed by space
-            // or ======= alone
-            matches!(marker_char, b'<' | b'>' | b'=')
+            // or ======= alone, or ||||||| followed by space
+            matches!(marker_char, b'<' | b'>' | b'=' | b'|')
         } else {
             false
         }
     }
 
     fn scan_conflict_marker(&mut self) -> TokenKind {
-        // Consume 7 same characters
-        let marker_char = self.chars.next().unwrap();
-        for _ in 1..7 {
-            self.chars.next();
-            self.chars_consumed += 1;
+        // The first character of the 7-char marker was already consumed by scan().
+        // Consume the remaining 6 same characters.
+        let marker_char = self.chars.next().expect("conflict marker has 7 chars");
+        self.chars_consumed += marker_char.len_utf8();
+        for _ in 0..5 {
+            if let Some(ch) = self.chars.next() {
+                self.chars_consumed += ch.len_utf8();
+            }
         }
 
         if marker_char == '<' || marker_char == '>' {
@@ -1330,11 +1333,11 @@ impl<'a> Lexer<'a> {
             while let Some(ch) = self.chars.next() {
                 self.chars_consumed += ch.len_utf8();
                 if is_line_break(ch) {
-                    if ch == '\r' {
-                        if let Some(&'\n') = self.chars.peek() {
-                            self.chars.next();
-                            self.chars_consumed += 1;
-                        }
+                    if ch == '\r'
+                        && let Some(&'\n') = self.chars.peek()
+                    {
+                        let crlf = self.chars.next().unwrap();
+                        self.chars_consumed += crlf.len_utf8();
                     }
                     self.position.line += 1;
                     self.position.column = 0;
@@ -1346,11 +1349,11 @@ impl<'a> Lexer<'a> {
             while let Some(ch) = self.chars.next() {
                 self.chars_consumed += ch.len_utf8();
                 if is_line_break(ch) {
-                    if ch == '\r' {
-                        if let Some(&'\n') = self.chars.peek() {
-                            self.chars.next();
-                            self.chars_consumed += 1;
-                        }
+                    if ch == '\r'
+                        && let Some(&'\n') = self.chars.peek()
+                    {
+                        let crlf = self.chars.next().unwrap();
+                        self.chars_consumed += crlf.len_utf8();
                     }
                     self.position.line += 1;
                     self.position.column = 0;
@@ -1362,10 +1365,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_non_ascii_token(&mut self) -> TokenKind {
-        if let Some(&ch) = self.chars.peek() {
-            if is_non_ascii_whitespace_single_line(ch) {
-                return self.scan_whitespace();
-            }
+        if let Some(&ch) = self.chars.peek()
+            && is_non_ascii_whitespace_single_line(ch)
+        {
+            return self.scan_whitespace();
         }
         self.scan_identifier()
     }
@@ -1374,22 +1377,9 @@ impl<'a> Lexer<'a> {
         self.finish_token(TokenKind::Invalid)
     }
 
-    fn scan_doc_code_span(&mut self) -> TokenKind {
-        // Consume first backtick already
-        while let Some(ch) = self.chars.next() {
-            self.chars_consumed += ch.len_utf8();
-            if ch == '`' {
-                return self.finish_token(TokenKind::DocCodeSpan);
-            }
-            if is_line_break(ch) {
-                return self.finish_token(TokenKind::DocCodeSpan);
-            }
-        }
-        self.finish_token(TokenKind::DocCodeSpan)
-    }
-
     fn finish_token(&mut self, kind: TokenKind) -> TokenKind {
-        self.current_token_kind = kind.clone();
+        self.current_token_kind = kind;
+        // Note: token_flags should be set before calling finish_token if needed
         kind
     }
 
@@ -1410,7 +1400,10 @@ impl<'a> Lexer<'a> {
 
         let mut chars_vec: Vec<char> = chars.collect();
         chars_vec.pop(); // Remove trailing quote(s)
-        if chars_vec.len() > 1 && chars_vec[chars_vec.len() - 1] == '"' && chars_vec[chars_vec.len() - 2] == '"' {
+        if chars_vec.len() > 1
+            && chars_vec[chars_vec.len() - 1] == '"'
+            && chars_vec[chars_vec.len() - 2] == '"'
+        {
             chars_vec.pop();
             chars_vec.pop();
         } else if !chars_vec.is_empty() && chars_vec[chars_vec.len() - 1] == '"' {
@@ -1444,17 +1437,6 @@ impl<'a> Lexer<'a> {
 
         result
     }
-
-    /// Get the full token with all information
-    #[allow(dead_code)]
-    pub fn get_token(&self) -> Token {
-        let text = self.token_text().to_string();
-        Token::new(
-            self.current_token_kind.clone(),
-            Span::new(self.token_start, self.position),
-            text,
-        )
-    }
 }
 
 #[cfg(test)]
@@ -1470,10 +1452,35 @@ mod tests {
     #[test]
     fn test_keywords() {
         let keywords = vec![
-            "model", "enum", "interface", "union", "namespace", "using", "import", "scalar",
-            "op", "alias", "is", "extends", "if", "else", "projection", "fn", "valueof",
-            "typeof", "const", "init", "dec", "true", "false", "return", "void", "never",
-            "unknown", "extern", "internal",
+            "model",
+            "enum",
+            "interface",
+            "union",
+            "namespace",
+            "using",
+            "import",
+            "scalar",
+            "op",
+            "alias",
+            "is",
+            "extends",
+            "if",
+            "else",
+            "projection",
+            "fn",
+            "valueof",
+            "typeof",
+            "const",
+            "init",
+            "dec",
+            "true",
+            "false",
+            "return",
+            "void",
+            "never",
+            "unknown",
+            "extern",
+            "internal",
         ];
 
         for kw in keywords {
@@ -1485,11 +1492,7 @@ mod tests {
                 kw,
                 kind
             );
-            assert!(
-                lexer.eof(),
-                "Expected EOF after keyword '{}'",
-                kw
-            );
+            assert!(lexer.eof(), "Expected EOF after keyword '{}'", kw);
         }
     }
 
@@ -1506,13 +1509,11 @@ mod tests {
         let source = "model Car { make: string }";
         let mut lexer = Lexer::new(source);
 
-        // Print all tokens
         let mut tokens: Vec<(TokenKind, String)> = Vec::new();
         loop {
             let token = lexer.scan();
             let text = lexer.token_text().to_string();
-            println!("Token: {:?}, text: {:?}", token, text);
-            tokens.push((token.clone(), text));
+            tokens.push((token, text));
             if token == TokenKind::EndOfFile {
                 break;
             }
@@ -1523,13 +1524,22 @@ mod tests {
         assert_eq!(tokens[0].1, "model");
 
         // Second token should be identifier (Car)
-        assert_eq!(tokens[1].0, TokenKind::Identifier, "Second token should be Identifier");
+        assert_eq!(
+            tokens[1].0,
+            TokenKind::Identifier,
+            "Second token should be Identifier"
+        );
         assert_eq!(tokens[1].1, "Car");
 
         // Find the 'string' token - it should be Identifier
         let string_tokens: Vec<_> = tokens.iter().filter(|t| t.1 == "string").collect();
         assert!(!string_tokens.is_empty(), "Should have 'string' token");
-        assert_eq!(string_tokens[0].0, TokenKind::Identifier, "string should be Identifier, got {:?}", string_tokens[0].0);
+        assert_eq!(
+            string_tokens[0].0,
+            TokenKind::Identifier,
+            "string should be Identifier, got {:?}",
+            string_tokens[0].0
+        );
     }
 
     #[test]
@@ -1537,11 +1547,10 @@ mod tests {
         let source = "...BaseCar";
         let mut lexer = Lexer::new(source);
 
-        // Print all tokens
         loop {
             let token = lexer.scan();
             let text = lexer.token_text().to_string();
-            println!("Token: {:?}, text: {:?}", token, text);
+            let _ = (token, text);
             if token == TokenKind::EndOfFile {
                 break;
             }
@@ -1550,7 +1559,12 @@ mod tests {
         // Verify first token is Ellipsis
         let mut lexer2 = Lexer::new("...BaseCar");
         let first = lexer2.scan();
-        assert_eq!(first, TokenKind::Ellipsis, "First token should be Ellipsis, got {:?}", first);
+        assert_eq!(
+            first,
+            TokenKind::Ellipsis,
+            "First token should be Ellipsis, got {:?}",
+            first
+        );
     }
 
     #[test]

@@ -1,1 +1,26 @@
+# Build
 /target
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+
+# Claude Code local data
+.claude/
+
+# Playwright MCP sessions
+.playwright-mcp/
+
+# Backup files
+*.stub-backup

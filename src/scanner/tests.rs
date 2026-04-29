@@ -874,4 +874,83 @@ mod tests {
         let kinds = token_kinds("foo123");
         assert_eq!(kinds[0], TokenKind::Identifier);
     }
+
+    // ==================== TokenKind Utility Method Tests ====================
+
+    #[test]
+    fn test_is_comment() {
+        assert!(TokenKind::SingleLineComment.is_comment());
+        assert!(TokenKind::MultiLineComment.is_comment());
+        assert!(!TokenKind::NewLine.is_comment());
+        assert!(!TokenKind::Identifier.is_comment());
+        assert!(!TokenKind::ModelKeyword.is_comment());
+    }
+
+    #[test]
+    fn test_is_modifier() {
+        assert!(TokenKind::ExternKeyword.is_modifier());
+        assert!(TokenKind::InternalKeyword.is_modifier());
+        assert!(!TokenKind::ModelKeyword.is_modifier());
+        assert!(!TokenKind::ImportKeyword.is_modifier());
+        assert!(!TokenKind::Identifier.is_modifier());
+    }
+
+    #[test]
+    fn test_is_statement_keyword() {
+        assert!(TokenKind::ImportKeyword.is_statement_keyword());
+        assert!(TokenKind::ModelKeyword.is_statement_keyword());
+        assert!(TokenKind::ScalarKeyword.is_statement_keyword());
+        assert!(TokenKind::NamespaceKeyword.is_statement_keyword());
+        assert!(TokenKind::UsingKeyword.is_statement_keyword());
+        assert!(TokenKind::OpKeyword.is_statement_keyword());
+        assert!(TokenKind::EnumKeyword.is_statement_keyword());
+        assert!(TokenKind::AliasKeyword.is_statement_keyword());
+        assert!(TokenKind::InterfaceKeyword.is_statement_keyword());
+        assert!(TokenKind::UnionKeyword.is_statement_keyword());
+        assert!(TokenKind::DecKeyword.is_statement_keyword());
+        assert!(TokenKind::ConstKeyword.is_statement_keyword());
+        // Not statement keywords
+        assert!(!TokenKind::ExtendsKeyword.is_statement_keyword());
+        assert!(!TokenKind::VoidKeyword.is_statement_keyword());
+        assert!(!TokenKind::ExternKeyword.is_statement_keyword());
+    }
+
+    #[test]
+    fn test_is_reserved_keyword() {
+        assert!(TokenKind::SealedKeyword.is_reserved_keyword());
+        assert!(TokenKind::LocalKeyword.is_reserved_keyword());
+        assert!(TokenKind::AsyncKeyword.is_reserved_keyword());
+        assert!(TokenKind::MacroKeyword.is_reserved_keyword());
+        assert!(TokenKind::PackageKeyword.is_reserved_keyword());
+        assert!(TokenKind::DeclareKeyword.is_reserved_keyword());
+        assert!(TokenKind::ThisKeyword.is_reserved_keyword());
+        assert!(TokenKind::SelfKeyword.is_reserved_keyword());
+        assert!(TokenKind::SuperKeyword.is_reserved_keyword());
+        assert!(TokenKind::ImplKeyword.is_reserved_keyword());
+        assert!(TokenKind::PrivateKeyword.is_reserved_keyword());
+        assert!(TokenKind::PublicKeyword.is_reserved_keyword());
+        // Not reserved keywords
+        assert!(!TokenKind::ModelKeyword.is_reserved_keyword());
+        assert!(!TokenKind::ExternKeyword.is_reserved_keyword());
+        assert!(!TokenKind::Identifier.is_reserved_keyword());
+    }
+
+    #[test]
+    fn test_is_trivia_includes_comments_and_whitespace() {
+        assert!(TokenKind::SingleLineComment.is_trivia());
+        assert!(TokenKind::MultiLineComment.is_trivia());
+        assert!(TokenKind::NewLine.is_trivia());
+        assert!(TokenKind::Whitespace.is_trivia());
+        assert!(!TokenKind::Identifier.is_trivia());
+    }
+
+    #[test]
+    fn test_is_keyword_excludes_punctuation_and_trivia() {
+        assert!(TokenKind::ModelKeyword.is_keyword());
+        assert!(TokenKind::VoidKeyword.is_keyword());
+        assert!(!TokenKind::OpenBrace.is_keyword());
+        assert!(!TokenKind::Identifier.is_keyword());
+        assert!(!TokenKind::NumericLiteral.is_keyword());
+        assert!(!TokenKind::SingleLineComment.is_keyword());
+    }
 }

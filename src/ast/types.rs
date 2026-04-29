@@ -9,7 +9,6 @@ use super::token::Span;
 pub enum SyntaxKind {
     // File structure
     TypeSpecScript,
-    JsSourceFile,
     ImportStatement,
 
     // Identifiers and expressions
@@ -104,49 +103,14 @@ pub enum SyntaxKind {
     // Doc
     Doc,
     DocText,
-    DocParamTag,
-    DocPropTag,
-    DocReturnsTag,
-    DocErrorsTag,
-    DocTemplateTag,
-    DocUnknownTag,
 
     // Misc
     EmptyStatement,
     InvalidStatement,
-    JsNamespaceDeclaration,
 
     // Modifier
     LineComment,
     BlockComment,
-}
-
-/// Node flags for tracking parse state
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NodeFlags {
-    None = 0,
-    DescendantErrorsExamined = 1 << 0,
-    ThisNodeHasError = 1 << 1,
-    DescendantHasError = 1 << 2,
-    Synthetic = 1 << 3,
-}
-
-/// Modifier flags
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModifierFlags {
-    None = 0,
-    Extern = 1 << 1,
-    Internal = 1 << 2,
-}
-
-/// Base interface for all AST nodes
-#[derive(Debug, Clone)]
-pub struct BaseNode {
-    pub id: NodeId,
-    pub kind: SyntaxKind,
-    pub flags: NodeFlags,
-    pub span: Span,
-    pub parent: Option<NodeId>,
 }
 
 // ============================================================================
@@ -166,14 +130,14 @@ pub struct Identifier {
 pub struct MemberExpression {
     pub id: NodeId,
     pub span: Span,
-    pub object: NodeId,       // Identifier or MemberExpression
-    pub property: NodeId,     // Identifier
+    pub object: NodeId,   // Identifier or MemberExpression
+    pub property: NodeId, // Identifier
     pub selector: MemberSelector,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemberSelector {
-    Dot,       // .
+    Dot,         // .
     DoubleColon, // ::
 }
 
@@ -239,7 +203,7 @@ pub struct IntersectionExpression {
 pub struct TypeReference {
     pub id: NodeId,
     pub span: Span,
-    pub name: NodeId,         // Identifier or MemberExpression
+    pub name: NodeId, // Identifier or MemberExpression
     pub arguments: Vec<NodeId>,
 }
 
@@ -248,7 +212,7 @@ pub struct TypeReference {
 pub struct CallExpression {
     pub id: NodeId,
     pub span: Span,
-    pub target: NodeId,       // Identifier or MemberExpression
+    pub target: NodeId, // Identifier or MemberExpression
     pub arguments: Vec<NodeId>,
 }
 
@@ -306,7 +270,7 @@ pub struct StringTemplateSpan {
     pub id: NodeId,
     pub span: Span,
     pub expression: NodeId,
-    pub literal: NodeId,  // StringTemplateMiddle or StringTemplateTail
+    pub literal: NodeId, // StringTemplateMiddle or StringTemplateTail
 }
 
 // ============================================================================
@@ -387,10 +351,12 @@ pub struct ModelDeclaration {
     pub span: Span,
     pub name: NodeId,
     pub properties: Vec<NodeId>,
-    pub extends: Option<NodeId>,     // Expression for extends clause
-    pub is: Option<NodeId>,           // Expression for `model is` clause
+    pub extends: Option<NodeId>, // Expression for extends clause
+    pub is: Option<NodeId>,      // Expression for `model is` clause
     pub decorators: Vec<NodeId>,
+    pub template_parameters: Vec<NodeId>,
     pub body_range: Span,
+    pub modifiers: Vec<NodeId>,
 }
 
 /// Model expression - inline model in type position
@@ -408,10 +374,10 @@ pub struct ModelProperty {
     pub id: NodeId,
     pub span: Span,
     pub name: NodeId,
-    pub value: NodeId,               // Type expression
+    pub value: NodeId, // Type expression
     pub decorators: Vec<NodeId>,
     pub optional: bool,
-    pub default: Option<NodeId>,      // Default value expression
+    pub default: Option<NodeId>, // Default value expression
 }
 
 /// Model spread property - `...Target`
@@ -435,7 +401,9 @@ pub struct ScalarDeclaration {
     pub extends: Option<NodeId>,
     pub decorators: Vec<NodeId>,
     pub constructors: Vec<NodeId>,
+    pub template_parameters: Vec<NodeId>,
     pub body_range: Span,
+    pub modifiers: Vec<NodeId>,
 }
 
 /// Scalar constructor - `constructor(...)`
@@ -462,6 +430,7 @@ pub struct InterfaceDeclaration {
     pub decorators: Vec<NodeId>,
     pub template_parameters: Vec<NodeId>,
     pub body_range: Span,
+    pub modifiers: Vec<NodeId>,
 }
 
 // ============================================================================
@@ -477,6 +446,7 @@ pub struct UnionDeclaration {
     pub variants: Vec<NodeId>,
     pub decorators: Vec<NodeId>,
     pub template_parameters: Vec<NodeId>,
+    pub modifiers: Vec<NodeId>,
 }
 
 /// Union variant - individual variant in a union
@@ -501,6 +471,7 @@ pub struct EnumDeclaration {
     pub name: NodeId,
     pub members: Vec<NodeId>,
     pub decorators: Vec<NodeId>,
+    pub modifiers: Vec<NodeId>,
 }
 
 /// Enum member - individual member in an enum
@@ -509,7 +480,7 @@ pub struct EnumMember {
     pub id: NodeId,
     pub span: Span,
     pub name: NodeId,
-    pub value: Option<NodeId>,         // StringLiteral or NumericLiteral
+    pub value: Option<NodeId>, // StringLiteral or NumericLiteral
     pub decorators: Vec<NodeId>,
 }
 
@@ -533,7 +504,7 @@ pub struct NamespaceDeclaration {
     pub name: NodeId,
     pub statements: Vec<NodeId>,
     pub decorators: Vec<NodeId>,
-    // Note: in TypeSpec, namespaces can be nested
+    pub modifiers: Vec<NodeId>,
 }
 
 /// Using declaration - `using Foo;`
@@ -541,7 +512,7 @@ pub struct NamespaceDeclaration {
 pub struct UsingDeclaration {
     pub id: NodeId,
     pub span: Span,
-    pub name: NodeId,      // Identifier or MemberExpression
+    pub name: NodeId, // Identifier or MemberExpression
 }
 
 // ============================================================================
@@ -554,9 +525,10 @@ pub struct OperationDeclaration {
     pub id: NodeId,
     pub span: Span,
     pub name: NodeId,
-    pub signature: NodeId,         // OperationSignatureDeclaration or OperationSignatureReference
+    pub signature: NodeId, // OperationSignatureDeclaration or OperationSignatureReference
     pub decorators: Vec<NodeId>,
     pub template_parameters: Vec<NodeId>,
+    pub modifiers: Vec<NodeId>,
 }
 
 /// Operation signature declaration
@@ -564,7 +536,7 @@ pub struct OperationDeclaration {
 pub struct OperationSignatureDeclaration {
     pub id: NodeId,
     pub span: Span,
-    pub parameters: NodeId,        // ModelExpression
+    pub parameters: NodeId, // ModelExpression
     pub return_type: NodeId,
 }
 
@@ -573,7 +545,7 @@ pub struct OperationSignatureDeclaration {
 pub struct OperationSignatureReference {
     pub id: NodeId,
     pub span: Span,
-    pub base_operation: NodeId,     // TypeReference
+    pub base_operation: NodeId, // TypeReference
 }
 
 // ============================================================================
@@ -588,6 +560,7 @@ pub struct AliasStatement {
     pub name: NodeId,
     pub value: NodeId,
     pub template_parameters: Vec<NodeId>,
+    pub modifiers: Vec<NodeId>,
 }
 
 /// Const statement - `const foo = 42;`
@@ -598,6 +571,7 @@ pub struct ConstStatement {
     pub name: NodeId,
     pub value: NodeId,
     pub type_annotation: Option<NodeId>,
+    pub modifiers: Vec<NodeId>,
 }
 
 // ============================================================================
@@ -610,8 +584,9 @@ pub struct DecoratorDeclaration {
     pub id: NodeId,
     pub span: Span,
     pub name: NodeId,
-    pub target: NodeId,            // FunctionParameter
-    pub parameters: Vec<NodeId>,   // Additional parameters
+    pub target: NodeId,          // FunctionParameter
+    pub parameters: Vec<NodeId>, // Additional parameters
+    pub modifiers: Vec<NodeId>,
 }
 
 /// Decorator expression - `@myDec(args)`
@@ -619,7 +594,7 @@ pub struct DecoratorDeclaration {
 pub struct DecoratorExpression {
     pub id: NodeId,
     pub span: Span,
-    pub target: NodeId,            // Identifier or MemberExpression
+    pub target: NodeId, // Identifier or MemberExpression
     pub arguments: Vec<NodeId>,
 }
 
@@ -628,8 +603,8 @@ pub struct DecoratorExpression {
 pub struct AugmentDecoratorStatement {
     pub id: NodeId,
     pub span: Span,
-    pub target: NodeId,            // Identifier or MemberExpression
-    pub target_type: NodeId,       // TypeReference
+    pub target: NodeId,      // Identifier or MemberExpression
+    pub target_type: NodeId, // TypeReference
     pub arguments: Vec<NodeId>,
 }
 
@@ -645,6 +620,7 @@ pub struct FunctionDeclaration {
     pub name: NodeId,
     pub parameters: Vec<NodeId>,
     pub return_type: Option<NodeId>,
+    pub modifiers: Vec<NodeId>,
 }
 
 /// Function parameter
@@ -686,7 +662,7 @@ pub struct TemplateParameterDeclaration {
 pub struct TemplateArgument {
     pub id: NodeId,
     pub span: Span,
-    pub name: Option<NodeId>,      // Optional named argument
+    pub name: Option<NodeId>, // Optional named argument
     pub argument: NodeId,
 }
 
@@ -699,7 +675,7 @@ pub struct TemplateArgument {
 pub struct ImportStatement {
     pub id: NodeId,
     pub span: Span,
-    pub path: NodeId,              // StringLiteral
+    pub path: NodeId, // StringLiteral
 }
 
 // ============================================================================
@@ -711,7 +687,7 @@ pub struct ImportStatement {
 pub struct DirectiveExpression {
     pub id: NodeId,
     pub span: Span,
-    pub target: NodeId,            // Identifier
+    pub target: NodeId, // Identifier
     pub arguments: Vec<NodeId>,
 }
 
@@ -732,57 +708,6 @@ pub struct DocText {
     pub id: NodeId,
     pub span: Span,
     pub text: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct DocParamTag {
-    pub id: NodeId,
-    pub span: Span,
-    pub tag_name: NodeId,
-    pub param_name: NodeId,
-    pub content: Vec<NodeId>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DocPropTag {
-    pub id: NodeId,
-    pub span: Span,
-    pub tag_name: NodeId,
-    pub prop_name: NodeId,
-    pub content: Vec<NodeId>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DocReturnsTag {
-    pub id: NodeId,
-    pub span: Span,
-    pub tag_name: NodeId,
-    pub content: Vec<NodeId>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DocErrorsTag {
-    pub id: NodeId,
-    pub span: Span,
-    pub tag_name: NodeId,
-    pub content: Vec<NodeId>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DocTemplateTag {
-    pub id: NodeId,
-    pub span: Span,
-    pub tag_name: NodeId,
-    pub param_name: NodeId,
-    pub content: Vec<NodeId>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DocUnknownTag {
-    pub id: NodeId,
-    pub span: Span,
-    pub tag_name: NodeId,
-    pub content: Vec<NodeId>,
 }
 
 // ============================================================================
@@ -819,13 +744,6 @@ pub struct InvalidStatement {
     pub decorators: Vec<NodeId>,
 }
 
-#[derive(Debug, Clone)]
-pub struct JsNamespaceDeclaration {
-    pub id: NodeId,
-    pub span: Span,
-    pub name: NodeId,
-}
-
 // ============================================================================
 // Root Node
 // ============================================================================
@@ -855,23 +773,4 @@ pub struct Modifier {
 pub enum ModifierKind {
     Extern,
     Internal,
-}
-
-// ============================================================================
-// Declaration trait for named declarations
-// ============================================================================
-
-/// Trait for nodes that declare a name
-pub trait Declaration {
-    fn name(&self) -> NodeId;
-    fn modifiers(&self) -> ModifierFlags;
-}
-
-// ============================================================================
-// Template declaration (nodes that can have template parameters)
-// ============================================================================
-
-/// Trait for nodes that can have template parameters
-pub trait TemplateDeclaration {
-    fn template_parameters(&self) -> &[NodeId];
 }

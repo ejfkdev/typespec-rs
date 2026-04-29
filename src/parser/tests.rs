@@ -2,12 +2,15 @@
 //!
 //! Comprehensive tests for the TypeSpec parser implementation.
 
-use crate::parser::{parse, ParseResult};
 use crate::ast::types::*;
 use crate::parser::ast_builder::AstNode;
+use crate::parser::{ParseResult, parse};
 
 /// Helper function to check if a node is an identifier and get its value
-fn get_identifier_value(builder: &crate::parser::ast_builder::AstBuilder, node_id: u32) -> Option<String> {
+fn get_identifier_value(
+    builder: &crate::parser::ast_builder::AstBuilder,
+    node_id: u32,
+) -> Option<String> {
     match builder.id_to_node(node_id) {
         Some(AstNode::Identifier(id)) => Some(id.value.clone()),
         _ => None,
@@ -15,7 +18,10 @@ fn get_identifier_value(builder: &crate::parser::ast_builder::AstBuilder, node_i
 }
 
 /// Helper function to get node kind
-fn get_node_kind(builder: &crate::parser::ast_builder::AstBuilder, node_id: u32) -> Option<SyntaxKind> {
+fn get_node_kind(
+    builder: &crate::parser::ast_builder::AstBuilder,
+    node_id: u32,
+) -> Option<SyntaxKind> {
     match builder.id_to_node(node_id) {
         Some(AstNode::Identifier(_)) => Some(SyntaxKind::Identifier),
         Some(AstNode::ModelDeclaration(_)) => Some(SyntaxKind::ModelStatement),
@@ -47,7 +53,9 @@ fn get_node_kind(builder: &crate::parser::ast_builder::AstBuilder, node_id: u32)
         Some(AstNode::FunctionTypeExpression(_)) => Some(SyntaxKind::FunctionTypeExpression),
         Some(AstNode::FunctionDeclaration(_)) => Some(SyntaxKind::FunctionDeclarationStatement),
         Some(AstNode::FunctionParameter(_)) => Some(SyntaxKind::FunctionParameter),
-        Some(AstNode::TemplateParameterDeclaration(_)) => Some(SyntaxKind::TemplateParameterDeclaration),
+        Some(AstNode::TemplateParameterDeclaration(_)) => {
+            Some(SyntaxKind::TemplateParameterDeclaration)
+        }
         Some(AstNode::DecoratorDeclaration(_)) => Some(SyntaxKind::DecoratorDeclarationStatement),
         Some(AstNode::AugmentDecoratorStatement(_)) => Some(SyntaxKind::AugmentDecoratorStatement),
         Some(AstNode::ModelSpreadProperty(_)) => Some(SyntaxKind::ModelSpreadProperty),
@@ -55,8 +63,12 @@ fn get_node_kind(builder: &crate::parser::ast_builder::AstBuilder, node_id: u32)
         Some(AstNode::EnumMember(_)) => Some(SyntaxKind::EnumMember),
         Some(AstNode::EnumSpreadMember(_)) => Some(SyntaxKind::EnumSpreadMember),
         Some(AstNode::UnionVariant(_)) => Some(SyntaxKind::UnionVariant),
-        Some(AstNode::OperationSignatureDeclaration(_)) => Some(SyntaxKind::OperationSignatureDeclaration),
-        Some(AstNode::OperationSignatureReference(_)) => Some(SyntaxKind::OperationSignatureReference),
+        Some(AstNode::OperationSignatureDeclaration(_)) => {
+            Some(SyntaxKind::OperationSignatureDeclaration)
+        }
+        Some(AstNode::OperationSignatureReference(_)) => {
+            Some(SyntaxKind::OperationSignatureReference)
+        }
         Some(AstNode::ScalarConstructor(_)) => Some(SyntaxKind::ScalarConstructor),
         Some(AstNode::MemberExpression(_)) => Some(SyntaxKind::MemberExpression),
         Some(AstNode::VoidKeyword(_)) => Some(SyntaxKind::VoidKeyword),
@@ -85,13 +97,10 @@ fn get_model_properties(result: &ParseResult, model_index: usize) -> Option<Vec<
         Some(AstNode::ModelDeclaration(m)) => {
             let mut props = Vec::new();
             for prop_id in &m.properties {
-                match result.builder.id_to_node(*prop_id) {
-                    Some(AstNode::ModelProperty(prop)) => {
-                        if let Some(name) = get_identifier_value(&result.builder, prop.name) {
-                            props.push(name);
-                        }
-                    }
-                    _ => {}
+                if let Some(AstNode::ModelProperty(prop)) = result.builder.id_to_node(*prop_id)
+                    && let Some(name) = get_identifier_value(&result.builder, prop.name)
+                {
+                    props.push(name);
                 }
             }
             Some(props)
@@ -101,6 +110,7 @@ fn get_model_properties(result: &ParseResult, model_index: usize) -> Option<Vec<
 }
 
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use super::*;
 
@@ -109,10 +119,17 @@ mod tests {
     #[test]
     fn test_parse_empty_script() {
         let result = parse("");
-        assert!(result.diagnostics.is_empty(), "Expected no diagnostics for empty script");
+        assert!(
+            result.diagnostics.is_empty(),
+            "Expected no diagnostics for empty script"
+        );
         let script = get_root_script(&result);
         assert!(script.is_some(), "Should have a root script node");
-        assert_eq!(script.unwrap().statements.len(), 0, "Empty script should have no statements");
+        assert_eq!(
+            script.unwrap().statements.len(),
+            0,
+            "Empty script should have no statements"
+        );
     }
 
     #[test]
@@ -132,26 +149,34 @@ mod tests {
     #[test]
     fn test_parse_model_empty() {
         let result = parse("model Foo {}");
-        if !result.diagnostics.is_empty() {
-            println!("Diagnostics: {:?}", result.diagnostics);
-        }
-        assert!(result.diagnostics.is_empty(), "Unexpected diagnostics: {:?}", result.diagnostics);
+        assert!(
+            result.diagnostics.is_empty(),
+            "Unexpected diagnostics: {:?}",
+            result.diagnostics
+        );
 
         let script = get_root_script(&result).unwrap();
         assert_eq!(script.statements.len(), 1);
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::ModelStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::ModelStatement)
+        );
     }
 
     #[test]
     fn test_parse_model_with_properties() {
         let result = parse("model Car { make: string; model: string; year: int32; }");
-        if !result.diagnostics.is_empty() {
-            println!("Diagnostics: {:?}", result.diagnostics);
-        }
         assert!(result.diagnostics.is_empty());
 
         let props = get_model_properties(&result, 0);
-        assert_eq!(props, Some(vec!["make".to_string(), "model".to_string(), "year".to_string()]));
+        assert_eq!(
+            props,
+            Some(vec![
+                "make".to_string(),
+                "model".to_string(),
+                "year".to_string()
+            ])
+        );
     }
 
     #[test]
@@ -160,7 +185,14 @@ mod tests {
         assert!(result.diagnostics.is_empty());
 
         let props = get_model_properties(&result, 0);
-        assert_eq!(props, Some(vec!["make".to_string(), "model".to_string(), "year".to_string()]));
+        assert_eq!(
+            props,
+            Some(vec![
+                "make".to_string(),
+                "model".to_string(),
+                "year".to_string()
+            ])
+        );
     }
 
     #[test]
@@ -228,9 +260,6 @@ mod tests {
     #[test]
     fn test_parse_model_spread_property() {
         let result = parse("model Car { ...BaseCar; make: string; }");
-        if !result.diagnostics.is_empty() {
-            println!("Diagnostics: {:?}", result.diagnostics);
-        }
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
@@ -244,20 +273,26 @@ mod tests {
 
     #[test]
     fn test_parse_model_with_decorators() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
 @format("json")
 model Car {
     @minLength(1)
     make: string;
 }
-"#);
+"#,
+        );
         assert!(result.diagnostics.is_empty());
     }
 
     #[test]
     fn test_parse_model_multiple_decorators_on_property() {
-        let result = parse(r#"model Car { @foo @bar prop: string; }"#);
-        assert!(result.diagnostics.is_empty(), "Expected no diagnostics but got: {:?}", result.diagnostics);
+        let result = parse(r#"model Car { @foo @bar name: string; }"#);
+        assert!(
+            result.diagnostics.is_empty(),
+            "Expected no diagnostics but got: {:?}",
+            result.diagnostics
+        );
     }
 
     // ==================== Namespace Tests ====================
@@ -268,7 +303,10 @@ model Car {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::NamespaceStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::NamespaceStatement)
+        );
     }
 
     #[test]
@@ -297,7 +335,10 @@ model Car {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::InterfaceStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::InterfaceStatement)
+        );
     }
 
     #[test]
@@ -332,7 +373,10 @@ model Car {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::UnionStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::UnionStatement)
+        );
     }
 
     #[test]
@@ -361,7 +405,10 @@ model Car {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::EnumStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::EnumStatement)
+        );
     }
 
     #[test]
@@ -378,13 +425,15 @@ model Car {
 
     #[test]
     fn test_parse_enum_with_decorators() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
 enum Color {
     @format("json")
     red;
     green;
 }
-"#);
+"#,
+        );
         assert!(result.diagnostics.is_empty());
     }
 
@@ -396,17 +445,22 @@ enum Color {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::ScalarStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::ScalarStatement)
+        );
     }
 
     #[test]
     fn test_parse_scalar_with_constructors() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
 scalar date {
     init fromString(s: string)
     init fromTimestamp(ts: int64)
 }
-"#);
+"#,
+        );
         assert!(result.diagnostics.is_empty());
     }
 
@@ -424,7 +478,10 @@ scalar date {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::AliasStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::AliasStatement)
+        );
     }
 
     #[test]
@@ -441,7 +498,10 @@ scalar date {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::ConstStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::ConstStatement)
+        );
     }
 
     #[test]
@@ -470,7 +530,10 @@ scalar date {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::ImportStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::ImportStatement)
+        );
     }
 
     // ==================== Using Tests ====================
@@ -481,7 +544,10 @@ scalar date {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::UsingStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::UsingStatement)
+        );
     }
 
     #[test]
@@ -498,7 +564,10 @@ scalar date {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::OperationStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::OperationStatement)
+        );
     }
 
     #[test]
@@ -553,7 +622,10 @@ scalar date {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::FunctionDeclarationStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::FunctionDeclarationStatement)
+        );
     }
 
     #[test]
@@ -562,20 +634,23 @@ scalar date {
         assert!(result.diagnostics.is_empty());
 
         let script = get_root_script(&result).unwrap();
-        assert_eq!(get_node_kind(&result.builder, script.statements[0]), Some(SyntaxKind::DecoratorDeclarationStatement));
+        assert_eq!(
+            get_node_kind(&result.builder, script.statements[0]),
+            Some(SyntaxKind::DecoratorDeclarationStatement)
+        );
     }
 
     // ==================== Expression Tests ====================
 
     #[test]
     fn test_parse_type_reference() {
-        let result = parse("model Foo { prop: SomeType; }");
+        let result = parse("model Foo { value: SomeType; }");
         assert!(result.diagnostics.is_empty());
     }
 
     #[test]
     fn test_parse_type_reference_with_template_args() {
-        let result = parse("model Foo { prop: Array<string>; }");
+        let result = parse("model Foo { value: Array<string>; }");
         assert!(result.diagnostics.is_empty());
     }
 
@@ -691,7 +766,7 @@ scalar date {
 
     #[test]
     fn test_parse_unknown_keyword() {
-        let result = parse("model Foo { prop: unknown; }");
+        let result = parse("model Foo { value: unknown; }");
         assert!(result.diagnostics.is_empty());
     }
 
@@ -699,14 +774,16 @@ scalar date {
 
     #[test]
     fn test_parse_multiple_statements() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
 model A { };
 model B { }
 const x = 1;
 namespace Foo {
     model C { }
 }
-"#);
+"#,
+        );
         assert!(result.diagnostics.is_empty());
     }
 
@@ -714,7 +791,7 @@ namespace Foo {
 
     #[test]
     fn test_parse_error_invalid_statement() {
-        let result = parse("invalid_syntax_here");
+        let _result = parse("invalid_syntax_here");
         // Parser should produce diagnostics for invalid syntax
         // The exact behavior depends on error recovery implementation
     }
@@ -723,12 +800,12 @@ namespace Foo {
     fn test_parse_error_unterminated_string() {
         let result = parse(r#"const x = "unterminated"#);
         // Should have diagnostics about unterminated string
-        assert!(!result.diagnostics.is_empty() || result.diagnostics.len() >= 0);
+        assert!(!result.diagnostics.is_empty());
     }
 
     #[test]
     fn test_parse_error_missing_semicolon() {
-        let result = parse("model Foo { prop: string }");
+        let _result = parse("model Foo { prop: string }");
         // Some parsers require semicolons, check behavior
     }
 
@@ -762,20 +839,24 @@ namespace Foo {
 
     #[test]
     fn test_parse_with_single_line_comment() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
 // This is a comment
 model Foo {}
-"#);
+"#,
+        );
         assert!(result.diagnostics.is_empty());
     }
 
     #[test]
     fn test_parse_with_multi_line_comment() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
 /* This is a
    multi-line comment */
 model Foo {}
-"#);
+"#,
+        );
         assert!(result.diagnostics.is_empty());
     }
 
@@ -1187,7 +1268,7 @@ model Foo {}
     #[test]
     fn test_parse_model_with_emoji_in_comment() {
         // Model with emoji in comment (parsing only, not semantic)
-        let result = parse(r#"model Car { /* 👀 */ property: int32; }"#);
+        let result = parse(r#"model Car { /* 👀 */ value: int32; }"#);
         assert!(result.diagnostics.is_empty());
     }
 
@@ -1206,7 +1287,6 @@ model Foo {}
         let result = parse("enum Foo { a, b }");
         assert!(result.diagnostics.is_empty());
     }
-
 
     #[test]
     fn test_parse_alias_with_union() {
@@ -1335,7 +1415,6 @@ model Foo {}
         assert!(result.diagnostics.is_empty());
     }
 
-
     // ==================== Scalar Statement Tests ====================
 
     #[test]
@@ -1355,14 +1434,16 @@ model Foo {}
     #[test]
     fn test_parse_scalar_with_init_and_extends() {
         // Scalar extends and has init
-        let result = parse("scalar bar extends uuid {\n        init fromOther(abc: string)\n      }");
+        let result =
+            parse("scalar bar extends uuid {\n        init fromOther(abc: string)\n      }");
         assert!(result.diagnostics.is_empty());
     }
 
     #[test]
     fn test_parse_scalar_with_init_trailing_comma() {
         // Scalar with init and trailing comma
-        let result = parse("scalar bar {\n        init trailingComma(abc: string, def: string,)\n      }");
+        let result =
+            parse("scalar bar {\n        init trailingComma(abc: string, def: string,)\n      }");
         assert!(result.diagnostics.is_empty());
     }
 
@@ -1594,7 +1675,9 @@ model Foo {}
     #[test]
     fn test_parse_namespace_with_decorator() {
         // Namespace with decorator
-        let result = parse("@foo namespace Store { @myDec op read(): number; @myDec op write(n: number): {}; }");
+        let result = parse(
+            "@foo namespace Store { @myDec op read(): number; @myDec op write(n: number): {}; }",
+        );
         assert!(result.diagnostics.is_empty());
     }
 
@@ -1608,7 +1691,9 @@ model Foo {}
     #[test]
     fn test_parse_namespace_nested_block() {
         // Nested block namespaces
-        let result = parse("namespace Store { namespace Read { op read(): int32; } namespace Write { op write(v: int32): {}; } }");
+        let result = parse(
+            "namespace Store { namespace Read { op read(): int32; } namespace Write { op write(v: int32): {}; } }",
+        );
         assert!(result.diagnostics.is_empty());
     }
 
@@ -1799,7 +1884,7 @@ model Foo {}
     #[test]
     fn test_parse_model_property_with_multiple_decorators() {
         // Model property with multiple decorators
-        let result = parse("model Foo { @foo @bar prop: string }");
+        let result = parse("model Foo { @foo @bar name: string }");
         assert!(result.diagnostics.is_empty());
     }
 
@@ -1810,7 +1895,8 @@ model Foo {}
     #[test]
     fn test_parse_scalar_multiple_constructors() {
         // Scalar with multiple constructors
-        let result = parse("scalar MyScalar {\ninit fromString(s: string)\ninit fromInt(i: int32)\n}");
+        let result =
+            parse("scalar MyScalar {\ninit fromString(s: string)\ninit fromInt(i: int32)\n}");
         assert!(result.diagnostics.is_empty());
     }
 

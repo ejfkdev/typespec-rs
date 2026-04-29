@@ -11,36 +11,37 @@
 //! Name resolution does not alter any AST nodes. Instead, symbols are stored
 //! in augmented symbol tables or as merged symbols.
 
-use crate::ast::node::{NodeId, NodeKind};
+use crate::ast::node::NodeId;
 use crate::program::Program;
 use std::collections::{HashMap, HashSet};
 use std::ops::BitOr;
 
 /// Resolution result flags indicating the outcome of name resolution
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Ported from TS types.ts ResolutionResultFlags
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResolutionResultFlags {
     /// No specific result
+    #[default]
     None = 0,
     /// Resolution succeeded
-    Resolved = 1 << 0,
-    /// Resolution failed - symbol not found
-    NotFound = 1 << 1,
+    Resolved = 1 << 1,
     /// Resolution failed - symbol is unknown (late-bound)
     Unknown = 1 << 2,
     /// Resolution failed due to ambiguity
     Ambiguous = 1 << 3,
-}
-
-impl Default for ResolutionResultFlags {
-    fn default() -> Self {
-        Self::None
-    }
+    /// Resolution failed - symbol not found
+    NotFound = 1 << 4,
+    /// Any failure mode
+    ResolutionFailed = (1 << 2) | (1 << 3) | (1 << 4), // Unknown | Ambiguous | NotFound
 }
 
 impl ResolutionResultFlags {
     /// Check if resolution failed
     pub fn is_failed(&self) -> bool {
-        matches!(self, Self::NotFound | Self::Unknown | Self::Ambiguous)
+        matches!(
+            self,
+            Self::NotFound | Self::Unknown | Self::Ambiguous | Self::ResolutionFailed
+        )
     }
 }
 
@@ -95,6 +96,7 @@ impl ResolutionResult {
     }
 
     /// Create an ambiguous result
+    #[allow(dead_code)]
     fn ambiguous(symbols: Vec<Sym>) -> Self {
         Self {
             resolved_symbol: None,
@@ -107,47 +109,63 @@ impl ResolutionResult {
 }
 
 /// Symbol flags indicating the kind of symbol
-/// Uses a bitflags pattern with u32 internal representation
+/// Ported from TS types.ts SymbolFlags — bit values MUST match TS exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SymbolFlags(u32);
 
+#[allow(non_upper_case_globals)]
 impl SymbolFlags {
-    /// Symbol is a container (namespace, interface, model)
-    pub const Container: Self = SymbolFlags(1 << 0);
-    /// Symbol is a declaration
-    pub const Declaration: Self = SymbolFlags(1 << 1);
-    /// Symbol is a member (model property, enum member, etc.)
-    pub const Member: Self = SymbolFlags(1 << 2);
-    /// Symbol is a namespace
-    pub const Namespace: Self = SymbolFlags(1 << 3);
-    /// Symbol is a model
-    pub const Model: Self = SymbolFlags(1 << 4);
-    /// Symbol is an interface
-    pub const Interface: Self = SymbolFlags(1 << 5);
-    /// Symbol is an enum
-    pub const Enum: Self = SymbolFlags(1 << 6);
-    /// Symbol is a union
-    pub const Union: Self = SymbolFlags(1 << 7);
-    /// Symbol is a scalar
-    pub const Scalar: Self = SymbolFlags(1 << 8);
-    /// Symbol is an operation
-    pub const Operation: Self = SymbolFlags(1 << 9);
-    /// Symbol is a function
-    pub const Function: Self = SymbolFlags(1 << 10);
-    /// Symbol is a decorator
-    pub const Decorator: Self = SymbolFlags(1 << 11);
-    /// Symbol is an alias
-    pub const Alias: Self = SymbolFlags(1 << 12);
-    /// Symbol is a template parameter
-    pub const TemplateParameter: Self = SymbolFlags(1 << 13);
-    /// Symbol is an implementation (vs declaration)
-    pub const Implementation: Self = SymbolFlags(1 << 14);
-    /// Symbol is a using statement
-    pub const Using: Self = SymbolFlags(1 << 15);
-    /// Symbol is a duplicate using
-    pub const DuplicateUsing: Self = SymbolFlags(1 << 16);
     /// No flags
     pub const None: Self = SymbolFlags(0);
+    /// Symbol is a model
+    pub const Model: Self = SymbolFlags(1 << 1);
+    /// Symbol is a scalar
+    pub const Scalar: Self = SymbolFlags(1 << 2);
+    /// Symbol is an operation
+    pub const Operation: Self = SymbolFlags(1 << 3);
+    /// Symbol is an enum
+    pub const Enum: Self = SymbolFlags(1 << 4);
+    /// Symbol is an interface
+    pub const Interface: Self = SymbolFlags(1 << 5);
+    /// Symbol is a union
+    pub const Union: Self = SymbolFlags(1 << 6);
+    /// Symbol is an alias
+    pub const Alias: Self = SymbolFlags(1 << 7);
+    /// Symbol is a namespace
+    pub const Namespace: Self = SymbolFlags(1 << 8);
+    /// Symbol is a decorator
+    pub const Decorator: Self = SymbolFlags(1 << 9);
+    /// Symbol is a template parameter
+    pub const TemplateParameter: Self = SymbolFlags(1 << 10);
+    /// Symbol is a function
+    pub const Function: Self = SymbolFlags(1 << 11);
+    /// Symbol is a function parameter
+    pub const FunctionParameter: Self = SymbolFlags(1 << 12);
+    /// Symbol is a using statement
+    pub const Using: Self = SymbolFlags(1 << 13);
+    /// Symbol is a duplicate using
+    pub const DuplicateUsing: Self = SymbolFlags(1 << 14);
+    /// Symbol is a source file
+    pub const SourceFile: Self = SymbolFlags(1 << 15);
+    /// Symbol is a member (model property, enum member, etc.)
+    pub const Member: Self = SymbolFlags(1 << 16);
+    /// Symbol is a const declaration
+    pub const Const: Self = SymbolFlags(1 << 17);
+    /// Symbol is a declaration
+    pub const Declaration: Self = SymbolFlags(1 << 20);
+    /// Symbol is an implementation (vs declaration)
+    pub const Implementation: Self = SymbolFlags(1 << 21);
+    /// Symbol was late-bound
+    pub const LateBound: Self = SymbolFlags(1 << 22);
+    /// Symbol is internal (same-package only)
+    pub const Internal: Self = SymbolFlags(1 << 23);
+
+    // Composite flags (must match TS: ExportContainer = Namespace | SourceFile)
+    /// Export container (namespace or source file)
+    pub const ExportContainer: Self = SymbolFlags((1 << 8) | (1 << 15)); // Namespace | SourceFile
+    /// Member container (model, enum, union, interface, scalar)
+    pub const MemberContainer: Self =
+        SymbolFlags((1 << 1) | (1 << 4) | (1 << 6) | (1 << 5) | (1 << 2)); // Model | Enum | Union | Interface | Scalar
 
     pub fn bits(&self) -> u32 {
         self.0
@@ -162,13 +180,15 @@ impl SymbolFlags {
     }
 
     /// Check if this is a member container (models, interfaces, enums, etc.)
+    /// Ported from TS: MemberContainer = Model | Enum | Union | Interface | Scalar
     pub fn is_member_container(&self) -> bool {
-        self.contains(Self::Container) && self.contains(Self::Member)
+        (self.0 & Self::MemberContainer.0) != 0
     }
 
     /// Check if this is an export container (namespace, TypeSpecScript)
+    /// Ported from TS: ExportContainer = Namespace | SourceFile
     pub fn is_export_container(&self) -> bool {
-        self.contains(Self::Container) && self.contains(Self::Declaration)
+        (self.0 & Self::ExportContainer.0) != 0
     }
 }
 
@@ -289,6 +309,11 @@ pub struct ResolveTypeReferenceOptions {
 }
 
 /// The NameResolver is responsible for resolving identifiers to symbols
+///
+/// Note: This module is scaffolded but not yet integrated into the compiler pipeline.
+/// The current checker uses its own resolution logic. This will be integrated in a
+/// future release when multi-file compilation and import resolution are implemented.
+#[allow(dead_code)]
 pub struct NameResolver {
     /// The program being resolved
     program: Program,
@@ -321,7 +346,8 @@ pub struct NameResolver {
 impl NameResolver {
     /// Create a new name resolver for the given program
     pub fn new(program: Program) -> Self {
-        let global_namespace_sym = Sym::new("global", SymbolFlags::Namespace | SymbolFlags::Declaration);
+        let global_namespace_sym =
+            Sym::new("global", SymbolFlags::Namespace | SymbolFlags::Declaration);
         let null_sym = Sym::new("null", SymbolFlags::None);
 
         Self {
@@ -344,7 +370,10 @@ impl NameResolver {
     /// Resolve all static symbol links in the program
     pub fn resolve_program(&mut self) {
         // Collect file IDs first to avoid borrow conflicts
-        let file_ids: Vec<NodeId> = self.program.source_files.values()
+        let file_ids: Vec<NodeId> = self
+            .program
+            .source_files
+            .values()
             .map(|file| file.ast)
             .collect();
 
@@ -355,9 +384,17 @@ impl NameResolver {
         }
     }
 
-    /// Get the merged symbol or itself if not merged
-    pub fn get_merged_symbol(&self, sym: &Sym) -> Option<Sym> {
-        sym.id.and_then(|id| self.merged_symbols.get(&id).cloned()).or_else(|| Some(sym.clone()))
+    /// Get the merged symbol or itself if not merged.
+    /// Returns Sym directly (never fails — falls back to the input symbol).
+    pub fn get_merged_symbol(&self, sym: &Sym) -> Sym {
+        match sym.id {
+            Some(id) => self
+                .merged_symbols
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| sym.clone()),
+            None => sym.clone(),
+        }
     }
 
     /// Get augmented symbol table
@@ -365,6 +402,7 @@ impl NameResolver {
         self.get_augmented_symbol_table_internal_by_id(table_id)
     }
 
+    #[allow(dead_code)]
     fn get_augmented_symbol_table_internal(&mut self, table: &SymbolTable) -> &mut SymbolTable {
         // For simplicity, we use the table directly if not found
         // A more complete implementation would create augmented copies
@@ -372,6 +410,7 @@ impl NameResolver {
         self.get_augmented_symbol_table_internal_by_id(table_id)
     }
 
+    #[allow(dead_code)]
     fn find_or_create_table_id(&mut self, _table: &SymbolTable) -> NodeId {
         // Simplified: return a new id each time
         // A more complete implementation would track existing tables
@@ -382,18 +421,12 @@ impl NameResolver {
     }
 
     fn get_augmented_symbol_table_internal_by_id(&mut self, table_id: NodeId) -> &mut SymbolTable {
-        if !self.augmented_symbol_tables.contains_key(&table_id) {
-            self.augmented_symbol_tables.insert(table_id, SymbolTable::new());
-        }
-        self.augmented_symbol_tables.get_mut(&table_id).unwrap()
+        self.augmented_symbol_tables.entry(table_id).or_default()
     }
 
     /// Get node links for the given node
     pub fn get_node_links(&mut self, node_id: NodeId) -> &mut NodeLinks {
-        if !self.node_links.contains_key(&node_id) {
-            self.node_links.insert(node_id, NodeLinks::new());
-        }
-        self.node_links.get_mut(&node_id).unwrap()
+        self.node_links.entry(node_id).or_default()
     }
 
     /// Get symbol links for the given symbol
@@ -403,10 +436,7 @@ impl NameResolver {
             self.next_symbol_id += 1;
             new_id
         });
-        if !self.symbol_links.contains_key(&id) {
-            self.symbol_links.insert(id, SymbolLinks::new());
-        }
-        self.symbol_links.get_mut(&id).unwrap()
+        self.symbol_links.entry(id).or_default()
     }
 
     /// Return augment decorator nodes that are bound to this symbol
@@ -466,11 +496,12 @@ impl NameResolver {
         }
 
         // Ensure the referenced node is bound
-        if let Some(ref sym) = resolved_sym {
-            if sym.has_flag(SymbolFlags::Declaration) && !sym.has_flag(SymbolFlags::Namespace) {
-                for decl in &sym.declarations {
-                    self.bind_and_resolve_node(*decl);
-                }
+        if let Some(ref sym) = resolved_sym
+            && sym.has_flag(SymbolFlags::Declaration)
+            && !sym.has_flag(SymbolFlags::Namespace)
+        {
+            for decl in &sym.declarations {
+                self.bind_and_resolve_node(*decl);
             }
         }
 
@@ -482,21 +513,12 @@ impl NameResolver {
         node_id: NodeId,
         options: ResolveTypeReferenceOptions,
     ) -> ResolutionResult {
-        // Look up node in program
-        let kind = self.program.nodes.get(&node_id).map(|n| n.kind.clone());
-
-        match kind {
-            Some(NodeKind::Identifier) => {
-                self.resolve_identifier(node_id, options)
-            }
-            Some(NodeKind::TypeDeclaration) => {
-                // Type declarations can be resolved
-                self.resolve_identifier(node_id, options)
-            }
-            None => ResolutionResult::failed(ResolutionResultFlags::NotFound),
-        }
+        // TODO: When Program.nodes is populated, dispatch on node kind.
+        // Currently, nodes is always empty, so we delegate to resolve_identifier.
+        self.resolve_identifier(node_id, options)
     }
 
+    #[allow(dead_code)]
     fn resolve_member_expression(
         &mut self,
         _node_id: NodeId,
@@ -512,7 +534,10 @@ impl NameResolver {
         _options: ResolveTypeReferenceOptions,
     ) -> ResolutionResult {
         // Simplified: look up in global namespace
-        if let Some(sym) = self.global_namespace_sym.exports.as_ref()
+        if let Some(sym) = self
+            .global_namespace_sym
+            .exports
+            .as_ref()
             .and_then(|e| e.get("global"))
         {
             return ResolutionResult::resolved(sym.clone());
@@ -544,11 +569,13 @@ impl NameResolver {
     }
 
     /// Merge symbol table from source into target
+    #[allow(dead_code)]
     fn merge_symbol_table(&mut self, _target: &Sym, _source_id: NodeId) {
         // Simplified implementation
     }
 
     /// Set up using statements for a file
+    #[allow(dead_code)]
     fn set_usings_for_file(&mut self, _file_id: NodeId) {
         // Simplified implementation
     }
@@ -601,13 +628,23 @@ mod tests {
 
     #[test]
     fn test_symbol_flags_is_member_container() {
-        let member_container = SymbolFlags::Container | SymbolFlags::Member;
-        assert!(member_container.is_member_container());
-        assert!(!member_container.is_export_container());
+        // TS: MemberContainer = Model | Enum | Union | Interface | Scalar
+        let model = SymbolFlags::Model;
+        assert!(model.is_member_container());
+        assert!(!model.is_export_container());
 
-        let export_container = SymbolFlags::Container | SymbolFlags::Declaration;
-        assert!(export_container.is_export_container());
-        assert!(!export_container.is_member_container());
+        let ns = SymbolFlags::Namespace;
+        assert!(ns.is_export_container());
+        assert!(!ns.is_member_container());
+
+        let source_file = SymbolFlags::SourceFile;
+        assert!(source_file.is_export_container());
+        assert!(!source_file.is_member_container());
+
+        // Namespace | Declaration is NOT an export container by itself
+        // (ExportContainer = Namespace | SourceFile, which does not include Declaration)
+        let ns_decl = SymbolFlags::Namespace | SymbolFlags::Declaration;
+        assert!(ns_decl.is_export_container()); // contains Namespace
     }
 
     #[test]

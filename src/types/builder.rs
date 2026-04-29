@@ -1,1 +1,0 @@
-// Type builder functionality

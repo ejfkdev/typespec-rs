@@ -3,40 +3,12 @@
 //! Provides utilities for working with built-in types, creating
 //! standard library entities, and checking type relationships.
 
-use crate::ast::node::NodeId;
 use crate::std::primitives::{BuiltInInterfaceKind, BuiltInModelKind, BuiltInScalarKind};
-use crate::types::ModelIndexer;
 
-/// Checks if a name refers to a built-in scalar type
+/// Checks if a name refers to a built-in scalar type.
+/// Delegates to `get_builtin_scalar_kind` as the single source of truth.
 pub fn is_builtin_scalar(name: &str) -> bool {
-    matches!(
-        name,
-        "bytes"
-            | "string"
-            | "boolean"
-            | "numeric"
-            | "integer"
-            | "int64"
-            | "int32"
-            | "int16"
-            | "int8"
-            | "uint64"
-            | "uint32"
-            | "uint16"
-            | "uint8"
-            | "safeint"
-            | "float"
-            | "float64"
-            | "float32"
-            | "decimal"
-            | "decimal128"
-            | "plainDate"
-            | "plainTime"
-            | "utcDateTime"
-            | "offsetDateTime"
-            | "duration"
-            | "url"
-    )
+    get_builtin_scalar_kind(name).is_some()
 }
 
 /// Converts a scalar name to its BuiltInScalarKind, if applicable
@@ -67,6 +39,7 @@ pub fn get_builtin_scalar_kind(name: &str) -> Option<BuiltInScalarKind> {
         "offsetDateTime" => Some(BuiltInScalarKind::OffsetDateTime),
         "duration" => Some(BuiltInScalarKind::Duration),
         "url" => Some(BuiltInScalarKind::Url),
+        "unixTimestamp32" => Some(BuiltInScalarKind::UnixTimestamp32),
         _ => None,
     }
 }
@@ -87,10 +60,7 @@ pub fn get_builtin_model_kind(name: &str) -> Option<BuiltInModelKind> {
 
 /// Checks if a name refers to a built-in prototype interface
 pub fn is_builtin_interface(name: &str) -> bool {
-    matches!(
-        name,
-        "ModelProperty" | "Operation" | "Array"
-    )
+    matches!(name, "ModelProperty" | "Operation" | "Array")
 }
 
 /// Converts an interface name to its BuiltInInterfaceKind, if applicable
@@ -104,61 +74,20 @@ pub fn get_builtin_interface_kind(name: &str) -> Option<BuiltInInterfaceKind> {
 }
 
 /// Returns the TypeSpec namespace name for built-in types
-pub const TYPESPEC_NAMESPACE: &str = "TypeSpec";
+pub use crate::libs::compiler::TYPESPEC_NAMESPACE;
 
 /// Returns the TypeSpec.Prototypes namespace name
 pub const PROTOTYPES_NAMESPACE: &str = "TypeSpec.Prototypes";
 
 /// Checks if a namespace name is a built-in namespace
 pub fn is_builtin_namespace(name: &str) -> bool {
-    name == TYPESPEC_NAMESPACE || name == PROTOTYPES_NAMESPACE
+    name == TYPESPEC_NAMESPACE || name == PROTOTYPES_NAMESPACE || name == "TypeSpec.Reflection"
 }
 
-/// Creates an indexer for the Array model type
-pub fn create_array_indexer(key_type: NodeId, value_type: NodeId) -> ModelIndexer {
-    ModelIndexer {
-        key: key_type,
-        value: value_type,
-    }
-}
-
-/// Creates an indexer for the Record model type
-pub fn create_record_indexer(key_type: NodeId, value_type: NodeId) -> ModelIndexer {
-    ModelIndexer {
-        key: key_type,
-        value: value_type,
-    }
-}
-
-/// Returns the scalar hierarchy as a flat list of (name, parent_name) pairs
+/// Returns the scalar hierarchy as a flat list of (name, parent_name) pairs.
+/// Delegates to the SCALAR_HIERARCHY constant in primitives.rs.
 pub fn get_scalar_hierarchy() -> &'static [(&'static str, Option<&'static str>)] {
-    &[
-        ("bytes", None),
-        ("string", None),
-        ("boolean", None),
-        ("url", None),
-        ("numeric", None),
-        ("integer", Some("numeric")),
-        ("int64", Some("integer")),
-        ("int32", Some("int64")),
-        ("int16", Some("int32")),
-        ("int8", Some("int16")),
-        ("uint64", Some("integer")),
-        ("uint32", Some("uint64")),
-        ("uint16", Some("uint32")),
-        ("uint8", Some("uint16")),
-        ("safeint", Some("int64")),
-        ("float", Some("numeric")),
-        ("float64", Some("float")),
-        ("float32", Some("float64")),
-        ("decimal", Some("numeric")),
-        ("decimal128", Some("decimal")),
-        ("plainDate", None),
-        ("plainTime", None),
-        ("utcDateTime", None),
-        ("offsetDateTime", None),
-        ("duration", None),
-    ]
+    super::primitives::SCALAR_HIERARCHY
 }
 
 /// Checks if a scalar is a descendant of another in the type hierarchy
@@ -208,4 +137,128 @@ pub fn has_now_initializer(kind: BuiltInScalarKind) -> bool {
             | BuiltInScalarKind::UtcDateTime
             | BuiltInScalarKind::OffsetDateTime
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_builtin_scalar() {
+        assert!(is_builtin_scalar("string"));
+        assert!(is_builtin_scalar("int32"));
+        assert!(is_builtin_scalar("boolean"));
+        assert!(is_builtin_scalar("duration"));
+        assert!(!is_builtin_scalar("Foo"));
+        assert!(!is_builtin_scalar("myType"));
+    }
+
+    #[test]
+    fn test_get_builtin_scalar_kind() {
+        assert_eq!(
+            get_builtin_scalar_kind("string"),
+            Some(BuiltInScalarKind::String)
+        );
+        assert_eq!(
+            get_builtin_scalar_kind("int32"),
+            Some(BuiltInScalarKind::Int32)
+        );
+        assert_eq!(get_builtin_scalar_kind("unknown"), None);
+    }
+
+    #[test]
+    fn test_is_builtin_model() {
+        assert!(is_builtin_model("Array"));
+        assert!(is_builtin_model("Record"));
+        assert!(!is_builtin_model("Foo"));
+    }
+
+    #[test]
+    fn test_get_builtin_model_kind() {
+        assert_eq!(
+            get_builtin_model_kind("Array"),
+            Some(BuiltInModelKind::Array)
+        );
+        assert_eq!(
+            get_builtin_model_kind("Record"),
+            Some(BuiltInModelKind::Record)
+        );
+        assert_eq!(get_builtin_model_kind("Foo"), None);
+    }
+
+    #[test]
+    fn test_is_builtin_namespace() {
+        assert!(is_builtin_namespace("TypeSpec"));
+        assert!(is_builtin_namespace("TypeSpec.Prototypes"));
+        assert!(!is_builtin_namespace("MyNamespace"));
+    }
+
+    #[test]
+    fn test_scalar_hierarchy() {
+        let hierarchy = get_scalar_hierarchy();
+        // int32 -> int64 -> integer -> numeric
+        let int32_entry = hierarchy.iter().find(|(name, _)| *name == "int32");
+        assert!(int32_entry.is_some());
+        assert_eq!(int32_entry.unwrap().1, Some("int64"));
+
+        let integer_entry = hierarchy.iter().find(|(name, _)| *name == "integer");
+        assert!(integer_entry.is_some());
+        assert_eq!(integer_entry.unwrap().1, Some("numeric"));
+    }
+
+    #[test]
+    fn test_is_scalar_descendant_of() {
+        // int32 extends int64 extends integer extends numeric
+        assert!(is_scalar_descendant_of(
+            BuiltInScalarKind::Int32,
+            BuiltInScalarKind::Int64
+        ));
+        assert!(is_scalar_descendant_of(
+            BuiltInScalarKind::Int32,
+            BuiltInScalarKind::Integer
+        ));
+        assert!(is_scalar_descendant_of(
+            BuiltInScalarKind::Int32,
+            BuiltInScalarKind::Numeric
+        ));
+        // A type is its own descendant
+        assert!(is_scalar_descendant_of(
+            BuiltInScalarKind::String,
+            BuiltInScalarKind::String
+        ));
+        // string does not extend numeric
+        assert!(!is_scalar_descendant_of(
+            BuiltInScalarKind::String,
+            BuiltInScalarKind::Numeric
+        ));
+    }
+
+    #[test]
+    fn test_get_scalar_ancestors() {
+        let ancestors = get_scalar_ancestors(BuiltInScalarKind::Int32);
+        // int32 -> int64 -> integer -> numeric
+        assert!(ancestors.contains(&BuiltInScalarKind::Int64));
+        assert!(ancestors.contains(&BuiltInScalarKind::Integer));
+        assert!(ancestors.contains(&BuiltInScalarKind::Numeric));
+
+        // string has no ancestors
+        let string_ancestors = get_scalar_ancestors(BuiltInScalarKind::String);
+        assert!(string_ancestors.is_empty());
+    }
+
+    #[test]
+    fn test_has_from_iso_initializer() {
+        assert!(has_from_iso_initializer(BuiltInScalarKind::PlainDate));
+        assert!(has_from_iso_initializer(BuiltInScalarKind::UtcDateTime));
+        assert!(!has_from_iso_initializer(BuiltInScalarKind::String));
+        assert!(!has_from_iso_initializer(BuiltInScalarKind::Int32));
+    }
+
+    #[test]
+    fn test_has_now_initializer() {
+        assert!(has_now_initializer(BuiltInScalarKind::PlainDate));
+        assert!(has_now_initializer(BuiltInScalarKind::UtcDateTime));
+        assert!(!has_now_initializer(BuiltInScalarKind::Duration));
+        assert!(!has_now_initializer(BuiltInScalarKind::String));
+    }
 }

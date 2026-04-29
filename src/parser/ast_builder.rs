@@ -1,7 +1,7 @@
 //! AST Node Builder - Helper functions for creating AST nodes
 
+use crate::ast::token::{Position, Span};
 use crate::ast::types::*;
-use crate::ast::token::{Span, Position};
 use crate::scanner::TokenFlags;
 use std::collections::HashMap;
 
@@ -29,6 +29,8 @@ pub struct AstBuilder {
     pub node_id_gen: NodeIdGenerator,
     pub nodes: HashMap<u32, AstNode>,
     pub source: String,
+    /// Map from declaration node ID to its directive nodes (e.g., #deprecated, #suppress)
+    pub directives_map: HashMap<u32, Vec<u32>>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,17 +94,10 @@ pub enum AstNode {
     DirectiveExpression(DirectiveExpression),
     Doc(Doc),
     DocText(DocText),
-    DocParamTag(DocParamTag),
-    DocPropTag(DocPropTag),
-    DocReturnsTag(DocReturnsTag),
-    DocErrorsTag(DocErrorsTag),
-    DocTemplateTag(DocTemplateTag),
-    DocUnknownTag(DocUnknownTag),
     LineComment(LineComment),
     BlockComment(BlockComment),
     EmptyStatement(EmptyStatement),
     InvalidStatement(InvalidStatement),
-    JsNamespaceDeclaration(JsNamespaceDeclaration),
     Modifier(Modifier),
 }
 
@@ -112,6 +107,7 @@ impl AstBuilder {
             node_id_gen: NodeIdGenerator::new(),
             nodes: HashMap::new(),
             source,
+            directives_map: HashMap::new(),
         }
     }
 
@@ -119,102 +115,50 @@ impl AstBuilder {
         self.nodes.get(&id)
     }
 
-    pub fn set_parent(&mut self, child_id: u32, parent_id: u32) {
-        if let Some(node) = self.nodes.get_mut(&child_id) {
-            match node {
-                AstNode::Identifier(n) => n.id = parent_id,
-                AstNode::MemberExpression(n) => n.id = parent_id,
-                AstNode::StringLiteral(n) => n.id = parent_id,
-                AstNode::NumericLiteral(n) => n.id = parent_id,
-                AstNode::BooleanLiteral(n) => n.id = parent_id,
-                AstNode::ArrayExpression(n) => n.id = parent_id,
-                AstNode::TupleExpression(n) => n.id = parent_id,
-                AstNode::UnionExpression(n) => n.id = parent_id,
-                AstNode::IntersectionExpression(n) => n.id = parent_id,
-                AstNode::TypeReference(n) => n.id = parent_id,
-                AstNode::CallExpression(n) => n.id = parent_id,
-                AstNode::ValueOfExpression(n) => n.id = parent_id,
-                AstNode::TypeOfExpression(n) => n.id = parent_id,
-                AstNode::StringTemplateExpression(n) => n.id = parent_id,
-                AstNode::StringTemplateHead(n) => n.id = parent_id,
-                AstNode::StringTemplateMiddle(n) => n.id = parent_id,
-                AstNode::StringTemplateTail(n) => n.id = parent_id,
-                AstNode::StringTemplateSpan(n) => n.id = parent_id,
-                AstNode::ObjectLiteral(n) => n.id = parent_id,
-                AstNode::ObjectLiteralProperty(n) => n.id = parent_id,
-                AstNode::ObjectLiteralSpreadProperty(n) => n.id = parent_id,
-                AstNode::ArrayLiteral(n) => n.id = parent_id,
-                AstNode::ExternKeyword(n) => n.id = parent_id,
-                AstNode::InternalKeyword(n) => n.id = parent_id,
-                AstNode::VoidKeyword(n) => n.id = parent_id,
-                AstNode::NeverKeyword(n) => n.id = parent_id,
-                AstNode::UnknownKeyword(n) => n.id = parent_id,
-                AstNode::ModelDeclaration(n) => n.id = parent_id,
-                AstNode::ModelExpression(n) => n.id = parent_id,
-                AstNode::ModelProperty(n) => n.id = parent_id,
-                AstNode::ModelSpreadProperty(n) => n.id = parent_id,
-                AstNode::ScalarDeclaration(n) => n.id = parent_id,
-                AstNode::ScalarConstructor(n) => n.id = parent_id,
-                AstNode::InterfaceDeclaration(n) => n.id = parent_id,
-                AstNode::UnionDeclaration(n) => n.id = parent_id,
-                AstNode::UnionVariant(n) => n.id = parent_id,
-                AstNode::EnumDeclaration(n) => n.id = parent_id,
-                AstNode::EnumMember(n) => n.id = parent_id,
-                AstNode::EnumSpreadMember(n) => n.id = parent_id,
-                AstNode::NamespaceDeclaration(n) => n.id = parent_id,
-                AstNode::UsingDeclaration(n) => n.id = parent_id,
-                AstNode::OperationDeclaration(n) => n.id = parent_id,
-                AstNode::OperationSignatureDeclaration(n) => n.id = parent_id,
-                AstNode::OperationSignatureReference(n) => n.id = parent_id,
-                AstNode::AliasStatement(n) => n.id = parent_id,
-                AstNode::ConstStatement(n) => n.id = parent_id,
-                AstNode::DecoratorDeclaration(n) => n.id = parent_id,
-                AstNode::DecoratorExpression(n) => n.id = parent_id,
-                AstNode::AugmentDecoratorStatement(n) => n.id = parent_id,
-                AstNode::FunctionDeclaration(n) => n.id = parent_id,
-                AstNode::FunctionParameter(n) => n.id = parent_id,
-                AstNode::FunctionTypeExpression(n) => n.id = parent_id,
-                AstNode::TemplateParameterDeclaration(n) => n.id = parent_id,
-                AstNode::TemplateArgument(n) => n.id = parent_id,
-                AstNode::ImportStatement(n) => n.id = parent_id,
-                AstNode::DirectiveExpression(n) => n.id = parent_id,
-                AstNode::Doc(n) => n.id = parent_id,
-                AstNode::DocText(n) => n.id = parent_id,
-                AstNode::DocParamTag(n) => n.id = parent_id,
-                AstNode::DocPropTag(n) => n.id = parent_id,
-                AstNode::DocReturnsTag(n) => n.id = parent_id,
-                AstNode::DocErrorsTag(n) => n.id = parent_id,
-                AstNode::DocTemplateTag(n) => n.id = parent_id,
-                AstNode::DocUnknownTag(n) => n.id = parent_id,
-                AstNode::LineComment(n) => n.id = parent_id,
-                AstNode::BlockComment(n) => n.id = parent_id,
-                AstNode::EmptyStatement(n) => n.id = parent_id,
-                AstNode::InvalidStatement(n) => n.id = parent_id,
-                AstNode::JsNamespaceDeclaration(n) => n.id = parent_id,
-                AstNode::Modifier(n) => n.id = parent_id,
-                AstNode::TypeSpecScript(n) => n.id = parent_id,
-            }
+    /// Attach directives to a declaration node
+    pub fn attach_directives(&mut self, decl_node_id: u32, directives: Vec<u32>) {
+        if !directives.is_empty() {
+            self.directives_map.insert(decl_node_id, directives);
         }
     }
 
-    // Helper to create a span from positions
-    pub fn make_span(&self, _start_pos: usize, _end_pos: usize) -> Span {
-        // Simple span using byte offsets - convert to line/column if needed
-        Span {
-            start: Position { line: 1, column: 0 },
-            end: Position { line: 1, column: 0 },
+    /// Get directives attached to a declaration node
+    pub fn get_directives(&self, decl_node_id: u32) -> Option<&Vec<u32>> {
+        self.directives_map.get(&decl_node_id)
+    }
+
+    // Helper to create a span from byte offset positions
+    pub fn make_span(&self, start_pos: usize, end_pos: usize) -> Span {
+        let start = self.offset_to_position(start_pos);
+        let end = self.offset_to_position(end_pos);
+        Span { start, end }
+    }
+
+    /// Convert a byte offset in the source to a line:column Position.
+    /// Line numbers are 1-based, column numbers are 0-based (matching TS convention).
+    fn offset_to_position(&self, offset: usize) -> Position {
+        if offset == 0 || self.source.is_empty() {
+            return Position { line: 1, column: 0 };
         }
+        let bytes = self.source.as_bytes();
+        let safe_offset = offset.min(bytes.len());
+        let mut line = 1u32;
+        let mut last_line_start = 0usize;
+        for (i, &byte) in bytes.iter().enumerate().take(safe_offset) {
+            if byte == b'\n' {
+                line += 1;
+                last_line_start = i + 1;
+            }
+        }
+        let column = (safe_offset - last_line_start) as u32;
+        Position { line, column }
     }
 
     // ==================== Node Creation Methods ====================
 
     pub fn create_identifier(&mut self, value: String, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::Identifier(Identifier {
-            id,
-            span,
-            value,
-        });
+        let node = AstNode::Identifier(Identifier { id, span, value });
         self.nodes.insert(id, node);
         id
     }
@@ -240,16 +184,17 @@ impl AstBuilder {
 
     pub fn create_string_literal(&mut self, value: String, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::StringLiteral(StringLiteral {
-            id,
-            span,
-            value,
-        });
+        let node = AstNode::StringLiteral(StringLiteral { id, span, value });
         self.nodes.insert(id, node);
         id
     }
 
-    pub fn create_numeric_literal(&mut self, value: f64, value_as_string: String, span: Span) -> u32 {
+    pub fn create_numeric_literal(
+        &mut self,
+        value: f64,
+        value_as_string: String,
+        span: Span,
+    ) -> u32 {
         let id = self.node_id_gen.next();
         let node = AstNode::NumericLiteral(NumericLiteral {
             id,
@@ -263,11 +208,7 @@ impl AstBuilder {
 
     pub fn create_boolean_literal(&mut self, value: bool, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::BooleanLiteral(BooleanLiteral {
-            id,
-            span,
-            value,
-        });
+        let node = AstNode::BooleanLiteral(BooleanLiteral { id, span, value });
         self.nodes.insert(id, node);
         id
     }
@@ -296,7 +237,12 @@ impl AstBuilder {
         id
     }
 
-    pub fn create_model_expression(&mut self, properties: Vec<u32>, body_range: Span, span: Span) -> u32 {
+    pub fn create_model_expression(
+        &mut self,
+        properties: Vec<u32>,
+        body_range: Span,
+        span: Span,
+    ) -> u32 {
         let id = self.node_id_gen.next();
         let node = AstNode::ModelExpression(ModelExpression {
             id,
@@ -333,58 +279,29 @@ impl AstBuilder {
 
     pub fn create_model_spread_property(&mut self, target: u32, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::ModelSpreadProperty(ModelSpreadProperty {
-            id,
-            span,
-            target,
-        });
+        let node = AstNode::ModelSpreadProperty(ModelSpreadProperty { id, span, target });
         self.nodes.insert(id, node);
         id
     }
 
-    pub fn create_model_declaration(
-        &mut self,
-        name: u32,
-        properties: Vec<u32>,
-        extends: Option<u32>,
-        is: Option<u32>,
-        decorators: Vec<u32>,
-        body_range: Span,
-        span: Span,
-    ) -> u32 {
+    pub fn create_model_declaration(&mut self, mut decl: ModelDeclaration) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::ModelDeclaration(ModelDeclaration {
-            id,
-            span,
-            name,
-            properties,
-            extends,
-            is,
-            decorators,
-            body_range,
-        });
+        decl.id = id;
+        let node = AstNode::ModelDeclaration(decl);
         self.nodes.insert(id, node);
         id
     }
 
     pub fn create_union_expression(&mut self, options: Vec<u32>, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::UnionExpression(UnionExpression {
-            id,
-            span,
-            options,
-        });
+        let node = AstNode::UnionExpression(UnionExpression { id, span, options });
         self.nodes.insert(id, node);
         id
     }
 
     pub fn create_intersection_expression(&mut self, options: Vec<u32>, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::IntersectionExpression(IntersectionExpression {
-            id,
-            span,
-            options,
-        });
+        let node = AstNode::IntersectionExpression(IntersectionExpression { id, span, options });
         self.nodes.insert(id, node);
         id
     }
@@ -402,44 +319,28 @@ impl AstBuilder {
 
     pub fn create_tuple_expression(&mut self, values: Vec<u32>, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::TupleExpression(TupleExpression {
-            id,
-            span,
-            values,
-        });
+        let node = AstNode::TupleExpression(TupleExpression { id, span, values });
         self.nodes.insert(id, node);
         id
     }
 
     pub fn create_value_of_expression(&mut self, target: u32, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::ValueOfExpression(ValueOfExpression {
-            id,
-            span,
-            target,
-        });
+        let node = AstNode::ValueOfExpression(ValueOfExpression { id, span, target });
         self.nodes.insert(id, node);
         id
     }
 
     pub fn create_type_of_expression(&mut self, target: u32, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::TypeOfExpression(TypeOfExpression {
-            id,
-            span,
-            target,
-        });
+        let node = AstNode::TypeOfExpression(TypeOfExpression { id, span, target });
         self.nodes.insert(id, node);
         id
     }
 
     pub fn create_import_statement(&mut self, path: u32, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::ImportStatement(ImportStatement {
-            id,
-            span,
-            path,
-        });
+        let node = AstNode::ImportStatement(ImportStatement { id, span, path });
         self.nodes.insert(id, node);
         id
     }
@@ -449,6 +350,7 @@ impl AstBuilder {
         name: u32,
         statements: Vec<u32>,
         decorators: Vec<u32>,
+        modifiers: Vec<u32>,
         span: Span,
     ) -> u32 {
         let id = self.node_id_gen.next();
@@ -458,6 +360,7 @@ impl AstBuilder {
             name,
             statements,
             decorators,
+            modifiers,
         });
         self.nodes.insert(id, node);
         id
@@ -465,36 +368,15 @@ impl AstBuilder {
 
     pub fn create_using_declaration(&mut self, name: u32, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::UsingDeclaration(UsingDeclaration {
-            id,
-            span,
-            name,
-        });
+        let node = AstNode::UsingDeclaration(UsingDeclaration { id, span, name });
         self.nodes.insert(id, node);
         id
     }
 
-    pub fn create_interface_declaration(
-        &mut self,
-        name: u32,
-        operations: Vec<u32>,
-        extends: Vec<u32>,
-        decorators: Vec<u32>,
-        template_parameters: Vec<u32>,
-        body_range: Span,
-        span: Span,
-    ) -> u32 {
+    pub fn create_interface_declaration(&mut self, mut decl: InterfaceDeclaration) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::InterfaceDeclaration(InterfaceDeclaration {
-            id,
-            span,
-            name,
-            operations,
-            extends,
-            decorators,
-            template_parameters,
-            body_range,
-        });
+        decl.id = id;
+        let node = AstNode::InterfaceDeclaration(decl);
         self.nodes.insert(id, node);
         id
     }
@@ -505,6 +387,7 @@ impl AstBuilder {
         variants: Vec<u32>,
         decorators: Vec<u32>,
         template_parameters: Vec<u32>,
+        modifiers: Vec<u32>,
         span: Span,
     ) -> u32 {
         let id = self.node_id_gen.next();
@@ -515,6 +398,7 @@ impl AstBuilder {
             variants,
             decorators,
             template_parameters,
+            modifiers,
         });
         self.nodes.insert(id, node);
         id
@@ -544,6 +428,7 @@ impl AstBuilder {
         name: u32,
         members: Vec<u32>,
         decorators: Vec<u32>,
+        modifiers: Vec<u32>,
         span: Span,
     ) -> u32 {
         let id = self.node_id_gen.next();
@@ -553,6 +438,7 @@ impl AstBuilder {
             name,
             members,
             decorators,
+            modifiers,
         });
         self.nodes.insert(id, node);
         id
@@ -579,11 +465,7 @@ impl AstBuilder {
 
     pub fn create_enum_spread_member(&mut self, target: u32, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::EnumSpreadMember(EnumSpreadMember {
-            id,
-            span,
-            target,
-        });
+        let node = AstNode::EnumSpreadMember(EnumSpreadMember { id, span, target });
         self.nodes.insert(id, node);
         id
     }
@@ -593,6 +475,7 @@ impl AstBuilder {
         name: u32,
         value: u32,
         template_parameters: Vec<u32>,
+        modifiers: Vec<u32>,
         span: Span,
     ) -> u32 {
         let id = self.node_id_gen.next();
@@ -602,6 +485,7 @@ impl AstBuilder {
             name,
             value,
             template_parameters,
+            modifiers,
         });
         self.nodes.insert(id, node);
         id
@@ -612,6 +496,7 @@ impl AstBuilder {
         name: u32,
         value: u32,
         type_annotation: Option<u32>,
+        modifiers: Vec<u32>,
         span: Span,
     ) -> u32 {
         let id = self.node_id_gen.next();
@@ -621,30 +506,16 @@ impl AstBuilder {
             name,
             value,
             type_annotation,
+            modifiers,
         });
         self.nodes.insert(id, node);
         id
     }
 
-    pub fn create_scalar_declaration(
-        &mut self,
-        name: u32,
-        extends: Option<u32>,
-        decorators: Vec<u32>,
-        constructors: Vec<u32>,
-        body_range: Span,
-        span: Span,
-    ) -> u32 {
+    pub fn create_scalar_declaration(&mut self, mut decl: ScalarDeclaration) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::ScalarDeclaration(ScalarDeclaration {
-            id,
-            span,
-            name,
-            extends,
-            decorators,
-            constructors,
-            body_range,
-        });
+        decl.id = id;
+        let node = AstNode::ScalarDeclaration(decl);
         self.nodes.insert(id, node);
         id
     }
@@ -672,6 +543,7 @@ impl AstBuilder {
         signature: u32,
         decorators: Vec<u32>,
         template_parameters: Vec<u32>,
+        modifiers: Vec<u32>,
         span: Span,
     ) -> u32 {
         let id = self.node_id_gen.next();
@@ -682,6 +554,7 @@ impl AstBuilder {
             signature,
             decorators,
             template_parameters,
+            modifiers,
         });
         self.nodes.insert(id, node);
         id
@@ -704,11 +577,7 @@ impl AstBuilder {
         id
     }
 
-    pub fn create_operation_signature_reference(
-        &mut self,
-        base_operation: u32,
-        span: Span,
-    ) -> u32 {
+    pub fn create_operation_signature_reference(&mut self, base_operation: u32, span: Span) -> u32 {
         let id = self.node_id_gen.next();
         let node = AstNode::OperationSignatureReference(OperationSignatureReference {
             id,
@@ -760,6 +629,7 @@ impl AstBuilder {
         name: u32,
         target: u32,
         parameters: Vec<u32>,
+        modifiers: Vec<u32>,
         span: Span,
     ) -> u32 {
         let id = self.node_id_gen.next();
@@ -769,6 +639,7 @@ impl AstBuilder {
             name,
             target,
             parameters,
+            modifiers,
         });
         self.nodes.insert(id, node);
         id
@@ -779,6 +650,7 @@ impl AstBuilder {
         name: u32,
         parameters: Vec<u32>,
         return_type: Option<u32>,
+        modifiers: Vec<u32>,
         span: Span,
     ) -> u32 {
         let id = self.node_id_gen.next();
@@ -788,6 +660,7 @@ impl AstBuilder {
             name,
             parameters,
             return_type,
+            modifiers,
         });
         self.nodes.insert(id, node);
         id
@@ -981,27 +854,25 @@ impl AstBuilder {
 
     pub fn create_object_literal_spread_property(&mut self, target: u32, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::ObjectLiteralSpreadProperty(ObjectLiteralSpreadProperty {
-            id,
-            span,
-            target,
-        });
+        let node =
+            AstNode::ObjectLiteralSpreadProperty(ObjectLiteralSpreadProperty { id, span, target });
         self.nodes.insert(id, node);
         id
     }
 
     pub fn create_array_literal(&mut self, values: Vec<u32>, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::ArrayLiteral(ArrayLiteral {
-            id,
-            span,
-            values,
-        });
+        let node = AstNode::ArrayLiteral(ArrayLiteral { id, span, values });
         self.nodes.insert(id, node);
         id
     }
 
-    pub fn create_string_template_expression(&mut self, head: u32, spans: Vec<u32>, span: Span) -> u32 {
+    pub fn create_string_template_expression(
+        &mut self,
+        head: u32,
+        spans: Vec<u32>,
+        span: Span,
+    ) -> u32 {
         let id = self.node_id_gen.next();
         let node = AstNode::StringTemplateExpression(StringTemplateExpression {
             id,
@@ -1013,40 +884,38 @@ impl AstBuilder {
         id
     }
 
-    pub fn create_string_template_head(&mut self, value: String, _flags: TokenFlags, span: Span) -> u32 {
+    pub fn create_string_template_head(
+        &mut self,
+        value: String,
+        _flags: TokenFlags,
+        span: Span,
+    ) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::StringTemplateHead(StringTemplateHead {
-            id,
-            span,
-            value,
-        });
+        let node = AstNode::StringTemplateHead(StringTemplateHead { id, span, value });
         self.nodes.insert(id, node);
         id
     }
 
     pub fn create_string_template_middle(&mut self, value: String, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::StringTemplateMiddle(StringTemplateMiddle {
-            id,
-            span,
-            value,
-        });
+        let node = AstNode::StringTemplateMiddle(StringTemplateMiddle { id, span, value });
         self.nodes.insert(id, node);
         id
     }
 
     pub fn create_string_template_tail(&mut self, value: String, span: Span) -> u32 {
         let id = self.node_id_gen.next();
-        let node = AstNode::StringTemplateTail(StringTemplateTail {
-            id,
-            span,
-            value,
-        });
+        let node = AstNode::StringTemplateTail(StringTemplateTail { id, span, value });
         self.nodes.insert(id, node);
         id
     }
 
-    pub fn create_string_template_span(&mut self, expression: u32, literal: u32, span: Span) -> u32 {
+    pub fn create_string_template_span(
+        &mut self,
+        expression: u32,
+        literal: u32,
+        span: Span,
+    ) -> u32 {
         let id = self.node_id_gen.next();
         let node = AstNode::StringTemplateSpan(StringTemplateSpan {
             id,

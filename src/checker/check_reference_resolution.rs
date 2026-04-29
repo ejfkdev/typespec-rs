@@ -77,10 +77,7 @@ impl Checker {
                     {
                         self.error(
                             "circular-prop",
-                            &format!(
-                                "Property '{}' recursively references itself.",
-                                prop_name
-                            ),
+                            &format!("Property '{}' recursively references itself.", prop_name),
                         );
                         return self.error_type;
                     }

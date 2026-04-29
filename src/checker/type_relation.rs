@@ -179,8 +179,7 @@ impl TypeRelationChecker {
         if let Type::TemplateParameter(tp) = source_type
             && let Some(constraint_id) = tp.constraint
         {
-            let constraint_related =
-                self.is_related_with_store(store, constraint_id, target_id);
+            let constraint_related = self.is_related_with_store(store, constraint_id, target_id);
             if constraint_related.is_true() {
                 return Related::True;
             }

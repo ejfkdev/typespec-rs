@@ -297,11 +297,7 @@ impl OpenAPIEmitter {
                                 && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
                             {
                                 s.push_str(&format!("{}  {}:\n", pad, prop_name));
-                                s.push_str(&self.type_to_schema(
-                                    checker,
-                                    prop.r#type,
-                                    indent + 4,
-                                ));
+                                s.push_str(&self.type_to_schema(checker, prop.r#type, indent + 4));
                             }
                         }
                         s

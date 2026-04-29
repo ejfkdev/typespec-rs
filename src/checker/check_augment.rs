@@ -277,8 +277,7 @@ impl Checker {
                 // Check if alias value has template arguments
                 if let Some(Type::Scalar(s)) = self.get_type(type_id)
                     && let Some(alias_node_id) = s.node
-                    && let Some(AstNode::AliasStatement(alias_decl)) =
-                        ast.id_to_node(alias_node_id)
+                    && let Some(AstNode::AliasStatement(alias_decl)) = ast.id_to_node(alias_node_id)
                     && let Some(AstNode::TypeReference(tr)) = ast.id_to_node(alias_decl.value)
                     && !tr.arguments.is_empty()
                 {

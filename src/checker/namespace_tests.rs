@@ -969,15 +969,15 @@ mod namespace_tests {
         // If global.B.X resolves correctly, Y extends X
         let y_type = checker.declared_types.get("Y").copied().unwrap();
         let y = checker.get_type(y_type).cloned().unwrap();
-        if let Type::Model(m) = y {
-            if m.base_model.is_some() {
-                let x_type = checker.declared_types.get("X").copied().unwrap();
-                assert_eq!(
-                    m.base_model,
-                    Some(x_type),
-                    "Y should extend X from global.B namespace"
-                );
-            }
+        if let Type::Model(m) = y
+            && m.base_model.is_some()
+        {
+            let x_type = checker.declared_types.get("X").copied().unwrap();
+            assert_eq!(
+                m.base_model,
+                Some(x_type),
+                "Y should extend X from global.B namespace"
+            );
             // If base_model is None, global keyword resolution is not yet supported
         }
     }

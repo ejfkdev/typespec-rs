@@ -158,11 +158,11 @@ impl Checker {
                     if ext_iface.operations.contains_key(ext_op_name) {
                         // Only report duplicate if this operation is NOT overridden by own operations
                         if !own_op_names_seen.contains(ext_op_name) {
-                            if let Some(&prev_source) = inherited_op_sources.get(ext_op_name) {
-                                if prev_source != extends_type_id {
-                                    self.error("extends-interface-duplicate", &format!("Interface '{}' has duplicate member '{}' from multiple extended interfaces.", name, ext_op_name));
-                                    break; // Only report once
-                                }
+                            if let Some(&prev_source) = inherited_op_sources.get(ext_op_name)
+                                && prev_source != extends_type_id
+                            {
+                                self.error("extends-interface-duplicate", &format!("Interface '{}' has duplicate member '{}' from multiple extended interfaces.", name, ext_op_name));
+                                break; // Only report once
                             } else {
                                 inherited_op_sources.insert(ext_op_name.clone(), extends_type_id);
                             }

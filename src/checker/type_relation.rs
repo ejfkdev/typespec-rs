@@ -176,17 +176,19 @@ impl TypeRelationChecker {
         // assignable to the target. If the constraint is assignable, the template
         // parameter is also assignable (e.g., T extends string is assignable to string).
         // If no constraint, return Maybe (could be anything).
-        if let Type::TemplateParameter(tp) = source_type {
-            if let Some(constraint_id) = tp.constraint {
-                let constraint_related =
-                    self.is_related_with_store(store, constraint_id, target_id);
-                if constraint_related.is_true() {
-                    return Related::True;
-                }
-                // If constraint is not assignable, the template parameter might still
-                // be assignable at instantiation time, so return Maybe
-                return Related::Maybe;
+        if let Type::TemplateParameter(tp) = source_type
+            && let Some(constraint_id) = tp.constraint
+        {
+            let constraint_related =
+                self.is_related_with_store(store, constraint_id, target_id);
+            if constraint_related.is_true() {
+                return Related::True;
             }
+            // If constraint is not assignable, the template parameter might still
+            // be assignable at instantiation time, so return Maybe
+            return Related::Maybe;
+        }
+        if let Type::TemplateParameter(_) = source_type {
             return Related::Maybe;
         }
 

@@ -40,63 +40,61 @@ impl OpenAPIEmitter {
         let mut paths = Vec::new();
 
         // Walk the global namespace
-        if let Some(gns_id) = checker.global_namespace_type {
-            if let Some(Type::Namespace(ns)) = checker.get_type(gns_id) {
-                // Models → schemas
-                for name in &ns.model_names {
-                    if let Some(&model_id) = ns.models.get(name) {
-                        if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                            // Skip template instances (they are inline)
-                            if m.template_node.is_some() && m.template_mapper.is_some() {
-                                continue;
-                            }
-                            // Skip array-like models (have indexer), they are rendered inline
-                            if m.indexer.is_some() {
-                                continue;
-                            }
-                            schemas.push(self.emit_model_schema(checker, m));
-                        }
+        if let Some(gns_id) = checker.global_namespace_type
+            && let Some(Type::Namespace(ns)) = checker.get_type(gns_id)
+        {
+            // Models -> schemas
+            for name in &ns.model_names {
+                if let Some(&model_id) = ns.models.get(name)
+                    && let Some(Type::Model(m)) = checker.get_type(model_id)
+                {
+                    // Skip template instances (they are inline)
+                    if m.template_node.is_some() && m.template_mapper.is_some() {
+                        continue;
                     }
+                    // Skip array-like models (have indexer), they are rendered inline
+                    if m.indexer.is_some() {
+                        continue;
+                    }
+                    schemas.push(self.emit_model_schema(checker, m));
                 }
+            }
 
-                // Enums → schemas
-                for name in &ns.enum_names {
-                    if let Some(&enum_id) = ns.enums.get(name) {
-                        if let Some(Type::Enum(e)) = checker.get_type(enum_id) {
-                            schemas.push(self.emit_enum_schema(e));
-                        }
-                    }
+            // Enums -> schemas
+            for name in &ns.enum_names {
+                if let Some(&enum_id) = ns.enums.get(name)
+                    && let Some(Type::Enum(e)) = checker.get_type(enum_id)
+                {
+                    schemas.push(self.emit_enum_schema(e));
                 }
+            }
 
-                // Unions → schemas
-                for name in &ns.union_names {
-                    if let Some(&union_id) = ns.unions.get(name) {
-                        if let Some(Type::Union(u)) = checker.get_type(union_id) {
-                            if !u.expression {
-                                schemas.push(self.emit_union_schema(checker, u));
-                            }
-                        }
-                    }
+            // Unions -> schemas
+            for name in &ns.union_names {
+                if let Some(&union_id) = ns.unions.get(name)
+                    && let Some(Type::Union(u)) = checker.get_type(union_id)
+                    && !u.expression
+                {
+                    schemas.push(self.emit_union_schema(checker, u));
                 }
+            }
 
-                // Interfaces → paths
-                for name in &ns.interface_names {
-                    if let Some(&iface_id) = ns.interfaces.get(name) {
-                        if let Some(Type::Interface(iface)) = checker.get_type(iface_id) {
-                            paths.push(self.emit_interface_paths(checker, iface));
-                        }
-                    }
+            // Interfaces -> paths
+            for name in &ns.interface_names {
+                if let Some(&iface_id) = ns.interfaces.get(name)
+                    && let Some(Type::Interface(iface)) = checker.get_type(iface_id)
+                {
+                    paths.push(self.emit_interface_paths(checker, iface));
                 }
+            }
 
-                // Standalone operations → paths
-                for name in &ns.operation_names {
-                    if let Some(&op_id) = ns.operations.get(name) {
-                        if let Some(Type::Operation(op)) = checker.get_type(op_id) {
-                            if op.interface_.is_none() {
-                                paths.push(self.emit_operation_path(checker, op));
-                            }
-                        }
-                    }
+            // Standalone operations -> paths
+            for name in &ns.operation_names {
+                if let Some(&op_id) = ns.operations.get(name)
+                    && let Some(Type::Operation(op)) = checker.get_type(op_id)
+                    && op.interface_.is_none()
+                {
+                    paths.push(self.emit_operation_path(checker, op));
                 }
             }
         }
@@ -160,11 +158,11 @@ impl OpenAPIEmitter {
         s.push_str("      properties:\n");
 
         for prop_name in &m.property_names {
-            if let Some(&prop_id) = m.properties.get(prop_name) {
-                if let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id) {
-                    s.push_str(&format!("        {}:\n", prop_name));
-                    s.push_str(&self.type_to_schema(checker, prop.r#type, 10));
-                }
+            if let Some(&prop_id) = m.properties.get(prop_name)
+                && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
+            {
+                s.push_str(&format!("        {}:\n", prop_name));
+                s.push_str(&self.type_to_schema(checker, prop.r#type, 10));
             }
         }
 
@@ -187,10 +185,10 @@ impl OpenAPIEmitter {
         s.push_str(&format!("    {}:\n", u.name));
         s.push_str("      oneOf:\n");
         for variant_name in &u.variant_names {
-            if let Some(&variant_id) = u.variants.get(variant_name) {
-                if let Some(Type::UnionVariant(v)) = checker.get_type(variant_id) {
-                    s.push_str(&self.type_to_schema(checker, v.r#type, 8));
-                }
+            if let Some(&variant_id) = u.variants.get(variant_name)
+                && let Some(Type::UnionVariant(v)) = checker.get_type(variant_id)
+            {
+                s.push_str(&self.type_to_schema(checker, v.r#type, 8));
             }
         }
         s
@@ -199,10 +197,10 @@ impl OpenAPIEmitter {
     fn emit_interface_paths(&self, checker: &Checker, iface: &InterfaceType) -> String {
         let mut s = String::new();
         for op_name in &iface.operation_names {
-            if let Some(&op_id) = iface.operations.get(op_name) {
-                if let Some(Type::Operation(op)) = checker.get_type(op_id) {
-                    s.push_str(&self.emit_operation_path(checker, op));
-                }
+            if let Some(&op_id) = iface.operations.get(op_name)
+                && let Some(Type::Operation(op)) = checker.get_type(op_id)
+            {
+                s.push_str(&self.emit_operation_path(checker, op));
             }
         }
         s
@@ -219,23 +217,23 @@ impl OpenAPIEmitter {
         s.push_str(&format!("        summary: {}\n", op.name));
 
         // Parameters from operation parameters model
-        if let Some(params_id) = op.parameters {
-            if let Some(Type::Model(params_model)) = checker.get_type(params_id) {
-                for param_name in &params_model.property_names {
-                    if let Some(&prop_id) = params_model.properties.get(param_name) {
-                        if let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id) {
-                            s.push_str("        parameters:\n");
-                            s.push_str("          - name: ");
-                            s.push_str(param_name);
-                            s.push('\n');
-                            s.push_str("            in: query\n");
-                            if !prop.optional {
-                                s.push_str("            required: true\n");
-                            }
-                            s.push_str("            schema:\n");
-                            s.push_str(&self.type_to_schema(checker, prop.r#type, 14));
-                        }
+        if let Some(params_id) = op.parameters
+            && let Some(Type::Model(params_model)) = checker.get_type(params_id)
+        {
+            for param_name in &params_model.property_names {
+                if let Some(&prop_id) = params_model.properties.get(param_name)
+                    && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
+                {
+                    s.push_str("        parameters:\n");
+                    s.push_str("          - name: ");
+                    s.push_str(param_name);
+                    s.push('\n');
+                    s.push_str("            in: query\n");
+                    if !prop.optional {
+                        s.push_str("            required: true\n");
                     }
+                    s.push_str("            schema:\n");
+                    s.push_str(&self.type_to_schema(checker, prop.r#type, 14));
                 }
             }
         }
@@ -295,15 +293,15 @@ impl OpenAPIEmitter {
                         let mut s = format!("{}type: object\n", pad);
                         s.push_str(&format!("{}properties:\n", pad));
                         for prop_name in &m.property_names {
-                            if let Some(&prop_id) = m.properties.get(prop_name) {
-                                if let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id) {
-                                    s.push_str(&format!("{}  {}:\n", pad, prop_name));
-                                    s.push_str(&self.type_to_schema(
-                                        checker,
-                                        prop.r#type,
-                                        indent + 4,
-                                    ));
-                                }
+                            if let Some(&prop_id) = m.properties.get(prop_name)
+                                && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
+                            {
+                                s.push_str(&format!("{}  {}:\n", pad, prop_name));
+                                s.push_str(&self.type_to_schema(
+                                    checker,
+                                    prop.r#type,
+                                    indent + 4,
+                                ));
                             }
                         }
                         s
@@ -426,12 +424,10 @@ impl OpenAPIEmitter {
                     format!("{}$ref: '#/components/schemas/{}'\n", pad, op.name)
                 }
                 Type::EnumMember(em) => {
-                    if let Some(eid) = em.r#enum {
-                        if let Some(Type::Enum(e)) = checker.get_type(eid) {
-                            format!("{}$ref: '#/components/schemas/{}'\n", pad, e.name)
-                        } else {
-                            format!("{}type: string\n", pad)
-                        }
+                    if let Some(eid) = em.r#enum
+                        && let Some(Type::Enum(e)) = checker.get_type(eid)
+                    {
+                        format!("{}$ref: '#/components/schemas/{}'\n", pad, e.name)
                     } else {
                         format!("{}type: string\n", pad)
                     }

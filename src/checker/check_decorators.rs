@@ -38,15 +38,15 @@ impl Checker {
 
             // Check if this is a compiler-internal decorator that cannot be used from user code
             // Ported from TS checkSymbolAccess — check visibility of the resolved declaration
-            if let Some(decl_id) = declaration_type_id {
-                if self.is_internal_type(decl_id) {
-                    self.check_internal_visibility_for(decl_id, &decorator_name);
-                    // If it's internal and we're not in compiler context, skip it
-                    if self.internal_declarations.contains(&decl_id)
-                        && !self.is_current_context_compiler()
-                    {
-                        continue;
-                    }
+            if let Some(decl_id) = declaration_type_id
+                && self.is_internal_type(decl_id)
+            {
+                self.check_internal_visibility_for(decl_id, &decorator_name);
+                // If it's internal and we're not in compiler context, skip it
+                if self.internal_declarations.contains(&decl_id)
+                    && !self.is_current_context_compiler()
+                {
+                    continue;
                 }
             }
 
@@ -180,10 +180,10 @@ impl Checker {
             }
         }
 
-        if let Some(t) = self.get_type_mut(type_id) {
-            if let Some(decs) = t.decorators_mut() {
-                *decs = decorator_apps;
-            }
+        if let Some(t) = self.get_type_mut(type_id)
+            && let Some(decs) = t.decorators_mut()
+        {
+            *decs = decorator_apps;
         }
     }
 

@@ -46,11 +46,12 @@ impl Checker {
 
         // Check internal visibility for member access (e.g., "TypeSpec.indexer")
         let full_name = Self::get_identifier_name(&ast, node_id);
-        if let Some(decl_id) = self.declared_types.get(full_name.as_str()).copied() {
-            if self.is_internal_type(decl_id) && !self.is_current_context_compiler() {
-                self.error("invalid-ref", &format!("Symbol '{}' is internal and can only be accessed from within its declaring package.", full_name));
-                return self.error_type;
-            }
+        if let Some(decl_id) = self.declared_types.get(full_name.as_str()).copied()
+            && self.is_internal_type(decl_id)
+            && !self.is_current_context_compiler()
+        {
+            self.error("invalid-ref", &format!("Symbol '{}' is internal and can only be accessed from within its declaring package.", full_name));
+            return self.error_type;
         }
 
         // Look up the property in the base type
@@ -70,19 +71,18 @@ impl Checker {
                 // Model property access - look up by name
                 if let Some(&prop_id) = m.properties.get(&prop_name) {
                     // Check if this property is currently being resolved (circular-prop)
-                    if let Some(Type::ModelProperty(prop)) = self.get_type(prop_id) {
-                        if let Some(prop_node) = prop.node {
-                            if self.pending_type_checks.contains(&prop_node) {
-                                self.error(
-                                    "circular-prop",
-                                    &format!(
-                                        "Property '{}' recursively references itself.",
-                                        prop_name
-                                    ),
-                                );
-                                return self.error_type;
-                            }
-                        }
+                    if let Some(Type::ModelProperty(prop)) = self.get_type(prop_id)
+                        && let Some(prop_node) = prop.node
+                        && self.pending_type_checks.contains(&prop_node)
+                    {
+                        self.error(
+                            "circular-prop",
+                            &format!(
+                                "Property '{}' recursively references itself.",
+                                prop_name
+                            ),
+                        );
+                        return self.error_type;
                     }
                     return prop_id;
                 }

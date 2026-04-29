@@ -1052,10 +1052,10 @@ impl Checker {
         if let Some(cands) = candidates {
             let prop_count = m.properties.len();
             for &candidate_id in &cands {
-                if let Some(count) = self.count_properties_inherited(candidate_id, None) {
-                    if prop_count == count {
-                        return candidate_id;
-                    }
+                if let Some(count) = self.count_properties_inherited(candidate_id, None)
+                    && prop_count == count
+                {
+                    return candidate_id;
                 }
             }
         }
@@ -1079,12 +1079,11 @@ impl Checker {
         let mut current = Some(prop_id);
         while let Some(pid) = current {
             if let Some(Type::ModelProperty(p)) = self.get_type(pid) {
-                if let Some(model_id) = p.model {
-                    if let Some(Type::Model(m)) = self.get_type(model_id) {
-                        if !m.name.is_empty() {
-                            set.insert(model_id);
-                        }
-                    }
+                if let Some(model_id) = p.model
+                    && let Some(Type::Model(m)) = self.get_type(model_id)
+                    && !m.name.is_empty()
+                {
+                    set.insert(model_id);
                 }
                 current = p.source_property;
             } else {
@@ -1139,10 +1138,10 @@ impl Checker {
             if let Some(Type::Model(m)) = self.get_type(mid) {
                 for &prop_id in m.properties.values() {
                     if let Some(f) = filter {
-                        if let Some(prop_type) = self.get_type(prop_id) {
-                            if f(prop_type) {
-                                count += 1;
-                            }
+                        if let Some(prop_type) = self.get_type(prop_id)
+                            && f(prop_type)
+                        {
+                            count += 1;
                         }
                     } else {
                         count += 1;
@@ -1266,10 +1265,10 @@ impl Checker {
             return self.error_type;
         }
 
-        if let Some(Type::Scalar(s)) = self.get_type(constraint_type) {
-            if s.base_scalar.is_some() {
-                return constraint_type;
-            }
+        if let Some(Type::Scalar(s)) = self.get_type(constraint_type)
+            && s.base_scalar.is_some()
+        {
+            return constraint_type;
         }
 
         value_type

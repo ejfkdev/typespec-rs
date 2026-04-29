@@ -51,10 +51,9 @@ impl Checker {
             // Find the namespace type by name
             if let Some(&ns_id) = self.declared_types.get(using_ns_name)
                 && let Some(Type::Namespace(ns)) = self.get_type(ns_id)
+                && let Some(type_id) = ns.lookup_member(name)
             {
-                if let Some(type_id) = ns.lookup_member(name) {
-                    return Some(type_id);
-                }
+                return Some(type_id);
             }
         }
         None
@@ -64,21 +63,19 @@ impl Checker {
     pub(crate) fn mark_using_as_used_if_applicable(&mut self, _name: &str, type_id: TypeId) {
         // Get the namespace that this type belongs to
         let ns_id = self.get_type(type_id).and_then(|t| t.namespace());
-        if let Some(ns_id) = ns_id {
-            // Find the namespace name
-            let ns_name = self.get_type(ns_id).and_then(|t| match t {
+        if let Some(ns_id) = ns_id
+            && let Some(ns_name) = self.get_type(ns_id).and_then(|t| match t {
                 Type::Namespace(ns) => Some(ns.name.clone()),
                 _ => None,
-            });
-            if let Some(ns_name) = ns_name {
-                // If this using's namespace matches, mark it as used
-                if self
-                    .using_declarations
-                    .iter()
-                    .any(|(_, using_ns)| *using_ns == ns_name)
-                {
-                    self.used_using_names.insert(ns_name);
-                }
+            })
+        {
+            // If this using's namespace matches, mark it as used
+            if self
+                .using_declarations
+                .iter()
+                .any(|(_, using_ns)| *using_ns == ns_name)
+            {
+                self.used_using_names.insert(ns_name);
             }
         }
     }
@@ -257,38 +254,38 @@ impl Checker {
             Some(AstNode::MemberExpression(_)) => Some(name_id),
             _ => None,
         });
-        if let Some(me_id) = member_expr_id {
-            if let Some(AstNode::MemberExpression(me)) = ast.id_to_node(me_id) {
-                let obj_name = Self::get_identifier_name(&ast, me.object);
-                if let Some(&type_id) = self.declared_types.get(&obj_name) {
-                    // Check if the object type is a template instance
-                    if self.is_template_instance(type_id) {
-                        self.error(
-                            "augment-decorator-target",
-                            "Augment decorator cannot target a member of a template instance.",
-                        );
-                    }
-                    // Check through alias chain
-                    let resolved = self.resolve_alias_chain(type_id);
-                    if resolved != type_id && self.is_template_instance(resolved) {
-                        self.error(
-                            "augment-decorator-target",
-                            "Augment decorator cannot target a member of a template instance.",
-                        );
-                    }
-                    // Check if alias value has template arguments
-                    if let Some(Type::Scalar(s)) = self.get_type(type_id)
-                        && let Some(alias_node_id) = s.node
-                        && let Some(AstNode::AliasStatement(alias_decl)) =
-                            ast.id_to_node(alias_node_id)
-                        && let Some(AstNode::TypeReference(tr)) = ast.id_to_node(alias_decl.value)
-                        && !tr.arguments.is_empty()
-                    {
-                        self.error(
-                            "augment-decorator-target",
-                            "Augment decorator cannot target a member of a template instance.",
-                        );
-                    }
+        if let Some(me_id) = member_expr_id
+            && let Some(AstNode::MemberExpression(me)) = ast.id_to_node(me_id)
+        {
+            let obj_name = Self::get_identifier_name(&ast, me.object);
+            if let Some(&type_id) = self.declared_types.get(&obj_name) {
+                // Check if the object type is a template instance
+                if self.is_template_instance(type_id) {
+                    self.error(
+                        "augment-decorator-target",
+                        "Augment decorator cannot target a member of a template instance.",
+                    );
+                }
+                // Check through alias chain
+                let resolved = self.resolve_alias_chain(type_id);
+                if resolved != type_id && self.is_template_instance(resolved) {
+                    self.error(
+                        "augment-decorator-target",
+                        "Augment decorator cannot target a member of a template instance.",
+                    );
+                }
+                // Check if alias value has template arguments
+                if let Some(Type::Scalar(s)) = self.get_type(type_id)
+                    && let Some(alias_node_id) = s.node
+                    && let Some(AstNode::AliasStatement(alias_decl)) =
+                        ast.id_to_node(alias_node_id)
+                    && let Some(AstNode::TypeReference(tr)) = ast.id_to_node(alias_decl.value)
+                    && !tr.arguments.is_empty()
+                {
+                    self.error(
+                        "augment-decorator-target",
+                        "Augment decorator cannot target a member of a template instance.",
+                    );
                 }
             }
         }
@@ -407,10 +404,10 @@ impl Checker {
         match property_name.as_str() {
             "returnType" => {
                 // For operations, check if the return type is a template instance
-                if let Some(Type::Operation(op)) = self.get_type(object_type_id) {
-                    if let Some(rt) = op.return_type {
-                        return self.is_template_instance(rt);
-                    }
+                if let Some(Type::Operation(op)) = self.get_type(object_type_id)
+                    && let Some(rt) = op.return_type
+                {
+                    return self.is_template_instance(rt);
                 }
             }
             "parameters" => {

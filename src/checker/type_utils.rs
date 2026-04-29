@@ -263,10 +263,10 @@ pub fn is_template_declaration(checker: &crate::checker::Checker, type_id: TypeI
         None => None,
     };
 
-    if let Some(node_id) = node {
-        if let Some(links) = checker.symbol_links.get(&node_id) {
-            return links.instantiations.is_some();
-        }
+    if let Some(node_id) = node
+        && let Some(links) = checker.symbol_links.get(&node_id)
+    {
+        return links.instantiations.is_some();
     }
     false
 }

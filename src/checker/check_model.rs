@@ -662,30 +662,30 @@ impl Checker {
         }
 
         // Check default value
-        if let Some(default_id) = node.default {
-            if value_type != self.error_type {
-                let default_entity = self.check_node_entity(ctx, default_id);
-                let default_type_id = self.entity_to_type_id(&default_entity);
+        if let Some(default_id) = node.default
+            && value_type != self.error_type
+        {
+            let default_entity = self.check_node_entity(ctx, default_id);
+            let default_type_id = self.entity_to_type_id(&default_entity);
 
-                let (is_assignable, _) =
-                    self.is_type_assignable_to(default_type_id, value_type, default_id);
-                if !is_assignable {
-                    let default_type_name = self.get_type_name_for_diagnostic(default_type_id);
-                    let prop_type_name = self.get_type_name_for_diagnostic(value_type);
-                    self.error(
-                        "unassignable",
-                        &format!(
-                            "Default value of type '{}' is not assignable to type '{}'",
-                            default_type_name, prop_type_name
-                        ),
-                    );
-                }
+            let (is_assignable, _) =
+                self.is_type_assignable_to(default_type_id, value_type, default_id);
+            if !is_assignable {
+                let default_type_name = self.get_type_name_for_diagnostic(default_type_id);
+                let prop_type_name = self.get_type_name_for_diagnostic(value_type);
+                self.error(
+                    "unassignable",
+                    &format!(
+                        "Default value of type '{}' is not assignable to type '{}'",
+                        default_type_name, prop_type_name
+                    ),
+                );
+            }
 
-                if let Some(t) = self.get_type_mut(placeholder_id)
-                    && let Type::ModelProperty(p) = t
-                {
-                    p.default_value = Some(default_type_id);
-                }
+            if let Some(t) = self.get_type_mut(placeholder_id)
+                && let Type::ModelProperty(p) = t
+            {
+                p.default_value = Some(default_type_id);
             }
         }
 

@@ -60,16 +60,16 @@ impl Checker {
             // Ported from TS parser.ts:1302-1308 — fn-in-union-expression
             // Check if a function type expression appears directly in a union
             // without being parenthesized
-            if let Some(ast) = self.require_ast() {
-                if matches!(
+            if let Some(ast) = self.require_ast()
+                && matches!(
                     ast.id_to_node(option_id),
                     Some(AstNode::FunctionTypeExpression(_))
-                ) {
-                    self.error(
-                        "fn-in-union-expression",
-                        "Function types in anonymous union expressions must be parenthesized.",
-                    );
-                }
+                )
+            {
+                self.error(
+                    "fn-in-union-expression",
+                    "Function types in anonymous union expressions must be parenthesized.",
+                );
             }
 
             let option_type = self.check_node(ctx, option_id);
@@ -155,13 +155,13 @@ impl Checker {
             }
 
             // Check for intersect-invalid-index: array model in intersection
-            if let Some(Type::Model(m)) = self.get_type(resolved) {
-                if m.indexer.is_some() {
-                    self.error(
-                        "intersect-invalid-index",
-                        "Cannot intersect an array model with a non-array model.",
-                    );
-                }
+            if let Some(Type::Model(m)) = self.get_type(resolved)
+                && m.indexer.is_some()
+            {
+                self.error(
+                    "intersect-invalid-index",
+                    "Cannot intersect an array model with a non-array model.",
+                );
             }
 
             // Track source types for type_relation intersection resolution
@@ -456,12 +456,14 @@ impl Checker {
                     _ => None,
                 };
 
-                if let Some(name) = &expr_name {
-                    if self.declared_values.contains_key(name) {
-                        has_value_interp = true;
-                    } else if self.declared_types.contains_key(name) {
-                        has_type_interp = true;
-                    }
+                if let Some(name) = &expr_name
+                    && self.declared_values.contains_key(name)
+                {
+                    has_value_interp = true;
+                } else if let Some(name) = &expr_name
+                    && self.declared_types.contains_key(name)
+                {
+                    has_type_interp = true;
                 }
 
                 // If the expression type is a string literal, it's a value

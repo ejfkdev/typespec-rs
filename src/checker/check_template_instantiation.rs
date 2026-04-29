@@ -88,15 +88,12 @@ impl Checker {
                     .is_some_and(|t| t.template_node().is_some());
                 let needs_check =
                     !is_template_decl && self.get_type(type_id).is_none_or(|t| !t.is_finished());
-                if needs_check {
-                    if let Some(decl_node_id) =
+                if needs_check
+                    && let Some(decl_node_id) =
                         self.get_type(type_id).and_then(|t| t.node_id_from_type())
-                    {
-                        // Don't re-check if already being checked (circular reference)
-                        if !self.pending_type_checks.contains(&decl_node_id) {
-                            self.check_node(ctx, decl_node_id);
-                        }
-                    }
+                    && !self.pending_type_checks.contains(&decl_node_id)
+                {
+                    self.check_node(ctx, decl_node_id);
                 }
             }
 

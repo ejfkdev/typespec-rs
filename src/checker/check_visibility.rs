@@ -88,12 +88,11 @@ impl Checker {
         for (i, part) in parts.iter().enumerate() {
             if i == parts.len() - 1 {
                 // Last part: look in the current namespace's decorator_declarations
-                if let Some(ns_id) = current_ns_id {
-                    if let Some(Type::Namespace(ns)) = self.get_type(ns_id) {
-                        if let Some(&dec_id) = ns.decorator_declarations.get(*part) {
-                            return Some(dec_id);
-                        }
-                    }
+                if let Some(ns_id) = current_ns_id
+                    && let Some(Type::Namespace(ns)) = self.get_type(ns_id)
+                    && let Some(&dec_id) = ns.decorator_declarations.get(*part)
+                {
+                    return Some(dec_id);
                 }
             } else {
                 // Navigate into namespace
@@ -126,10 +125,10 @@ impl Checker {
 
         // Walk up the namespace chain to check if any ancestor is "TypeSpec"
         let ns = self.get_type(type_id).and_then(|t| t.namespace());
-        if let Some(ns_id) = ns {
-            if self.is_typespec_namespace(ns_id) {
-                return LocationContext::Compiler;
-            }
+        if let Some(ns_id) = ns
+            && self.is_typespec_namespace(ns_id)
+        {
+            return LocationContext::Compiler;
         }
         LocationContext::Project
     }

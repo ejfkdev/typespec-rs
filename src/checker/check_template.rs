@@ -142,13 +142,14 @@ impl Checker {
                 let default_type = self.check_node(ctx, default_id);
                 // Check if default is assignable to constraint
                 // Ported from TS checker.ts checkTemplateArguments()
-                if let Some(constraint_id) = constraint {
-                    if default_type != self.error_type && constraint_id != self.error_type {
-                        let (is_assignable, _) =
-                            self.is_type_assignable_to(default_type, constraint_id, param_id);
-                        if !is_assignable {
-                            self.error_unassignable("unassignable", default_type, constraint_id);
-                        }
+                if let Some(constraint_id) = constraint
+                    && default_type != self.error_type
+                    && constraint_id != self.error_type
+                {
+                    let (is_assignable, _) =
+                        self.is_type_assignable_to(default_type, constraint_id, param_id);
+                    if !is_assignable {
+                        self.error_unassignable("unassignable", default_type, constraint_id);
                     }
                 }
                 Some(default_type)

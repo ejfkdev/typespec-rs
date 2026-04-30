@@ -158,7 +158,7 @@ jobs:
         run: ls -lh raw-binaries/ 2>/dev/null || dir raw-binaries\
 
       - name: Upload raw binary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: binary-${{ join(matrix.targets, '_') }}
           path: raw-binaries/tspc-*

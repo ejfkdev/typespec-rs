@@ -167,6 +167,8 @@ jobs:
     needs: [plan, build]
     if: ${{ always() && needs.plan.result == 'success' && needs.build.result != 'failure' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:

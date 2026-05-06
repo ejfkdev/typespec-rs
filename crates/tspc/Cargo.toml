@@ -26,5 +26,5 @@ default = []
 wasm-extensions = ["dep:wasmtime"]
 
 [dependencies.wasmtime]
-version = "28"
+version = "44"
 optional = true

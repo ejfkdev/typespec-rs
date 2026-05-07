@@ -1,6 +1,6 @@
 [package]
 name = "tspc"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.95"
 description = "TypeSpec compiler CLI — convert .tsp files to JSON, YAML, OpenAPI and more"
@@ -16,7 +16,8 @@ name = "tspc"
 path = "src/main.rs"
 
 [dependencies]
-typespec_rs = { version = "0.2.0", path = "../.." }
+typespec_rs = { version = "0.3.0", path = "../.." }
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

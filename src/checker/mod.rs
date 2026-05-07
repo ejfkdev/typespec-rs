@@ -120,6 +120,25 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 // ============================================================================
+// Custom Decorator Registration
+// ============================================================================
+
+/// Definition of a custom decorator to be registered programmatically.
+///
+/// Used with [`Checker::register_decorator`] to add decorators without
+/// source parsing (`extern dec`), avoiding keyword conflicts and type
+/// resolution issues.
+#[derive(Debug, Clone)]
+pub struct CustomDecoratorDef {
+    /// Decorator name (e.g. "command", "flag")
+    pub name: String,
+    /// Namespace name (e.g. "CLI", "MyApp")
+    pub namespace: String,
+    /// Target type constraint (e.g. "unknown", "Model", "Operation")
+    pub target_type: String,
+}
+
+// ============================================================================
 // Check Context and Flags
 // ============================================================================
 
@@ -328,6 +347,10 @@ pub struct Checker {
     // ---- State accessors for decorator state ----
     /// State maps for intrinsic decorator data (@minValue, @maxValue, etc.)
     pub state_accessors: crate::state_accessors::StateAccessors,
+
+    // ---- Custom decorator registration ----
+    /// Custom decorators registered via `register_decorator()`, processed during `check_program()`
+    pub custom_decorators: Vec<CustomDecoratorDef>,
 }
 
 impl Checker {
@@ -410,6 +433,7 @@ impl Checker {
             spread_sources: HashMap::new(),
             pending_const_checks: HashSet::new(),
             state_accessors: crate::state_accessors::StateAccessors::new(),
+            custom_decorators: Vec::new(),
         }
     }
 
@@ -463,6 +487,36 @@ impl Checker {
     /// Create a new type and add it to the store
     pub fn create_type(&mut self, t: Type) -> TypeId {
         self.type_store.add(t)
+    }
+
+    /// Register a custom decorator programmatically.
+    ///
+    /// The decorator will be created during `check_program()` in the specified
+    /// namespace. If the namespace doesn't exist, it will be created as a
+    /// sub-namespace of the global namespace.
+    ///
+    /// This bypasses source parsing (`extern dec`), avoiding:
+    /// - Keyword conflicts (e.g. `flag`, `arg`, `env` are reserved words)
+    /// - Cross-namespace type resolution failures
+    /// - Union type parameter syntax limitations
+    ///
+    /// Must be called **before** `check_program()`.
+    pub fn register_decorator(&mut self, name: &str, namespace: &str, target_type: &str) {
+        self.custom_decorators.push(CustomDecoratorDef {
+            name: name.to_string(),
+            namespace: namespace.to_string(),
+            target_type: target_type.to_string(),
+        });
+    }
+
+    /// Register multiple custom decorators at once.
+    ///
+    /// Each tuple is `(name, namespace, target_type)`.
+    /// See [`register_decorator`](Self::register_decorator) for details.
+    pub fn register_decorators(&mut self, decorators: Vec<(&str, &str, &str)>) {
+        for (name, namespace, target_type) in decorators {
+            self.register_decorator(name, namespace, target_type);
+        }
     }
 
     /// Create a new value and add it to the store

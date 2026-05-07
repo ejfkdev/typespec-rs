@@ -271,6 +271,74 @@ impl Checker {
         }
     }
 
+    /// Initialize custom decorators registered via `register_decorator()`.
+    ///
+    /// This runs after `initialize_std_types()` so the global namespace exists.
+    /// If a decorator's namespace doesn't exist yet, it is created as a
+    /// sub-namespace of the global namespace.
+    pub(crate) fn initialize_custom_decorators(&mut self) {
+        let custom = std::mem::take(&mut self.custom_decorators);
+
+        for def in custom {
+            // Find or create the namespace
+            let ns_id = match self.declared_types.get(&def.namespace).copied() {
+                Some(id) => id,
+                None => {
+                    // Create the namespace under the global namespace
+                    let ns_id = self.create_type(Type::Namespace(Box::new(NamespaceType::new(
+                        self.next_type_id(),
+                        def.namespace.clone(),
+                        None,
+                        self.global_namespace_type,
+                        true,
+                    ))));
+
+                    // Register as sub-namespace of global namespace
+                    if let Some(global_id) = self.global_namespace_type
+                        && let Some(Type::Namespace(global_ns)) = self.get_type_mut(global_id)
+                    {
+                        global_ns.namespaces.insert(def.namespace.clone(), ns_id);
+                        global_ns.namespace_names.push(def.namespace.clone());
+                    }
+
+                    self.declared_types.insert(def.namespace.clone(), ns_id);
+                    ns_id
+                }
+            };
+
+            // Check if decorator already exists in this namespace
+            let already_exists = if let Some(Type::Namespace(ns)) = self.get_type(ns_id) {
+                ns.decorator_declarations.contains_key(&def.name)
+            } else {
+                false
+            };
+
+            if already_exists {
+                continue;
+            }
+
+            // Create the decorator type
+            let type_id = self.create_type(Type::Decorator(DecoratorType {
+                id: self.next_type_id(),
+                name: def.name.clone(),
+                node: None,
+                namespace: Some(ns_id),
+                target: None,
+                target_type: def.target_type.clone(),
+                parameters: Vec::new(),
+                is_finished: true,
+            }));
+
+            // Register in namespace's decorator_declarations
+            if let Some(t) = self.get_type_mut(ns_id)
+                && let Type::Namespace(ns) = t
+            {
+                ns.decorator_declarations.insert(def.name.clone(), type_id);
+                ns.decorator_declaration_names.push(def.name);
+            }
+        }
+    }
+
     /// Initialize standard enums and models from lib/std/
     /// Ported from TS lib/std/visibility.tsp and lib/std/decorators.tsp
     pub(crate) fn initialize_std_enums_and_models(&mut self) {
@@ -488,5 +556,149 @@ impl Checker {
         ))));
         self.global_namespace_type = Some(ns_id);
         self.current_namespace = Some(ns_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser;
+
+    fn check(source: &str) -> Checker {
+        let parse_result = parser::parse(source);
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.check_program();
+        checker
+    }
+
+    #[test]
+    fn test_register_decorator_basic() {
+        let parse_result = parser::parse("model Pet { name: string; }");
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.register_decorator("command", "CLI", "unknown");
+        checker.check_program();
+
+        // Verify "CLI" namespace was created
+        assert!(checker.declared_types.contains_key("CLI"));
+
+        // Verify "command" decorator exists in CLI namespace
+        let cli_id = checker.declared_types["CLI"];
+        if let Some(Type::Namespace(ns)) = checker.get_type(cli_id) {
+            assert!(ns.decorator_declarations.contains_key("command"));
+        } else {
+            panic!("CLI should be a namespace");
+        }
+    }
+
+    #[test]
+    fn test_register_multiple_decorators() {
+        let parse_result = parser::parse("model Pet { name: string; }");
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.register_decorators(vec![
+            ("command", "CLI", "unknown"),
+            ("flag", "CLI", "unknown"),
+            ("arg", "CLI", "Model"),
+        ]);
+        checker.check_program();
+
+        let cli_id = checker.declared_types["CLI"];
+        if let Some(Type::Namespace(ns)) = checker.get_type(cli_id) {
+            assert!(ns.decorator_declarations.contains_key("command"));
+            assert!(ns.decorator_declarations.contains_key("flag"));
+            assert!(ns.decorator_declarations.contains_key("arg"));
+        }
+    }
+
+    #[test]
+    fn test_register_decorator_in_existing_namespace() {
+        // Register a decorator in "TypeSpec" namespace which already exists
+        let parse_result = parser::parse("model Pet { name: string; }");
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.register_decorator("myCustom", "TypeSpec", "unknown");
+        checker.check_program();
+
+        let ts_id = checker.declared_types["TypeSpec"];
+        if let Some(Type::Namespace(ns)) = checker.get_type(ts_id) {
+            assert!(ns.decorator_declarations.contains_key("myCustom"));
+        }
+    }
+
+    #[test]
+    fn test_register_decorator_no_duplicate() {
+        // Register a decorator with same name as existing std decorator
+        let parse_result = parser::parse("model Pet { name: string; }");
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        // "doc" already exists in TypeSpec namespace
+        checker.register_decorator("doc", "TypeSpec", "unknown");
+        checker.check_program();
+
+        // Should not create a duplicate
+        let ts_id = checker.declared_types["TypeSpec"];
+        if let Some(Type::Namespace(ns)) = checker.get_type(ts_id) {
+            let count = ns.decorator_declaration_names.iter().filter(|n| *n == "doc").count();
+            assert_eq!(count, 1, "should not duplicate existing decorator");
+        }
+    }
+
+    #[test]
+    fn test_custom_decorator_in_type_graph() {
+        // Verify the decorator type was created correctly
+        let parse_result = parser::parse("model Pet { name: string; }");
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.register_decorator("command", "CLI", "Operation");
+        checker.check_program();
+
+        let cli_id = checker.declared_types["CLI"];
+        if let Some(Type::Namespace(ns)) = checker.get_type(cli_id) {
+            let dec_id = ns.decorator_declarations["command"];
+            if let Some(Type::Decorator(dt)) = checker.get_type(dec_id) {
+                assert_eq!(dt.name, "command");
+                assert_eq!(dt.target_type, "Operation");
+                assert_eq!(dt.namespace, Some(cli_id));
+            } else {
+                panic!("command should be a decorator type");
+            }
+        }
+    }
+
+    #[test]
+    fn test_decorator_with_keyword_name() {
+        // "flag", "arg", "env" are reserved keywords in TypeSpec
+        // They should work when registered programmatically
+        let parse_result = parser::parse("model Config { name: string; }");
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.register_decorators(vec![
+            ("flag", "CLI", "unknown"),
+            ("arg", "CLI", "unknown"),
+            ("env", "CLI", "unknown"),
+        ]);
+        checker.check_program();
+
+        let cli_id = checker.declared_types["CLI"];
+        if let Some(Type::Namespace(ns)) = checker.get_type(cli_id) {
+            assert!(ns.decorator_declarations.contains_key("flag"));
+            assert!(ns.decorator_declarations.contains_key("arg"));
+            assert!(ns.decorator_declarations.contains_key("env"));
+        }
+    }
+
+    #[test]
+    fn test_std_decorators_still_work() {
+        // Ensure std decorators are not affected by custom decorator registration
+        let checker = check("model Pet { name: string; }");
+
+        let ts_id = checker.declared_types["TypeSpec"];
+        if let Some(Type::Namespace(ns)) = checker.get_type(ts_id) {
+            assert!(ns.decorator_declarations.contains_key("doc"));
+            assert!(ns.decorator_declarations.contains_key("tag"));
+            assert!(ns.decorator_declarations.contains_key("error"));
+        }
     }
 }

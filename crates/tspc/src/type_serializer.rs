@@ -289,8 +289,9 @@ impl TypeGraphSerializer {
         }
 
         // Decorators (attached to the type)
-        if let Some(decorators) = t.decorators() {
-            if !decorators.is_empty() {
+        if let Some(decorators) = t.decorators()
+            && !decorators.is_empty()
+        {
                 json.push_str(",\"decorators\":[");
                 let mut first = true;
                 for dec in decorators {
@@ -314,7 +315,6 @@ impl TypeGraphSerializer {
                     first = false;
                 }
                 json.push(']');
-            }
         }
 
         json.push('}');
@@ -448,13 +448,17 @@ mod tests {
         checker
     }
 
+    fn parse_json(json: &str) -> serde_json::Value {
+        serde_json::from_str(json).expect("serialized output should be valid JSON")
+    }
+
     #[test]
     fn test_serialize_simple_model() {
         let checker = check("model Pet { name: string; id: int32; }");
         let json = TypeGraphSerializer::serialize(&checker);
-        assert!(json.starts_with('{'));
-        assert!(json.contains("\"Pet\""));
-        assert!(json.contains("\"name\""));
+        let v = parse_json(&json);
+        assert!(v["types"].is_object());
+        assert!(v["global_namespace_id"].is_number());
     }
 
     #[test]
@@ -470,5 +474,135 @@ mod tests {
         assert_eq!(escape_json("hello"), "hello");
         assert_eq!(escape_json("say \"hi\""), "say \\\"hi\\\"");
         assert_eq!(escape_json("a\nb"), "a\\nb");
+        assert_eq!(escape_json("a\tb"), "a\\tb");
+        assert_eq!(escape_json("a\rb"), "a\\rb");
+        assert_eq!(escape_json("a\\b"), "a\\\\b");
+    }
+
+    #[test]
+    fn test_serialize_model_with_optional() {
+        let checker = check("model Pet { name: string; age?: int32; }");
+        let json = TypeGraphSerializer::serialize(&checker);
+        let v = parse_json(&json);
+        // Find the ModelProperty type for "age" and check optional
+        let types = &v["types"];
+        for (_, t) in types.as_object().unwrap() {
+            if t["kind"] == "ModelProperty" && t["name"] == "age" {
+                assert_eq!(t["optional"], true);
+            }
+        }
+    }
+
+    #[test]
+    fn test_serialize_union() {
+        let checker = check("union Shape { circle: string, square: int32 }");
+        let json = TypeGraphSerializer::serialize(&checker);
+        assert!(json.contains("\"Shape\""));
+        assert!(json.contains("\"circle\""));
+    }
+
+    #[test]
+    fn test_serialize_scalar() {
+        let checker = check("scalar myString extends string;");
+        let json = TypeGraphSerializer::serialize(&checker);
+        let v = parse_json(&json);
+        let types = &v["types"];
+        let found = types.as_object().unwrap().values().any(|t| {
+            t["kind"] == "Scalar" && t["name"] == "myString"
+        });
+        assert!(found, "should find myString scalar");
+    }
+
+    #[test]
+    fn test_serialize_namespace_with_members() {
+        let checker = check("namespace MyNs { model Foo { x: int32; } }");
+        let json = TypeGraphSerializer::serialize(&checker);
+        let v = parse_json(&json);
+        let types = &v["types"];
+        let found = types.as_object().unwrap().values().any(|t| {
+            t["kind"] == "Namespace" && t["name"] == "MyNs"
+        });
+        assert!(found, "should find MyNs namespace");
+    }
+
+    #[test]
+    fn test_serialize_interface() {
+        let checker = check("interface MyApi { op get(): string; }");
+        let json = TypeGraphSerializer::serialize(&checker);
+        assert!(json.contains("\"MyApi\""));
+    }
+
+    #[test]
+    fn test_serialize_tuple() {
+        let checker = check("model M { val: [string, int32]; }");
+        let json = TypeGraphSerializer::serialize(&checker);
+        let v = parse_json(&json);
+        let types = &v["types"];
+        let found = types.as_object().unwrap().values().any(|t| {
+            t["kind"] == "Tuple"
+        });
+        assert!(found, "should find a Tuple type");
+    }
+
+    #[test]
+    fn test_serialize_model_inheritance() {
+        let checker = check("model Base { id: string; } model Derived extends Base { name: string; }");
+        let json = TypeGraphSerializer::serialize(&checker);
+        let v = parse_json(&json);
+        let types = &v["types"];
+        let found = types.as_object().unwrap().values().any(|t| {
+            t["kind"] == "Model" && t["name"] == "Derived" && t["baseModel"].is_number()
+        });
+        assert!(found, "Derived should have baseModel");
+    }
+
+    #[test]
+    fn test_serialize_state() {
+        let checker = check("model Pet { name: string; }");
+        let json = TypeGraphSerializer::serialize(&checker);
+        let v = parse_json(&json);
+        assert!(v["state"].is_object());
+    }
+
+    #[test]
+    fn test_serialize_with_custom_decorator() {
+        let parse_result = typespec_rs::parser::parse("model Config { name: string; }");
+        let mut checker = typespec_rs::checker::Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.register_decorator("command", "CLI", "unknown");
+        checker.register_decorator("flag", "CLI", "unknown");
+        checker.check_program();
+
+        let json = TypeGraphSerializer::serialize(&checker);
+        let v = parse_json(&json);
+
+        // Verify CLI namespace and its decorators are in the type graph
+        let types = &v["types"];
+        let cli_ns = types.as_object().unwrap().values().find(|t| {
+            t["kind"] == "Namespace" && t["name"] == "CLI"
+        });
+        assert!(cli_ns.is_some(), "should find CLI namespace");
+
+        let cmd_dec = types.as_object().unwrap().values().find(|t| {
+            t["kind"] == "Decorator" && t["name"] == "command"
+        });
+        assert!(cmd_dec.is_some(), "should find command decorator");
+
+        let flag_dec = types.as_object().unwrap().values().find(|t| {
+            t["kind"] == "Decorator" && t["name"] == "flag"
+        });
+        assert!(flag_dec.is_some(), "should find flag decorator");
+    }
+
+    #[test]
+    fn test_serialize_intrinsic_types() {
+        let checker = check("model M { a: string; b: int32; }");
+        let json = TypeGraphSerializer::serialize(&checker);
+        let v = parse_json(&json);
+        let types = &v["types"];
+        let intrinsic_count = types.as_object().unwrap().values()
+            .filter(|t| t["kind"] == "Intrinsic")
+            .count();
+        assert!(intrinsic_count > 0, "should have intrinsic types");
     }
 }

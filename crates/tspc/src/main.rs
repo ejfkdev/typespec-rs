@@ -61,6 +61,41 @@ fn main() {
 
     let cli = Cli::parse();
 
+    // Collect custom decorators from WASM extension manifests
+    #[allow(unused_mut)]
+    let mut custom_decorators: Vec<(String, String, String)> = Vec::new();
+
+    #[cfg(feature = "wasm-extensions")]
+    if !cli.extension.is_empty() {
+        match crate::wasm_host::WasmHost::new() {
+            Ok(mut host) => {
+                for ext_path in &cli.extension {
+                    match host.extract_manifest(ext_path) {
+                        Ok(manifest) => {
+                            for dec in &manifest.decorators {
+                                custom_decorators.push((
+                                    dec.name.clone(),
+                                    dec.namespace.clone(),
+                                    "unknown".to_string(),
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "Warning: Could not read manifest from {}: {}",
+                                ext_path.display(),
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to initialize WASM runtime: {}", e);
+            }
+        }
+    }
+
     // Read input
     let source = if cli.input == "-" {
         use std::io::Read;
@@ -89,6 +124,7 @@ fn main() {
         no_stdlib: cli.no_stdlib,
         no_emit: cli.no_emit,
         extensions: cli.extension,
+        custom_decorators,
         verbose: cli.verbose,
         quiet: cli.quiet,
     };

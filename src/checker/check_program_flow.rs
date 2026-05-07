@@ -19,6 +19,9 @@ impl Checker {
         // 3. Create global namespace
         self.initialize_global_namespace();
 
+        // 3b. Initialize custom decorators (after global namespace exists)
+        self.initialize_custom_decorators();
+
         // 4. Check all source files
         self.check_source_file(self.root_id);
 

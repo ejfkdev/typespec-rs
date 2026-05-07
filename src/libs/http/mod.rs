@@ -40,6 +40,30 @@ pub mod tsp_sources;
 #[allow(unused_imports)]
 pub use tsp_sources::*;
 
+/// Returns the combined HTTP library TypeSpec source for injection into the parser.
+///
+/// Includes decorator declarations, main types, auth types, and private decorators.
+/// Use this with [`crate::parser::ParseOptions::libraries`] or
+/// [`crate::parser::parse_with_libraries`].
+///
+/// # Example
+///
+/// ```ignore
+/// use typespec_rs::parser::parse_with_libraries;
+/// use typespec_rs::libs::http::http_library_source;
+///
+/// let result = parse_with_libraries(source, vec![http_library_source().to_string()]);
+/// ```
+pub fn http_library_source() -> String {
+    format!(
+        "{}\n\n{}\n\n{}\n\n{}",
+        HTTP_DECORATORS_TSP,
+        HTTP_MAIN_TSP,
+        HTTP_AUTH_TSP,
+        HTTP_PRIVATE_DECORATORS_TSP
+    )
+}
+
 // ============================================================================
 // Decorator implementations
 // ============================================================================
@@ -1226,5 +1250,16 @@ mod tests {
         let part = get_http_part(&state, 1).unwrap();
         assert_eq!(part.part_type, 20);
         assert_eq!(part.name, None);
+    }
+
+    #[test]
+    fn test_http_library_source_combined() {
+        let src = http_library_source();
+        assert!(!src.is_empty());
+        assert!(src.contains("TypeSpec.Http"));
+        assert!(src.contains("header"));
+        assert!(src.contains("route"));
+        assert!(src.contains("BasicAuth"));
+        assert!(src.contains("plainData"));
     }
 }

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use typespec_rs::checker::Checker;
 use typespec_rs::diagnostics::DiagnosticSeverity;
 use typespec_rs::emit::{Emitter, JsonEmitter, OpenAPIEmitter, YamlEmitter};
-use typespec_rs::parser::parse;
+use typespec_rs::parser::{ParseOptions, parse_with_libraries};
 
 /// Compilation pipeline configuration
 pub struct Pipeline {
@@ -25,8 +25,13 @@ pub struct Pipeline {
 impl Pipeline {
     /// Run the full compilation pipeline
     pub fn run(&self) -> Result<(), String> {
-        // 1. Parse
-        let parse_result = parse(&self.source);
+        // 1. Parse (with globally registered libraries + any extra)
+        let parse_result = if self.no_stdlib {
+            parse_with_libraries(&self.source, vec![])
+        } else {
+            let options = ParseOptions::default();
+            parse_with_libraries(&self.source, options.libraries)
+        };
 
         if !self.quiet && self.verbose {
             eprintln!("Parsed {} AST nodes", parse_result.builder.nodes.len());

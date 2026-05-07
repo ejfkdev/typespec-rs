@@ -10,7 +10,7 @@ use typespec_rs::parser::{ParseOptions, Parser};
 
 /// Parse TypeSpec code and return the parser result
 fn parse_typespec(code: &str) -> typespec_rs::parser::ParseResult {
-    let options = ParseOptions {};
+    let options = ParseOptions::default();
     let parser = Parser::new(code, options);
     parser.parse()
 }

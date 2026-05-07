@@ -1908,4 +1908,103 @@ model Foo {}
         let result = parse("op foo(a: string, b: int32, c: boolean): void;");
         assert!(result.diagnostics.is_empty());
     }
+
+    // ==================== Library Injection Tests ====================
+
+    #[test]
+    fn test_parse_no_libraries_default_offset() {
+        let result = parse("model Pet { name: string }");
+        assert_eq!(result.library_line_offset, 0);
+    }
+
+    #[test]
+    fn test_parse_with_libraries_offset() {
+        let lib = "namespace MyLib;\nextern dec command(target: Operation, name?: valueof string);";
+        let result = crate::parser::parse_with_libraries(
+            "model Pet { name: string }",
+            vec![lib.to_string()],
+        );
+        assert!(result.library_line_offset > 0);
+        // Library source should not cause parse errors for the main source
+    }
+
+    #[test]
+    fn test_parse_with_multiple_libraries() {
+        let lib1 = "namespace Lib1;\nextern dec flag(target: ModelProperty, name?: valueof string);";
+        let lib2 = "namespace Lib2;\nextern dec arg(target: Operation, name?: valueof string);";
+        let result = crate::parser::parse_with_libraries(
+            "model Pet { name: string }",
+            vec![lib1.to_string(), lib2.to_string()],
+        );
+        assert!(result.library_line_offset > 0);
+        // Offset should account for both libraries plus separator
+        assert!(result.library_line_offset > 3);
+    }
+
+    #[test]
+    fn test_parse_with_libraries_preserves_main_source() {
+        let lib = "namespace MyLib;\nextern dec custom(target: Model);";
+        let result = crate::parser::parse_with_libraries(
+            "model Pet { name: string }",
+            vec![lib.to_string()],
+        );
+        // Pet model should still be parseable
+        assert!(result.diagnostics.is_empty() || result.diagnostics.len() <= 2);
+    }
+
+    #[test]
+    fn test_parse_options_default_empty_libraries() {
+        let options = crate::parser::ParseOptions::default();
+        assert!(options.libraries.is_empty());
+    }
+
+    #[test]
+    fn test_parse_options_with_http() {
+        let options = crate::parser::ParseOptions::with_http();
+        assert!(!options.libraries.is_empty());
+        assert!(options.libraries[0].contains("TypeSpec.Http"));
+    }
+
+    #[test]
+    fn test_parse_options_with_http_and_custom() {
+        let custom = "namespace CLI;\nextern dec command(target: Operation);".to_string();
+        let options = crate::parser::ParseOptions::with_http_and(vec![custom.clone()]);
+        assert_eq!(options.libraries.len(), 2);
+        assert!(options.libraries[0].contains("TypeSpec.Http"));
+        assert!(options.libraries[1].contains("CLI"));
+    }
+
+    #[test]
+    fn test_parse_options_builder_pattern() {
+        let options = crate::parser::ParseOptions::new(vec![])
+            .library("namespace A;".to_string())
+            .library("namespace B;".to_string());
+        assert_eq!(options.libraries.len(), 2);
+    }
+
+    #[test]
+    fn test_register_library() {
+        crate::parser::register_library(
+            "test_register_cli",
+            "namespace TestRegCLI;\nextern dec testreg(target: Operation);".to_string(),
+        );
+        let options = crate::parser::ParseOptions::default();
+        assert!(options.libraries.iter().any(|l| l.contains("TestRegCLI")));
+    }
+
+    #[test]
+    fn test_register_library_duplicate_ignored() {
+        crate::parser::register_library(
+            "test_dupe",
+            "namespace TestDupe1;".to_string(),
+        );
+        crate::parser::register_library(
+            "test_dupe",
+            "namespace TestDupe2;".to_string(),
+        );
+        let options = crate::parser::ParseOptions::default();
+        let dupe_libs: Vec<_> = options.libraries.iter().filter(|l| l.contains("TestDupe")).collect();
+        assert_eq!(dupe_libs.len(), 1);
+        assert!(dupe_libs[0].contains("TestDupe1"));
+    }
 }

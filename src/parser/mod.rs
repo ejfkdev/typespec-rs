@@ -15,10 +15,118 @@ mod tests;
 use crate::ast::token::Span;
 use crate::ast::types::*;
 use crate::scanner::{Lexer, TokenFlags, TokenKind};
+use std::sync::RwLock;
+
+/// Global library registry.
+///
+/// Stores named TypeSpec library sources that are automatically injected
+/// by `ParseOptions::default()` and `parse()`.
+static LIBRARY_REGISTRY: RwLock<Vec<(String, String)>> = RwLock::new(Vec::new());
+
+/// Register a named library source into the global registry.
+///
+/// Duplicate names are ignored. Call this at any point before parsing.
+///
+/// # Example
+///
+/// ```ignore
+/// typespec_rs::parser::register_library("http", typespec_rs::libs::http::http_library_source());
+/// typespec_rs::parser::register_library("cli", r#"namespace CLI;
+///     extern dec command(target: Operation, name?: valueof string);
+/// "#.to_string());
+///
+/// // Now parse() automatically includes both libraries
+/// let result = typespec_rs::parser::parse(source);
+/// ```
+pub fn register_library(name: &str, source: String) {
+    if let Ok(mut registry) = LIBRARY_REGISTRY.write()
+        && !registry.iter().any(|(n, _)| n == name)
+    {
+        registry.push((name.to_string(), source));
+    }
+}
+
+/// Bulk-register multiple libraries into the global registry.
+///
+/// Duplicate names are ignored.
+///
+/// # Example
+///
+/// ```ignore
+/// typespec_rs::parser::register_libraries(vec![
+///     ("http", typespec_rs::libs::http::http_library_source()),
+///     ("cli", r#"namespace CLI; extern dec command(target: Operation);"#.to_string()),
+/// ]);
+/// ```
+pub fn register_libraries(libs: Vec<(&str, String)>) {
+    if let Ok(mut registry) = LIBRARY_REGISTRY.write() {
+        for (name, src) in libs {
+            if !registry.iter().any(|(n, _)| n == name) {
+                registry.push((name.to_string(), src));
+            }
+        }
+    }
+}
+
+/// Returns the globally registered library sources (in registration order).
+fn get_registered_libraries() -> Vec<String> {
+    LIBRARY_REGISTRY
+        .read()
+        .map(|registry| registry.iter().map(|(_, src)| src.clone()).collect())
+        .unwrap_or_default()
+}
 
 /// Parser options
-#[derive(Debug, Clone, Default)]
-pub struct ParseOptions {}
+#[derive(Debug, Clone)]
+pub struct ParseOptions {
+    /// Additional TypeSpec library sources to inject before the main source.
+    ///
+    /// Each library string typically contains `extern dec` declarations or
+    /// namespace-level type definitions. Libraries are prepended to the source
+    /// in order, so later libraries can reference earlier ones.
+    ///
+    /// By default, this includes all globally registered libraries
+    /// (see [`register_libraries`]).
+    pub libraries: Vec<String>,
+}
+
+impl Default for ParseOptions {
+    fn default() -> Self {
+        Self {
+            libraries: get_registered_libraries(),
+        }
+    }
+}
+
+impl ParseOptions {
+    /// Create options with specific libraries, bypassing the global registry.
+    pub fn new(libraries: Vec<String>) -> Self {
+        Self { libraries }
+    }
+
+    /// Create options with the HTTP library pre-loaded.
+    ///
+    /// Equivalent to:
+    /// ```ignore
+    /// ParseOptions::new(vec![http_library_source()])
+    /// ```
+    pub fn with_http() -> Self {
+        Self::new(vec![crate::libs::http::http_library_source()])
+    }
+
+    /// Create options with the HTTP library plus additional custom libraries.
+    pub fn with_http_and(libraries: Vec<String>) -> Self {
+        let mut libs = vec![crate::libs::http::http_library_source()];
+        libs.extend(libraries);
+        Self::new(libs)
+    }
+
+    /// Add a library to the options list.
+    pub fn library(mut self, source: String) -> Self {
+        self.libraries.push(source);
+        self
+    }
+}
 
 /// Parse result
 #[derive(Debug)]
@@ -26,6 +134,9 @@ pub struct ParseResult {
     pub root_id: u32,
     pub builder: AstBuilder,
     pub diagnostics: Vec<ParseDiagnostic>,
+    /// Number of lines occupied by injected library sources.
+    /// Subtract this from diagnostic line numbers to get the offset in the user's original source.
+    pub library_line_offset: usize,
 }
 
 /// Parse diagnostic
@@ -44,12 +155,27 @@ pub struct Parser<'a> {
     previous_token_end: usize,
     builder: AstBuilder,
     diagnostics: Vec<ParseDiagnostic>,
+    library_line_offset: usize,
 }
 
 impl<'a> Parser<'a> {
     /// Create a new parser for the given source
-    pub fn new(source: &'a str, _options: ParseOptions) -> Self {
-        let mut lexer = Lexer::new(source);
+    pub fn new(source: &'a str, options: ParseOptions) -> Self {
+        let (combined_source, line_offset) = if options.libraries.is_empty() {
+            (source.to_string(), 0)
+        } else {
+            let lib_part = options.libraries.join("\n\n");
+            let offset = lib_part.lines().count() + 2; // +2 for the separator blank lines
+            (format!("{}\n\n{}", lib_part, source), offset)
+        };
+
+        // SAFETY: We leak the combined string to get a 'a lifetime reference.
+        // This is acceptable because the parser is consumed in parse() and the
+        // string only needs to live as long as the parser.
+        let combined_box = combined_source.into_boxed_str();
+        let combined_ref: &'a str = Box::leak(combined_box);
+
+        let mut lexer = Lexer::new(combined_ref);
         let current_token = lexer.scan();
         let token_start = lexer.token_start_offset();
         Parser {
@@ -57,8 +183,9 @@ impl<'a> Parser<'a> {
             current_token,
             token_start,
             previous_token_end: 0,
-            builder: AstBuilder::new(source.to_string()),
+            builder: AstBuilder::new(combined_ref.to_string()),
             diagnostics: Vec::new(),
+            library_line_offset: line_offset,
         }
     }
 
@@ -70,6 +197,7 @@ impl<'a> Parser<'a> {
             root_id,
             builder: self.builder,
             diagnostics: self.diagnostics,
+            library_line_offset: self.library_line_offset,
         }
     }
 
@@ -1826,7 +1954,18 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// Parse TypeSpec source code into an AST
+/// Parse TypeSpec source code into an AST.
+///
+/// Automatically includes any globally registered libraries
+/// (see [`register_libraries`]).
 pub fn parse(source: &str) -> ParseResult {
     Parser::new(source, ParseOptions::default()).parse()
+}
+
+/// Parse TypeSpec source with specific libraries, bypassing the global registry.
+///
+/// For one-off custom library injection. If you find yourself calling this
+/// repeatedly with the same libraries, prefer [`register_libraries`] at startup.
+pub fn parse_with_libraries(source: &str, libraries: Vec<String>) -> ParseResult {
+    Parser::new(source, ParseOptions::new(libraries)).parse()
 }

@@ -262,7 +262,7 @@ fn ensure_tsp_extension(path: &str) -> String {
 
 /// Parse source with options
 fn parse_with_options(source: &str) -> ParseResult {
-    let options = ParseOptions {};
+    let options = ParseOptions::default();
     crate::parser::Parser::new(source, options).parse()
 }
 

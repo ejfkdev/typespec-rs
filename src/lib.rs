@@ -68,11 +68,8 @@ pub mod helpers;
 #[doc(hidden)]
 pub mod intrinsic_type_state;
 #[doc(hidden)]
-pub mod libs;
-#[doc(hidden)]
-pub mod linter;
-#[doc(hidden)]
 pub mod loader;
+pub mod libs;
 #[doc(hidden)]
 pub mod modifiers;
 #[doc(hidden)]

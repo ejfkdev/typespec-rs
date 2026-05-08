@@ -41,6 +41,7 @@ impl Checker {
             self.compute_template_node(&node.template_parameters, ctx.mapper.as_ref(), node_id);
 
         // Check if pre-registered type exists
+        let current_ns = self.current_namespace;
         let type_id = if let Some(&existing_id) = self.node_type_map.get(&node_id) {
             // Update the pre-registered type in-place
             if let Some(t) = self.get_type_mut(existing_id)
@@ -48,7 +49,7 @@ impl Checker {
             {
                 s.base_scalar = Some(target_type);
                 s.template_node = template_node;
-                s.is_finished = false;
+                s.namespace = current_ns;
             }
             existing_id
         } else {
@@ -57,7 +58,7 @@ impl Checker {
                     self.next_type_id(),
                     name.clone(),
                     Some(node_id),
-                    self.current_namespace,
+                    current_ns,
                     Some(target_type),
                 );
                 s.template_node = template_node;

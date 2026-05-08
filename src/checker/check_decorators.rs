@@ -36,6 +36,11 @@ impl Checker {
             // Resolve the decorator TypeId from the name (handles dotted names like "TypeSpec.indexer")
             let declaration_type_id = self.resolve_decorator_by_name(&decorator_name);
 
+            // If the decorator was resolved via a using'd namespace, mark that using as used
+            if let Some(decl_id) = declaration_type_id {
+                self.mark_using_as_used_if_applicable(&decorator_name, decl_id);
+            }
+
             // Check if this is a compiler-internal decorator that cannot be used from user code
             // Ported from TS checkSymbolAccess — check visibility of the resolved declaration
             if let Some(decl_id) = declaration_type_id
@@ -65,32 +70,37 @@ impl Checker {
             if let Some(decl_type_id) = declaration_type_id
                 && let Some(Type::Decorator(decl)) = self.get_type(decl_type_id)
             {
-                // Ported from TS checker.ts checkDecoratorArguments
-                let min_args = decl
-                    .parameters
-                    .iter()
-                    .filter(|p| !p.optional && !p.rest)
-                    .count();
-                let max_args = if decl.parameters.last().is_some_and(|p| p.rest) {
-                    None
-                } else {
-                    Some(decl.parameters.len())
-                };
-
-                let actual_args = dec_node.arguments.len();
-                if actual_args < min_args || max_args.is_some_and(|max| actual_args > max) {
-                    let expected = match max_args {
-                        None => format!("at least {}", min_args),
-                        Some(max) if min_args == max => format!("{}", min_args),
-                        Some(max) => format!("{}-{}", min_args, max),
+                // Skip argument count validation when decorator has no parameter
+                // declarations — this means it was registered programmatically
+                // without parameter info, so we accept any argument count.
+                if !decl.parameters.is_empty() {
+                    // Ported from TS checker.ts checkDecoratorArguments
+                    let min_args = decl
+                        .parameters
+                        .iter()
+                        .filter(|p| !p.optional && !p.rest)
+                        .count();
+                    let max_args = if decl.parameters.last().is_some_and(|p| p.rest) {
+                        None
+                    } else {
+                        Some(decl.parameters.len())
                     };
-                    self.error(
-                        "invalid-argument-count",
-                        &format!(
-                            "Decorator '{}' expects {} argument(s), but got {}.",
-                            decorator_name, expected, actual_args
-                        ),
-                    );
+
+                    let actual_args = dec_node.arguments.len();
+                    if actual_args < min_args || max_args.is_some_and(|max| actual_args > max) {
+                        let expected = match max_args {
+                            None => format!("at least {}", min_args),
+                            Some(max) if min_args == max => format!("{}", min_args),
+                            Some(max) => format!("{}-{}", min_args, max),
+                        };
+                        self.error(
+                            "invalid-argument-count",
+                            &format!(
+                                "Decorator '{}' expects {} argument(s), but got {}.",
+                                decorator_name, expected, actual_args
+                            ),
+                        );
+                    }
                 }
             }
 
@@ -104,6 +114,7 @@ impl Checker {
                     // Check if the decorated type is assignable to the target constraint
                     let target_type_name = match self.get_type(type_id) {
                         Some(Type::Model(_)) => "Model",
+                        Some(Type::ModelProperty(_)) => "ModelProperty",
                         Some(Type::Scalar(_)) => "Scalar",
                         Some(Type::Interface(_)) => "Interface",
                         Some(Type::Union(u)) if !u.name.is_empty() => "Union",
@@ -147,9 +158,12 @@ impl Checker {
                     }
                 }
 
+                // Marshal the argument value for downstream consumers (emitters, etc.)
+                let js_value = self.marshal_decorator_arg(arg_id, arg_type);
+
                 args.push(DecoratorArgument {
                     value: arg_id,
-                    js_value: None,
+                    js_value,
                     node: Some(arg_id),
                 });
             }
@@ -315,6 +329,79 @@ impl Checker {
             let prop_name = type_utils::get_fully_qualified_name(&self.type_store, prop_value_type);
             let index_name = type_utils::get_fully_qualified_name(&self.type_store, value_id);
             self.error("incompatible-indexer", &format!("Property is incompatible with indexer:\n  Type '{}' is not assignable to type '{}'", prop_name, index_name));
+        }
+    }
+
+    /// Marshal a decorator argument AST node into a `DecoratorMarshalledValue`.
+    /// This converts literal values (strings, numbers, booleans, null) and type
+    /// references into a structured form that downstream consumers (emitters,
+    /// WASM extensions) can use without going back to the AST.
+    fn marshal_decorator_arg(
+        &self,
+        arg_node_id: NodeId,
+        arg_type_id: TypeId,
+    ) -> Option<DecoratorMarshalledValue> {
+        let ast = self.require_ast()?;
+
+        match ast.id_to_node(arg_node_id) {
+            Some(AstNode::StringLiteral(s)) => {
+                Some(DecoratorMarshalledValue::String(s.value.clone()))
+            }
+            Some(AstNode::NumericLiteral(n)) => {
+                Some(DecoratorMarshalledValue::Number(n.value))
+            }
+            Some(AstNode::BooleanLiteral(b)) => {
+                Some(DecoratorMarshalledValue::Boolean(b.value))
+            }
+            Some(AstNode::ObjectLiteral(obj)) => {
+                let mut record = HashMap::new();
+                for &prop_id in &obj.properties {
+                    match ast.id_to_node(prop_id) {
+                        Some(AstNode::ObjectLiteralProperty(prop)) => {
+                            let key = Self::get_identifier_name(&ast, prop.key);
+                            let val_type = self.node_type_map.get(&prop.value).copied();
+                            if let Some(val_id) = val_type {
+                                record.insert(key, val_id);
+                            }
+                        }
+                        Some(AstNode::ObjectLiteralSpreadProperty(_)) => {}
+                        _ => {}
+                    }
+                }
+                Some(DecoratorMarshalledValue::Record(record))
+            }
+            Some(AstNode::ModelExpression(model_expr)) => {
+                // `{name: "X-Request-Id"}` in decorator args is a ModelExpression
+                let mut record = HashMap::new();
+                for &prop_id in &model_expr.properties {
+                    if let Some(AstNode::ModelProperty(prop)) = ast.id_to_node(prop_id) {
+                        let key = Self::get_identifier_name(&ast, prop.name);
+                        let val_type = self.node_type_map.get(&prop.value).copied();
+                        if let Some(val_id) = val_type {
+                            record.insert(key, val_id);
+                        }
+                    }
+                }
+                Some(DecoratorMarshalledValue::Record(record))
+            }
+            Some(AstNode::ArrayLiteral(arr)) => {
+                let mut elements = Vec::new();
+                for &elem_id in &arr.values {
+                    if let Some(&elem_type) = self.node_type_map.get(&elem_id) {
+                        elements.push(elem_type);
+                    }
+                }
+                Some(DecoratorMarshalledValue::Array(elements))
+            }
+            _ => {
+                // For type references, identifiers, member expressions, etc.
+                // Use the resolved type as a Type reference
+                if arg_type_id != self.error_type {
+                    Some(DecoratorMarshalledValue::Type(arg_type_id))
+                } else {
+                    None
+                }
+            }
         }
     }
 }

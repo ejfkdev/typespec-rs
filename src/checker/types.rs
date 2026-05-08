@@ -1087,6 +1087,14 @@ impl TypeStore {
         self.types.is_empty()
     }
 
+    /// Iterate over all types with their TypeIds
+    pub fn iter(&self) -> impl Iterator<Item = (TypeId, &Type)> {
+        self.types
+            .iter()
+            .enumerate()
+            .map(|(id, t)| (id as TypeId, t))
+    }
+
     /// Allocate the next TypeId
     pub fn next_type_id(&self) -> TypeId {
         self.types.len() as TypeId

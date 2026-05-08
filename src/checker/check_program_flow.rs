@@ -62,6 +62,11 @@ impl Checker {
             self.populate_namespace(ns_id);
             self.finish_type(ns_id);
         }
+
+        // Finish any decorator-created namespaces that weren't processed
+        // by check_namespace (because they had no user-code declaration).
+        // These were created by initialize_custom_decorators with is_finished = false.
+        self.finish_decorator_namespaces();
     }
 
     /// Pre-register all top-level declaration names so forward references work.
@@ -230,6 +235,30 @@ impl Checker {
                 is_finished: false,
             })),
             _ => self.error_type,
+        }
+    }
+
+    /// Finish any decorator-created namespaces that weren't processed by
+    /// `check_namespace` (because they had no corresponding user-code declaration).
+    /// These were created by `initialize_custom_decorators` with `is_finished = false`.
+    pub(crate) fn finish_decorator_namespaces(&mut self) {
+        // Collect IDs of unfinished namespaces first to avoid borrow conflicts
+        let unfinished: Vec<TypeId> = self
+            .type_store
+            .iter()
+            .filter(|(_, t)| {
+                matches!(t, Type::Namespace(ns) if !ns.is_finished)
+            })
+            .map(|(id, _)| id)
+            .collect();
+
+        for ns_id in unfinished {
+            // Skip the global namespace (handled separately)
+            if Some(ns_id) == self.global_namespace_type {
+                continue;
+            }
+            self.populate_namespace(ns_id);
+            self.finish_type(ns_id);
         }
     }
 }

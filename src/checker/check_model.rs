@@ -72,9 +72,17 @@ impl Checker {
 
         // Get or create the model type
         let type_name = name.clone();
+        let current_ns = self.current_namespace;
         let type_id = if ctx.mapper.is_none() && self.node_type_map.contains_key(&node_id) {
             // Reuse the pre-registered type (only when not instantiating)
-            self.node_type_map[&node_id]
+            let existing_id = self.node_type_map[&node_id];
+            // Update namespace in case it was set incorrectly during pre-registration
+            if let Some(t) = self.get_type_mut(existing_id)
+                && let Type::Model(m) = t
+            {
+                m.namespace = current_ns;
+            }
+            existing_id
         } else {
             // When instantiating (mapper is Some), this is a template instance.
             // Set template_node to point to the original AST node so is_template_instance()
@@ -89,7 +97,7 @@ impl Checker {
                     self.next_type_id(),
                     name,
                     Some(node_id),
-                    self.current_namespace,
+                    current_ns,
                 );
                 m.template_node = template_node;
                 self.create_type(Type::Model(m))

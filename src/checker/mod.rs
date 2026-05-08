@@ -119,6 +119,20 @@ use crate::parser::{AstBuilder, AstNode};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+/// Concatenate two route path segments, handling leading/trailing slashes.
+/// e.g., ("/chat", "/completions") → "/chat/completions"
+fn format_route_path(base: &str, path: &str) -> String {
+    let base = base.trim_end_matches('/');
+    let path = path.trim_start_matches('/');
+    if base.is_empty() {
+        format!("/{}", path)
+    } else if path.is_empty() {
+        base.to_string()
+    } else {
+        format!("{}/{}", base, path)
+    }
+}
+
 // ============================================================================
 // Custom Decorator Registration
 // ============================================================================
@@ -136,6 +150,23 @@ pub struct CustomDecoratorDef {
     pub namespace: String,
     /// Target type constraint (e.g. "unknown", "Model", "Operation")
     pub target_type: String,
+    /// Parameter definitions for the decorator.
+    /// When empty, the decorator accepts any number of arguments (no validation).
+    /// When non-empty, argument count and type checking are enforced.
+    pub parameters: Vec<DecoratorParamDef>,
+}
+
+/// A parameter definition for a custom decorator.
+#[derive(Debug, Clone)]
+pub struct DecoratorParamDef {
+    /// Parameter name
+    pub name: String,
+    /// Type name (e.g. "string", "int32", "unknown" to skip type checking)
+    pub type_name: String,
+    /// Whether this parameter is optional
+    pub optional: bool,
+    /// Whether this is a rest parameter (absorbs remaining args)
+    pub rest: bool,
 }
 
 // ============================================================================
@@ -165,6 +196,17 @@ static GLOBAL_DECORATORS: RwLock<Vec<CustomDecoratorDef>> = RwLock::new(Vec::new
 /// // No need to call checker.register_decorator() again!
 /// ```
 pub fn register_global_decorator(name: &str, namespace: &str, target_type: &str) {
+    register_global_decorator_with_params(name, namespace, target_type, Vec::new());
+}
+
+/// Register a custom decorator globally with parameter definitions.
+/// All subsequent `Checker::new()` calls will automatically include this decorator.
+pub fn register_global_decorator_with_params(
+    name: &str,
+    namespace: &str,
+    target_type: &str,
+    parameters: Vec<DecoratorParamDef>,
+) {
     if let Ok(mut registry) = GLOBAL_DECORATORS.write()
         && !registry.iter().any(|d| d.name == name && d.namespace == namespace)
     {
@@ -172,6 +214,7 @@ pub fn register_global_decorator(name: &str, namespace: &str, target_type: &str)
             name: name.to_string(),
             namespace: namespace.to_string(),
             target_type: target_type.to_string(),
+            parameters,
         });
     }
 }
@@ -187,6 +230,7 @@ pub fn register_global_decorators(decorators: Vec<(&str, &str, &str)>) {
                     name: name.to_string(),
                     namespace: namespace.to_string(),
                     target_type: target_type.to_string(),
+                    parameters: Vec::new(),
                 });
             }
         }
@@ -565,10 +609,26 @@ impl Checker {
     ///
     /// Must be called **before** `check_program()`.
     pub fn register_decorator(&mut self, name: &str, namespace: &str, target_type: &str) {
+        self.register_decorator_with_params(name, namespace, target_type, Vec::new());
+    }
+
+    /// Register a custom decorator with parameter definitions.
+    ///
+    /// When `parameters` is empty, the decorator accepts any number of arguments
+    /// (no count validation). When non-empty, argument count and type checking
+    /// are enforced during `check_and_store_decorators`.
+    pub fn register_decorator_with_params(
+        &mut self,
+        name: &str,
+        namespace: &str,
+        target_type: &str,
+        parameters: Vec<DecoratorParamDef>,
+    ) {
         self.custom_decorators.push(CustomDecoratorDef {
             name: name.to_string(),
             namespace: namespace.to_string(),
             target_type: target_type.to_string(),
+            parameters,
         });
     }
 
@@ -1113,6 +1173,81 @@ impl Checker {
         }
     }
 
+    /// Get the effective route for an operation by combining interface-level
+    /// and operation-level `@route` decorators.
+    /// Returns the concatenated path (e.g., "/chat" + "/completions" = "/chat/completions").
+    pub fn get_effective_route(&self, op_id: TypeId) -> Option<String> {
+        let op = match self.get_type(op_id) {
+            Some(Type::Operation(op)) => op,
+            _ => return None,
+        };
+
+        // Get operation's own @route
+        let op_route = self.find_route_arg(&op.decorators);
+
+        // Get interface's @route if operation is in an interface
+        let iface_route = op
+            .interface_
+            .and_then(|id| self.get_type(id))
+            .and_then(|t| match t {
+                Type::Interface(iface) => Some(self.find_route_arg(&iface.decorators)),
+                _ => None,
+            })
+            .flatten();
+
+        match (iface_route, op_route) {
+            (Some(base), Some(path)) => Some(format_route_path(&base, &path)),
+            (Some(base), None) => Some(base),
+            (None, Some(path)) => Some(path),
+            (None, None) => None,
+        }
+    }
+
+    /// Get all effective decorators for an operation, including those inherited
+    /// from its containing interface.
+    /// Returns a Vec of references: interface decorators first, then operation's own.
+    pub fn get_effective_decorators(&self, op_id: TypeId) -> Vec<&DecoratorApplication> {
+        let op = match self.get_type(op_id) {
+            Some(Type::Operation(op)) => op,
+            _ => return Vec::new(),
+        };
+
+        let mut result = Vec::new();
+
+        // Add interface decorators first (inherited)
+        if let Some(iface_id) = op.interface_
+            && let Some(Type::Interface(iface)) = self.get_type(iface_id)
+        {
+            for dec in &iface.decorators {
+                result.push(dec);
+            }
+        }
+
+        // Then add operation's own decorators
+        for dec in &op.decorators {
+            result.push(dec);
+        }
+
+        result
+    }
+
+    /// Find the first string argument of a @route decorator in the given decorator list.
+    fn find_route_arg(&self, decorators: &[DecoratorApplication]) -> Option<String> {
+        for dec in decorators {
+            let is_route = dec.definition.is_some_and(|def_id| {
+                self.get_type(def_id)
+                    .is_some_and(|t| matches!(t, Type::Decorator(dt) if dt.name == "route"))
+            });
+            if is_route
+                && let Some(arg) = dec.args.first()
+                && let Some(DecoratorMarshalledValue::String(s)) = &arg.js_value
+            {
+                return Some(s.clone());
+            }
+        }
+        None
+    }
+
     /// Resolve the effective model for an anonymous model by finding a named
     /// source model that has the same set of properties.
     /// Ported from TS getEffectiveModelType (anonymous model resolution).
@@ -1566,6 +1701,10 @@ mod type_utils_tests;
 mod typeof_tests;
 #[cfg(test)]
 mod union_tests;
+#[cfg(test)]
+mod custom_decorator_tests;
+#[cfg(test)]
+mod integration_scenario_tests;
 #[cfg(test)]
 mod unused_template_parameter_tests;
 #[cfg(test)]

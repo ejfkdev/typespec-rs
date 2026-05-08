@@ -179,15 +179,35 @@ impl Checker {
 
         let return_type = node.return_type.map(|ret_id| self.check_node(ctx, ret_id));
 
-        let type_id = self.create_type(Type::FunctionType(FunctionTypeType {
-            id: self.next_type_id(),
-            name: name.clone(),
-            node: Some(node_id),
-            namespace: self.current_namespace,
-            parameters,
-            return_type,
-            is_finished: true,
-        }));
+        // Use pre-registered type if available, otherwise create new
+        let current_ns = self.current_namespace;
+        let type_id = if let Some(&existing_id) = self.node_type_map.get(&node_id) {
+            // Update pre-registered type in-place
+            if let Some(t) = self.get_type_mut(existing_id)
+                && let Type::FunctionType(f) = t
+            {
+                f.parameters = parameters;
+                f.return_type = return_type;
+                f.namespace = current_ns;
+                f.is_finished = true;
+            }
+            existing_id
+        } else {
+            let new_id = self.create_type(Type::FunctionType(FunctionTypeType {
+                id: self.next_type_id(),
+                name: name.clone(),
+                node: Some(node_id),
+                namespace: current_ns,
+                parameters,
+                return_type,
+                is_finished: true,
+            }));
+            self.node_type_map.insert(node_id, new_id);
+            if !name.is_empty() {
+                self.declared_types.insert(name, new_id);
+            }
+            new_id
+        };
 
         // Also create FunctionParameter types in the type store for each parameter
         // (needed for type graph serialization and lookup)
@@ -199,11 +219,6 @@ impl Checker {
                     self.declared_types.insert(param.name.clone(), param_type_id);
                 }
             }
-        }
-
-        self.node_type_map.insert(node_id, type_id);
-        if !name.is_empty() {
-            self.declared_types.insert(name, type_id);
         }
 
         type_id

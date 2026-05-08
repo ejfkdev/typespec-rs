@@ -15,15 +15,22 @@ impl Checker {
 
         // Check if this namespace was merged with an existing one during pre-registration
         // (namespace merging: same namespace name in different blocks reuses the existing type)
+        let current_ns = self.current_namespace;
         let type_id = if let Some(&existing_id) = self.node_type_map.get(&node_id) {
             // Reuse the pre-registered (merged) namespace type
+            // Update namespace (parent reference) in case it was set incorrectly
+            if let Some(t) = self.get_type_mut(existing_id)
+                && let Type::Namespace(ns) = t
+            {
+                ns.namespace = current_ns;
+            }
             existing_id
         } else {
             let new_id = self.create_type(Type::Namespace(Box::new(NamespaceType::new(
                 self.next_type_id(),
                 full_name.clone(),
                 Some(node_id),
-                self.current_namespace,
+                current_ns,
                 false,
             ))));
 

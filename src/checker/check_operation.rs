@@ -69,27 +69,44 @@ impl Checker {
         let template_node =
             self.compute_template_node(&node.template_parameters, ctx.mapper.as_ref(), node_id);
 
-        let type_id = {
-            let mut o = OperationType::new(
-                self.next_type_id(),
-                name.clone(),
-                Some(node_id),
-                self.current_namespace,
-            );
-            o.parameters = parameters;
-            o.return_type = return_type;
-            o.source_operation = source_operation;
-            o.interface_ = parent_interface;
-            o.template_node = template_node;
-            self.create_type(Type::Operation(o))
+        // Use pre-registered type if available, otherwise create new
+        let current_ns = self.current_namespace;
+        let type_id = if ctx.mapper.is_none() && let Some(&existing_id) = self.node_type_map.get(&node_id) {
+            // Update pre-registered type in-place
+            if let Some(t) = self.get_type_mut(existing_id)
+                && let Type::Operation(o) = t
+            {
+                o.parameters = parameters;
+                o.return_type = return_type;
+                o.source_operation = source_operation;
+                o.interface_ = parent_interface;
+                o.template_node = template_node;
+                o.namespace = current_ns;
+            }
+            existing_id
+        } else {
+            let new_id = {
+                let mut o = OperationType::new(
+                    self.next_type_id(),
+                    name.clone(),
+                    Some(node_id),
+                    current_ns,
+                );
+                o.parameters = parameters;
+                o.return_type = return_type;
+                o.source_operation = source_operation;
+                o.interface_ = parent_interface;
+                o.template_node = template_node;
+                self.create_type(Type::Operation(o))
+            };
+            self.node_type_map.insert(node_id, new_id);
+
+            // Register in declared_types (consistent with other check_* functions)
+            if ctx.mapper.is_none() && parent_interface.is_none() && !name.is_empty() {
+                self.declared_types.insert(name.clone(), new_id);
+            }
+            new_id
         };
-
-        self.node_type_map.insert(node_id, type_id);
-
-        // Register in symbol_links and declared_types (consistent with other check_* functions)
-        if ctx.mapper.is_none() && parent_interface.is_none() && !name.is_empty() {
-            self.declared_types.insert(name.clone(), type_id);
-        }
         // Always update symbol_links so template instantiation and is_template_declaration work
         let links = self.symbol_links.entry(node_id).or_default();
         if let Some(mapper) = ctx.mapper.as_ref() {

@@ -15,15 +15,23 @@ impl Checker {
 
         let name = Self::get_identifier_name(&ast, node.name);
 
+        let current_ns = self.current_namespace;
+
         // Use pre-registered type if available, otherwise create new
         let type_id = if let Some(&existing_id) = self.node_type_map.get(&node_id) {
+            // Update namespace in case it was set incorrectly during pre-registration
+            if let Some(t) = self.get_type_mut(existing_id)
+                && let Type::Enum(e) = t
+            {
+                e.namespace = current_ns;
+            }
             existing_id
         } else {
             let new_id = self.create_type(Type::Enum(EnumType::new(
                 self.next_type_id(),
                 name.clone(),
                 Some(node_id),
-                self.current_namespace,
+                current_ns,
             )));
 
             self.register_type(node_id, new_id, &name, ctx.mapper.as_ref());

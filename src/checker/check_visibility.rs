@@ -70,14 +70,43 @@ impl Checker {
     }
 
     /// Resolve a decorator by its name, supporting dotted names like "TypeSpec.indexer".
-    /// First tries a direct lookup in declared_types, then walks the namespace chain.
+    ///
+    /// Lookup order:
+    /// 1. Direct lookup in declared_types (top-level names)
+    /// 2. Current namespace's decorator_declarations
+    /// 3. Using-imported namespaces (mirrors check_identifier_inner resolve_via_using)
+    /// 4. Recursive search of all sub-namespaces under the global namespace
+    /// 5. Dotted name walk: "TypeSpec.indexer", "TypeSpec.Prototypes.getter"
     pub(crate) fn resolve_decorator_by_name(&self, name: &str) -> Option<TypeId> {
-        // Try direct lookup first (simple names like "doc")
+        // 1. Try direct lookup first (simple names like "doc")
         if let Some(&id) = self.declared_types.get(name) {
             return Some(id);
         }
 
-        // Handle dotted names: "TypeSpec.indexer" or "TypeSpec.Prototypes.getter"
+        // 2. Check current namespace's decorator_declarations
+        if let Some(ns_id) = self.current_namespace
+            && let Some(Type::Namespace(ns)) = self.get_type(ns_id)
+            && let Some(&dec_id) = ns.decorator_declarations.get(name)
+        {
+            return Some(dec_id);
+        }
+
+        // 3. Try using-imported namespaces
+        if let Some(type_id) = self.resolve_decorator_via_using(name) {
+            return Some(type_id);
+        }
+
+        // 3b. Recursive search of all sub-namespaces for the decorator.
+        // This handles the case where a decorator is registered in a sub-namespace
+        // (e.g., "Llm" or "AnyUse.CLI") but used without an explicit `using` declaration.
+        // Mirrors how TypeSpec's name resolver implicitly finds symbols in parent scopes.
+        if let Some(global_ns_id) = self.global_namespace_type
+            && let Some(found) = self.find_decorator_in_namespace_tree(global_ns_id, name)
+        {
+            return Some(found);
+        }
+
+        // 4. Handle dotted names: "TypeSpec.indexer" or "TypeSpec.Prototypes.getter"
         let parts: Vec<&str> = name.split('.').collect();
         if parts.len() < 2 {
             return None;
@@ -111,6 +140,80 @@ impl Checker {
         }
 
         None
+    }
+
+    /// Resolve a decorator name via using declarations.
+    /// Looks in each using'd namespace's decorator_declarations.
+    fn resolve_decorator_via_using(&self, name: &str) -> Option<TypeId> {
+        for (_, using_ns_name) in &self.using_declarations {
+            if let Some(ns_id) = self.resolve_namespace_by_name(using_ns_name)
+                && let Some(Type::Namespace(ns)) = self.get_type(ns_id)
+                && let Some(&dec_id) = ns.decorator_declarations.get(name)
+            {
+                return Some(dec_id);
+            }
+        }
+        None
+    }
+
+    /// Recursively search a namespace and all its sub-namespaces for a decorator by name.
+    /// Used as a fallback when direct lookup, current namespace, and using imports fail.
+    /// Uses a depth limit to guard against unexpected cycles in the namespace tree.
+    fn find_decorator_in_namespace_tree(&self, ns_id: TypeId, name: &str) -> Option<TypeId> {
+        self.find_decorator_in_namespace_tree_inner(ns_id, name, 0)
+    }
+
+    fn find_decorator_in_namespace_tree_inner(
+        &self,
+        ns_id: TypeId,
+        name: &str,
+        depth: u32,
+    ) -> Option<TypeId> {
+        if depth > 50 {
+            return None;
+        }
+        if let Some(Type::Namespace(ns)) = self.get_type(ns_id) {
+            // Check this namespace's decorator_declarations
+            if let Some(&dec_id) = ns.decorator_declarations.get(name) {
+                return Some(dec_id);
+            }
+            // Recurse into child namespaces
+            for &child_ns_id in ns.namespaces.values() {
+                if let Some(found) =
+                    self.find_decorator_in_namespace_tree_inner(child_ns_id, name, depth + 1)
+                {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    /// Resolve a (possibly dotted) namespace name to its TypeId.
+    /// For "AnyUse.CLI", walks: declared_types["AnyUse"] → namespaces["CLI"].
+    /// For simple names like "HTTP", looks up declared_types directly.
+    pub(crate) fn resolve_namespace_by_name(&self, name: &str) -> Option<TypeId> {
+        // Try direct lookup first
+        if let Some(&id) = self.declared_types.get(name) {
+            return Some(id);
+        }
+
+        // Handle dotted names by walking the namespace hierarchy
+        let parts: Vec<&str> = name.split('.').collect();
+        if parts.len() < 2 {
+            return None;
+        }
+
+        let mut current_id = self.declared_types.get(parts[0]).copied()?;
+        for part in &parts[1..] {
+            match self.get_type(current_id) {
+                Some(Type::Namespace(ns)) => {
+                    current_id = ns.namespaces.get(*part).copied()?;
+                }
+                _ => return None,
+            }
+        }
+        Some(current_id)
     }
 
     /// Determine the LocationContext for a type based on whether it's from the stdlib.

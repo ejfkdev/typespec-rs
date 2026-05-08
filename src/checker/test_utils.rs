@@ -34,6 +34,17 @@ pub fn check_with_parse_diagnostics(source: &str) -> (Checker, Vec<Diagnostic>) 
     (checker, parse_diags)
 }
 
+/// Parse source code, register custom decorators, run the checker, and return the Checker.
+/// Each tuple is `(name, namespace, target_type)`.
+pub fn check_with_decorators(source: &str, decorators: Vec<(&str, &str, &str)>) -> Checker {
+    let result = parse(source);
+    let mut checker = Checker::new();
+    checker.register_decorators(decorators);
+    checker.set_parse_result(result.root_id, result.builder);
+    checker.check_program();
+    checker
+}
+
 /// Get all diagnostics (parse + checker) as a single Vec.
 pub fn all_diagnostics(source: &str) -> Vec<Diagnostic> {
     let (checker, mut parse_diags) = check_with_parse_diagnostics(source);

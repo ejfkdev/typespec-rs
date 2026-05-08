@@ -20,6 +20,8 @@ impl Checker {
         let template_node =
             self.compute_template_node(&node.template_parameters, ctx.mapper.as_ref(), node_id);
 
+        let current_ns = self.current_namespace;
+
         // Use pre-registered type if available, otherwise create new
         let type_id = if let Some(&existing_id) = self.node_type_map.get(&node_id) {
             // Update pre-registered type in-place
@@ -27,6 +29,7 @@ impl Checker {
                 && let Type::Union(u) = t
             {
                 u.template_node = template_node;
+                u.namespace = current_ns;
             }
             existing_id
         } else {
@@ -35,7 +38,7 @@ impl Checker {
                     self.next_type_id(),
                     name.clone(),
                     Some(node_id),
-                    self.current_namespace,
+                    current_ns,
                     false,
                 );
                 u.template_node = template_node;

@@ -48,8 +48,8 @@ impl Checker {
     /// Ported from TS name-resolver.ts resolveIdentifierInScope.
     pub(crate) fn resolve_via_using(&self, name: &str) -> Option<TypeId> {
         for (_, using_ns_name) in &self.using_declarations {
-            // Find the namespace type by name
-            if let Some(&ns_id) = self.declared_types.get(using_ns_name)
+            // Resolve the using'd namespace (supports dotted names like "AnyUse.CLI")
+            if let Some(ns_id) = self.resolve_namespace_by_name(using_ns_name)
                 && let Some(Type::Namespace(ns)) = self.get_type(ns_id)
                 && let Some(type_id) = ns.lookup_member(name)
             {
@@ -61,21 +61,23 @@ impl Checker {
 
     /// Check if a type name was resolved via a using'd namespace, and if so, mark that using as used.
     pub(crate) fn mark_using_as_used_if_applicable(&mut self, _name: &str, type_id: TypeId) {
-        // Get the namespace that this type belongs to
         let ns_id = self.get_type(type_id).and_then(|t| t.namespace());
-        if let Some(ns_id) = ns_id
-            && let Some(ns_name) = self.get_type(ns_id).and_then(|t| match t {
-                Type::Namespace(ns) => Some(ns.name.clone()),
-                _ => None,
-            })
-        {
-            // If this using's namespace matches, mark it as used
-            if self
-                .using_declarations
-                .iter()
-                .any(|(_, using_ns)| *using_ns == ns_name)
-            {
-                self.used_using_names.insert(ns_name);
+        let Some(ns_id) = ns_id else {
+            return;
+        };
+
+        // For each using'd namespace, check if the type's namespace is the same
+        // or a descendant of the using'd namespace (walk up the parent chain).
+        for (_, using_ns_name) in &self.using_declarations {
+            if let Some(using_ns_id) = self.resolve_namespace_by_name(using_ns_name) {
+                let mut check_id = Some(ns_id);
+                while let Some(cid) = check_id {
+                    if cid == using_ns_id {
+                        self.used_using_names.insert(using_ns_name.clone());
+                        break;
+                    }
+                    check_id = self.get_type(cid).and_then(|t| t.namespace());
+                }
             }
         }
     }

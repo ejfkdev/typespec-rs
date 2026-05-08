@@ -105,6 +105,7 @@ impl Checker {
         }
 
         // Use pre-registered type if available, otherwise create new
+        let current_ns = self.current_namespace;
         let type_id = if let Some(&existing_id) = self.node_type_map.get(&node_id) {
             // Update pre-registered type in-place
             if let Some(t) = self.get_type_mut(existing_id)
@@ -113,6 +114,7 @@ impl Checker {
                 s.base_scalar = base_scalar;
                 s.template_node = template_node;
                 s.constructors = own_constructors;
+                s.namespace = current_ns;
             }
             existing_id
         } else {
@@ -121,7 +123,7 @@ impl Checker {
                     self.next_type_id(),
                     name.clone(),
                     Some(node_id),
-                    self.current_namespace,
+                    current_ns,
                     base_scalar,
                 );
                 s.constructors = own_constructors;

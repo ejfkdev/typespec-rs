@@ -280,31 +280,8 @@ impl Checker {
         let custom = std::mem::take(&mut self.custom_decorators);
 
         for def in custom {
-            // Find or create the namespace
-            let ns_id = match self.declared_types.get(&def.namespace).copied() {
-                Some(id) => id,
-                None => {
-                    // Create the namespace under the global namespace
-                    let ns_id = self.create_type(Type::Namespace(Box::new(NamespaceType::new(
-                        self.next_type_id(),
-                        def.namespace.clone(),
-                        None,
-                        self.global_namespace_type,
-                        true,
-                    ))));
-
-                    // Register as sub-namespace of global namespace
-                    if let Some(global_id) = self.global_namespace_type
-                        && let Some(Type::Namespace(global_ns)) = self.get_type_mut(global_id)
-                    {
-                        global_ns.namespaces.insert(def.namespace.clone(), ns_id);
-                        global_ns.namespace_names.push(def.namespace.clone());
-                    }
-
-                    self.declared_types.insert(def.namespace.clone(), ns_id);
-                    ns_id
-                }
-            };
+            // Find or create the namespace, supporting dotted names like "AnyUse.CLI"
+            let ns_id = self.ensure_decorator_namespace(&def.namespace);
 
             // Check if decorator already exists in this namespace
             let already_exists = if let Some(Type::Namespace(ns)) = self.get_type(ns_id) {
@@ -318,6 +295,28 @@ impl Checker {
             }
 
             // Create the decorator type
+            // Convert DecoratorParamDef to FunctionParameterType
+            let params: Vec<FunctionParameterType> = def
+                .parameters
+                .iter()
+                .map(|p| {
+                    let param_type = if p.type_name == "unknown" || p.type_name.is_empty() {
+                        None
+                    } else {
+                        self.resolve_type_by_name(&p.type_name)
+                    };
+                    FunctionParameterType {
+                        id: self.next_type_id(),
+                        name: p.name.clone(),
+                        node: None,
+                        r#type: param_type,
+                        optional: p.optional,
+                        rest: p.rest,
+                        is_finished: true,
+                    }
+                })
+                .collect();
+
             let type_id = self.create_type(Type::Decorator(DecoratorType {
                 id: self.next_type_id(),
                 name: def.name.clone(),
@@ -325,7 +324,7 @@ impl Checker {
                 namespace: Some(ns_id),
                 target: None,
                 target_type: def.target_type.clone(),
-                parameters: Vec::new(),
+                parameters: params,
                 is_finished: true,
             }));
 
@@ -337,6 +336,95 @@ impl Checker {
                 ns.decorator_declaration_names.push(def.name);
             }
         }
+    }
+
+    /// Ensure the full namespace hierarchy for a (possibly dotted) namespace name.
+    /// For "AnyUse.CLI", creates: global → AnyUse → CLI, returning the CLI TypeId.
+    /// For simple names like "HTTP", creates: global → HTTP, returning the HTTP TypeId.
+    fn ensure_decorator_namespace(&mut self, namespace: &str) -> TypeId {
+        let parts: Vec<&str> = namespace.split('.').collect();
+
+        if parts.len() == 1 {
+            // Simple name — existing behavior
+            return self.ensure_single_namespace(namespace);
+        }
+
+        // Dotted name — create hierarchy
+        let mut parent_id = self.global_namespace_type;
+        for part in parts {
+            parent_id = Some(self.ensure_child_namespace(part, parent_id));
+        }
+        parent_id.expect("namespace hierarchy should produce a valid TypeId")
+    }
+
+    /// Ensure a single top-level namespace exists under the global namespace.
+    fn ensure_single_namespace(&mut self, name: &str) -> TypeId {
+        if let Some(&id) = self.declared_types.get(name) {
+            return id;
+        }
+
+        let ns_id = self.create_type(Type::Namespace(Box::new(NamespaceType::new(
+            self.next_type_id(),
+            name.to_string(),
+            None,
+            self.global_namespace_type,
+            false,
+        ))));
+
+        if let Some(global_id) = self.global_namespace_type
+            && let Some(Type::Namespace(global_ns)) = self.get_type_mut(global_id)
+        {
+            global_ns.namespaces.insert(name.to_string(), ns_id);
+            global_ns.namespace_names.push(name.to_string());
+        }
+
+        self.declared_types.insert(name.to_string(), ns_id);
+        ns_id
+    }
+
+    /// Ensure a child namespace named `name` exists under `parent_id`.
+    /// If it already exists as a child, return its TypeId.
+    /// Otherwise, create it, register it in declared_types and in parent's namespaces map.
+    fn ensure_child_namespace(&mut self, name: &str, parent_id: Option<TypeId>) -> TypeId {
+        // Check if already in declared_types (top-level)
+        if let Some(&id) = self.declared_types.get(name)
+            && let Some(Type::Namespace(ns)) = self.get_type(id)
+            && ns.namespace == parent_id
+        {
+            return id;
+        }
+
+        // Check if it exists as a child of parent_id
+        if let Some(pid) = parent_id
+            && let Some(Type::Namespace(parent_ns)) = self.get_type(pid)
+            && let Some(&child_id) = parent_ns.namespaces.get(name)
+        {
+            return child_id;
+        }
+
+        // Create the child namespace (is_finished = false so check_namespace can process it)
+        let child_id = self.create_type(Type::Namespace(Box::new(NamespaceType::new(
+            self.next_type_id(),
+            name.to_string(),
+            None,
+            parent_id,
+            false,
+        ))));
+
+        // Register in parent's namespaces map
+        if let Some(pid) = parent_id
+            && let Some(Type::Namespace(parent_ns)) = self.get_type_mut(pid)
+        {
+            if !parent_ns.namespaces.contains_key(name) {
+                parent_ns.namespace_names.push(name.to_string());
+            }
+            parent_ns.namespaces.insert(name.to_string(), child_id);
+        }
+
+        // Register in declared_types for top-level lookup
+        self.declared_types.insert(name.to_string(), child_id);
+
+        child_id
     }
 
     /// Initialize standard enums and models from lib/std/
@@ -543,6 +631,12 @@ impl Checker {
         }
 
         Some(type_id)
+    }
+
+    /// Resolve a type by its name (e.g. "string", "int32", "boolean").
+    /// Used during custom decorator parameter resolution to find std types.
+    fn resolve_type_by_name(&self, name: &str) -> Option<TypeId> {
+        self.std_types.get(name).copied()
     }
 
     /// Initialize the global namespace

@@ -20,6 +20,10 @@ impl Checker {
         // The base_type returned by check_node for a template declaration
         // is the declaration itself (not an instance), which is not valid
         // for member access.
+        //
+        // Ported from upstream fix (PR #9670):
+        // When the base is a templated alias with all defaultable parameters,
+        // we need to instantiate it before accessing its members.
         if base_type != self.error_type {
             let is_template_decl = self
                 .get_type(base_type)
@@ -37,6 +41,14 @@ impl Checker {
                         ),
                     );
                     return self.error_type;
+                }
+                // All parameters are defaultable — try to instantiate the template
+                // so that member access works correctly.
+                // Ported from TS: checkTypeReferenceSymbol with instantiateTemplates: true
+                if let Some(instance_id) = self.instantiate_template_with_defaults(base_type) {
+                    // Re-dispatch member access on the instantiated type
+                    let prop_name = Self::get_identifier_name(&ast, node.property);
+                    return self.lookup_member_on_type(instance_id, &prop_name, node_id);
                 }
             }
         }

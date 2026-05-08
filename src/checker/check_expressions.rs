@@ -580,8 +580,6 @@ impl Checker {
                 | Some(Type::ScalarConstructor(_))
                 | Some(Type::FunctionType(_)) => true,
                 Some(Type::TemplateParameter(_)) => {
-                    // Template parameters need a callable constraint
-                    // For now, assume not callable (TS checks constraintIsCallable)
                     self.error("non-callable", "Template parameter is not callable. Ensure it is constrained to a function value or callable type.");
                     false
                 }
@@ -600,10 +598,59 @@ impl Checker {
             };
 
             if is_callable {
-                // Check arguments for scalar constructor calls
-                // Ported from TS checker.ts:4629-4643 — checkPrimitiveArg
-                // Use target_type (the actual scalar like int8) for range checks,
-                // NOT resolved (which would be the base like numeric via resolve_alias_chain).
+                // === Function call handling ===
+                // Validate arguments and return the function's return type
+                if let Some(Type::FunctionType(ft)) = self.get_type(resolved).cloned() {
+                    // Check all arguments
+                    for &arg_id in &arguments {
+                        self.check_node(ctx, arg_id);
+                    }
+
+                    // Validate argument count against function parameters
+                    let min_params = ft.parameters.iter().filter(|p| !p.optional).count();
+                    let max_params = if ft.parameters.iter().any(|p| p.rest) {
+                        usize::MAX
+                    } else {
+                        ft.parameters.len()
+                    };
+
+                    if arguments.len() < min_params {
+                        self.error(
+                            "missing-arguments",
+                            &format!(
+                                "Function '{}' expects at least {} argument(s), but got {}.",
+                                ft.name, min_params, arguments.len()
+                            ),
+                        );
+                    } else if max_params != usize::MAX && arguments.len() > max_params {
+                        self.error(
+                            "too-many-arguments",
+                            &format!(
+                                "Function '{}' expects at most {} argument(s), but got {}.",
+                                ft.name, max_params, arguments.len()
+                            ),
+                        );
+                    }
+
+                    // Validate argument types against parameter types
+                    for (i, &arg_id) in arguments.iter().enumerate() {
+                        if let Some(param) = ft.parameters.get(i)
+                            && let Some(param_type_id) = param.r#type
+                            && let Some(&arg_type_id) = self.node_type_map.get(&arg_id)
+                        {
+                            let (is_assignable, _) =
+                                self.is_type_assignable_to(arg_type_id, param_type_id, arg_id);
+                            if !is_assignable {
+                                self.error_unassignable("unassignable", arg_type_id, param_type_id);
+                            }
+                        }
+                    }
+
+                    // Return the function's declared return type
+                    return ft.return_type.unwrap_or(self.unknown_type);
+                }
+
+                // === Scalar constructor call handling ===
                 let mut is_primitive_or_extends = false;
                 let scalar_target = if let Some(Type::Scalar(_)) = self.get_type(target_type) {
                     target_type
@@ -611,19 +658,13 @@ impl Checker {
                     resolved
                 };
                 if let Some(Type::Scalar(s)) = self.get_type(scalar_target) {
-                    // Check if scalar IS a primitive or derives from a primitive
-                    // (string/numeric/boolean). Root primitives have no base_scalar
-                    // but are themselves primitives.
                     is_primitive_or_extends = self.scalar_extends_primitive(scalar_target);
 
                     if is_primitive_or_extends {
-                        // Primitive scalar init: must have exactly 1 argument
                         if arguments.len() != 1 {
                             self.error("invalid-primitive-init", "Instantiating scalar deriving from 'string', 'numeric' or 'boolean' can only take a single argument.");
                         }
                     } else if s.base_scalar.is_some() {
-                        // Non-primitive scalar: requires named constructor
-                        // Ported from TS checker.ts:4781 — named-init-required
                         self.error("named-init-required", "Only scalar deriving from 'string', 'numeric' or 'boolean' can be instantiated without a named constructor.");
                     }
                 }
@@ -633,10 +674,7 @@ impl Checker {
                     self.check_node(ctx, arg_id);
                 }
 
-                // Ported from TS checker.ts:4651 — checkValueOfType
-                // For primitive scalar constructors, validate the argument value
-                // is assignable to the scalar type (e.g., int8(128) should fail)
-                // Use scalar_target (the actual scalar, e.g. int8) not resolved (e.g. numeric).
+                // For primitive scalar constructors, validate argument assignability
                 if is_primitive_or_extends && arguments.len() == 1 {
                     let arg_id = arguments[0];
                     if let Some(&arg_type_id) = self.node_type_map.get(&arg_id) {

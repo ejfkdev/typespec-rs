@@ -490,10 +490,40 @@ fn test_internal_with_extern_on_decorator() {
         @myDec model Foo {}
     "#,
     );
-    // Should parse without errors - internal+extern is valid combination
     assert!(
         !has_diagnostic(&checker, "invalid-modifier"),
         "Should NOT report invalid-modifier for internal extern dec: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "allows 'internal' combined with 'extern' on function declaration"
+#[test]
+fn test_internal_with_extern_on_function() {
+    let checker = check("internal extern fn myFunc(x: string): void;");
+    assert!(
+        !has_diagnostic(&checker, "invalid-modifier"),
+        "Should NOT report invalid-modifier for internal extern fn: {:?}",
+        checker.diagnostics()
+    );
+    assert!(
+        has_diagnostic(&checker, "experimental-feature"),
+        "Should report experimental-feature for internal fn: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Internal function is accessible in the same project
+#[test]
+fn test_internal_fn_accessible_in_same_project() {
+    let checker = check(
+        r#"
+        internal extern fn helper(x: string): string;
+    "#,
+    );
+    assert!(
+        !has_diagnostic(&checker, "invalid-ref"),
+        "Should NOT report invalid-ref for internal fn in same project: {:?}",
         checker.diagnostics()
     );
 }

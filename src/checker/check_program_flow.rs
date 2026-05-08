@@ -101,6 +101,11 @@ impl Checker {
                         self.create_shell_type("Operation", stmt_id),
                         None,
                     ),
+                    AstNode::FunctionDeclaration(decl) => (
+                        decl.name,
+                        self.create_shell_type("FunctionType", stmt_id),
+                        None,
+                    ),
                     AstNode::NamespaceDeclaration(decl) => {
                         let name = Self::get_identifier_name(ast, decl.name);
                         if name.is_empty() {
@@ -215,6 +220,15 @@ impl Checker {
                 Some(stmt_id),
                 ns,
             ))),
+            "FunctionType" => self.create_type(Type::FunctionType(FunctionTypeType {
+                id: self.next_type_id(),
+                name: String::new(),
+                node: Some(stmt_id),
+                namespace: ns,
+                parameters: Vec::new(),
+                return_type: None,
+                is_finished: false,
+            })),
             _ => self.error_type,
         }
     }

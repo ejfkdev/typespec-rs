@@ -23,15 +23,16 @@ This project is in **early development**. The core compiler pipeline works:
 |-----------|--------|
 | Scanner/Lexer | Complete |
 | Parser | Complete |
-| Type Checker | Partial |
+| Type Checker | Working |
 | YAML Emitter | Working |
 | JSON Emitter | Working |
 | OpenAPI 3 Emitter | Working |
+| Protobuf Library | Working |
 | CLI (`tspc`) | Working |
 | WASM Extensions | Working |
 | Programmatic Decorator API | Working |
 
-2,800+ tests passing.
+2,840+ tests passing.
 
 ## Quick Start
 
@@ -41,7 +42,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-typespec_rs = "0.2.0"
+typespec_rs = "0.4.0"
 ```
 
 Parse TypeSpec and emit YAML/JSON:
@@ -175,7 +176,7 @@ let result = Parser::new(source, ParseOptions::new(vec![])
 
 ```toml
 [dependencies]
-tspc = { version = "0.2.0", features = ["wasm-extensions"] }
+tspc = { version = "0.4.0", features = ["wasm-extensions"] }
 ```
 
 ```bash
@@ -285,13 +286,19 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 - Programmatic decorator registration (`Checker::register_decorator`) — bypasses source parsing, supports reserved keywords
 - WASM extension system with wasmtime runtime — custom decorators and emitters
 - CLI with cross-platform binary releases (UPX compressed)
+- `fn` function declarations with `extern` modifier and call validation
+- `internal` access control with project/library visibility scoping
+- HTTP response handling: union variant flattening, plain body detection, response indexing
+- Linter rule options with JSON Schema validation and default value merging
+- OpenAPI emitter with HTTP-protocol-aware verb/route/parameter resolution
+- Protobuf proto3 `optional` label logic with array/map warnings
+- ICE-protected diagnostic creation (fallback instead of panic)
+- Templated alias member expression resolution with default parameter instantiation
 
 What's not yet ported:
 
 - Full `Program` pipeline (multi-file compilation, import resolution)
 - Decorator execution at `finishType` time
-- HTTP route/payload resolution
-- OpenAPI3 / JSON Schema emitter implementations
 - Language Server Protocol (LSP) support
 - Source loader (async I/O)
 

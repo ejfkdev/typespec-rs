@@ -804,4 +804,98 @@ impl Checker {
             _ => self.error_type,
         }
     }
+
+    /// Instantiate a template type using only its default template arguments.
+    /// Returns None if the type is not a template or any parameter lacks a default.
+    /// Ported from upstream PR #9670: instantiate templated aliases in base position
+    /// of member expression when all parameters are defaultable.
+    pub(crate) fn instantiate_template_with_defaults(&mut self, template_type_id: TypeId) -> Option<TypeId> {
+        let default_args = self.get_template_default_args(template_type_id);
+        if default_args.is_empty() {
+            return None;
+        }
+
+        let ctx = CheckContext::new();
+        let instance_id = self.instantiate_template(&ctx, 0, template_type_id, &default_args);
+        if instance_id == self.error_type {
+            None
+        } else {
+            Some(instance_id)
+        }
+    }
+
+    /// Look up a named member on a type, returning its TypeId or error_type.
+    /// Used after template instantiation to access members on the resulting type.
+    pub(crate) fn lookup_member_on_type(
+        &mut self,
+        type_id: TypeId,
+        member_name: &str,
+        _source_node_id: NodeId,
+    ) -> TypeId {
+        match self.get_type(type_id) {
+            Some(Type::Namespace(ns)) => {
+                if let Some(member_id) = ns.lookup_member(member_name) {
+                    self.check_internal_visibility(member_id);
+                    member_id
+                } else {
+                    self.error(
+                        "invalid-ref",
+                        &format!("Namespace '{}' has no member '{}'", ns.name, member_name),
+                    );
+                    self.error_type
+                }
+            }
+            Some(Type::Model(m)) => {
+                if let Some(&prop_id) = m.properties.get(member_name) {
+                    prop_id
+                } else {
+                    self.error(
+                        "invalid-ref",
+                        &format!("Model '{}' has no property '{}'", m.name, member_name),
+                    );
+                    self.error_type
+                }
+            }
+            Some(Type::Enum(e)) => {
+                if let Some(&member_id) = e.members.get(member_name) {
+                    member_id
+                } else {
+                    self.error(
+                        "invalid-ref",
+                        &format!("Enum '{}' has no member '{}'", e.name, member_name),
+                    );
+                    self.error_type
+                }
+            }
+            Some(Type::Union(u)) => {
+                if let Some(&variant_id) = u.variants.get(member_name) {
+                    variant_id
+                } else {
+                    self.error(
+                        "invalid-ref",
+                        &format!("Union '{}' has no variant '{}'", u.name, member_name),
+                    );
+                    self.error_type
+                }
+            }
+            Some(Type::Interface(iface)) => {
+                if let Some(&op_id) = iface.operations.get(member_name) {
+                    op_id
+                } else {
+                    self.error(
+                        "invalid-ref",
+                        &format!("Interface '{}' has no operation '{}'", iface.name, member_name),
+                    );
+                    self.error_type
+                }
+            }
+            _ => {
+                self.error(
+                    "invalid-ref",
+                    &format!("Cannot access member '{}' on this type", member_name),
+                );
+                self.error_type
+            }
+        }
+    }
 }

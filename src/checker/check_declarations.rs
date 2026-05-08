@@ -122,7 +122,9 @@ impl Checker {
     ) -> TypeId {
         let (ast, node) = require_ast_node!(self, node_id, FunctionDeclaration, self.error_type);
 
-        // Check for extern modifier - requires JS implementation binding
+        let name = Self::get_identifier_name(&ast, node.name);
+
+        // Check modifiers — extern is required on fn declarations (matching upstream)
         let mut modifier_flags = ModifierFlags::None;
         for &mod_id in &node.modifiers {
             if let Some(AstNode::Modifier(m)) = ast.id_to_node(mod_id) {
@@ -130,23 +132,49 @@ impl Checker {
             }
         }
         let has_extern = modifier_flags.contains(ModifierFlags::Extern);
-        if has_extern {
-            // extern fn must have a JS implementation - for now emit missing-implementation
+        if !has_extern {
             self.error(
-                "missing-implementation",
+                "invalid-modifier",
                 &format!(
-                    "Function '{}' is declared as extern but has no implementation.",
-                    Self::get_identifier_name(&ast, node.name)
+                    "Function '{}' must have 'extern' modifier. Functions require external implementation.",
+                    name
                 ),
             );
         }
 
-        let name = Self::get_identifier_name(&ast, node.name);
-
+        // Manually unpack parameters (same pattern as check_decorator_declaration)
+        // because check_node_impl has no FunctionParameter arm
         let mut parameters = Vec::new();
         for &param_id in &node.parameters {
-            let param_type = self.check_node(ctx, param_id);
-            parameters.push(param_type);
+            let param_node = match ast.id_to_node(param_id) {
+                Some(AstNode::FunctionParameter(fp)) => fp.clone(),
+                _ => continue,
+            };
+            let param_name = Self::get_identifier_name(&ast, param_node.name);
+            let param_type = param_node.type_annotation.map(|t| self.check_node(ctx, t));
+
+            if param_node.rest
+                && let Some(type_ann) = param_node.type_annotation
+            {
+                let is_array_expr =
+                    matches!(ast.id_to_node(type_ann), Some(AstNode::ArrayExpression(_)));
+                if !is_array_expr {
+                    self.error(
+                        "rest-parameter-array",
+                        "A rest parameter must be of an array type.",
+                    );
+                }
+            }
+
+            parameters.push(FunctionParameterType {
+                id: self.next_type_id(),
+                name: param_name,
+                node: Some(param_id),
+                r#type: param_type,
+                optional: param_node.optional,
+                rest: param_node.rest,
+                is_finished: true,
+            });
         }
 
         let return_type = node.return_type.map(|ret_id| self.check_node(ctx, ret_id));
@@ -160,6 +188,18 @@ impl Checker {
             return_type,
             is_finished: true,
         }));
+
+        // Also create FunctionParameter types in the type store for each parameter
+        // (needed for type graph serialization and lookup)
+        if let Some(Type::FunctionType(ft)) = self.get_type(type_id).cloned() {
+            for param in &ft.parameters {
+                let param_type_id = self.create_type(Type::FunctionParameter(param.clone()));
+                // Register in declared_types for lookup
+                if !param.name.is_empty() {
+                    self.declared_types.insert(param.name.clone(), param_type_id);
+                }
+            }
+        }
 
         self.node_type_map.insert(node_id, type_id);
         if !name.is_empty() {

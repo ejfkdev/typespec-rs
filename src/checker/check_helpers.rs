@@ -502,10 +502,12 @@ impl Checker {
 
     /// Format a duplicate property error message.
     /// Shared by define_property, check_model, and check_spread.
+    /// Ported from TS duplicate-property with withModel/default variants.
     pub(crate) fn format_duplicate_property_msg(type_name: &str, prop_name: &str) -> String {
-        format!(
-            "Property '{}' already exists in type '{}'.",
-            prop_name, type_name
-        )
+        if type_name.is_empty() {
+            format!("Model already has a property named '{}'.", prop_name)
+        } else {
+            format!("Model '{}' already has a property named '{}'.", type_name, prop_name)
+        }
     }
 }

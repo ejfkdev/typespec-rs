@@ -624,6 +624,7 @@ impl NamespaceType {
             .or_else(|| self.unions.get(name).copied())
             .or_else(|| self.operations.get(name).copied())
             .or_else(|| self.decorator_declarations.get(name).copied())
+            .or_else(|| self.function_declarations.get(name).copied())
     }
 }
 
@@ -641,14 +642,15 @@ pub struct DecoratorType {
     pub is_finished: bool,
 }
 
-/// Function type
+/// Function type — represents an `extern fn` declaration.
+/// Unlike decorators, functions can accept both type and value arguments (mixed parameters).
 #[derive(Debug, Clone)]
 pub struct FunctionTypeType {
     pub id: TypeId,
     pub name: String,
     pub node: Option<NodeId>,
     pub namespace: Option<TypeId>,
-    pub parameters: Vec<TypeId>,
+    pub parameters: Vec<FunctionParameterType>,
     pub return_type: Option<TypeId>,
     pub is_finished: bool,
 }
@@ -908,6 +910,7 @@ impl Type {
             Type::Operation(t) => t.name = new_name,
             Type::Namespace(t) => t.name = new_name,
             Type::Decorator(t) => t.name = new_name,
+            Type::FunctionType(t) => t.name = new_name,
             _ => {}
         }
     }

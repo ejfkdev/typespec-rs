@@ -86,6 +86,13 @@ impl TypeGraphSerializer {
                         json.push_str(&format!("\"{}\":{}", escape_json(name), id));
                         first = false;
                     }
+                    for (name, &id) in &ns.decorator_declarations {
+                        if !first {
+                            json.push(',');
+                        }
+                        json.push_str(&format!("\"{}\":{}", escape_json(name), id));
+                        first = false;
+                    }
                     for (name, &id) in &ns.unions {
                         if !first {
                             json.push(',');
@@ -101,6 +108,13 @@ impl TypeGraphSerializer {
                         first = false;
                     }
                     for (name, &id) in &ns.namespaces {
+                        if !first {
+                            json.push(',');
+                        }
+                        json.push_str(&format!("\"{}\":{}", escape_json(name), id));
+                        first = false;
+                    }
+                    for (name, &id) in &ns.function_declarations {
                         if !first {
                             json.push(',');
                         }
@@ -276,9 +290,44 @@ impl TypeGraphSerializer {
             }
             Type::FunctionType(ft) => {
                 json.push_str(&format!(",\"name\":\"{}\"", escape_json(&ft.name)));
+                if !ft.parameters.is_empty() {
+                    json.push_str(",\"parameters\":[");
+                    let mut first = true;
+                    for param in &ft.parameters {
+                        if !first {
+                            json.push(',');
+                        }
+                        json.push('{');
+                        json.push_str(&format!("\"name\":\"{}\"", escape_json(&param.name)));
+                        if let Some(pt) = param.r#type {
+                            json.push_str(&format!(",\"type\":{}", pt));
+                        }
+                        if param.optional {
+                            json.push_str(",\"optional\":true");
+                        }
+                        if param.rest {
+                            json.push_str(",\"rest\":true");
+                        }
+                        json.push('}');
+                        first = false;
+                    }
+                    json.push(']');
+                }
+                if let Some(rt) = ft.return_type {
+                    json.push_str(&format!(",\"returnType\":{}", rt));
+                }
             }
             Type::FunctionParameter(fp) => {
                 json.push_str(&format!(",\"name\":\"{}\"", escape_json(&fp.name)));
+                if let Some(pt) = fp.r#type {
+                    json.push_str(&format!(",\"type\":{}", pt));
+                }
+                if fp.optional {
+                    json.push_str(",\"optional\":true");
+                }
+                if fp.rest {
+                    json.push_str(",\"rest\":true");
+                }
             }
             Type::StringTemplate(st) => {
                 if !st.spans.is_empty() {

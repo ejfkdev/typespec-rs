@@ -60,7 +60,23 @@ pub const DIAG_ILLEGAL_RESERVATION: &str = "illegal-reservation";
 pub const DIAG_MODEL_NOT_IN_PACKAGE: &str = "model-not-in-package";
 pub const DIAG_ANONYMOUS_MODEL: &str = "anonymous-model";
 pub const DIAG_UNSPEAKABLE_TEMPLATE_ARGUMENT: &str = "unspeakable-template-argument";
+pub const DIAG_OPTIONAL_ARRAY_FIELD: &str = "optional-array-field";
+pub const DIAG_OPTIONAL_MAP_FIELD: &str = "optional-map-field";
 pub const DIAG_PACKAGE: &str = "package";
+
+// ============================================================================
+// Protobuf syntax versions
+// ============================================================================
+
+/// Protobuf syntax version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProtoSyntax {
+    /// proto2 syntax
+    Proto2,
+    /// proto3 syntax
+    #[default]
+    Proto3,
+}
 
 // ============================================================================
 // State keys (fully qualified with namespace)
@@ -457,6 +473,85 @@ pub fn typespec_scalar_to_proto(scalar_name: &str) -> Option<&'static str> {
 }
 
 // ============================================================================
+// Proto3 optional label logic
+// ============================================================================
+
+/// Result of checking whether an optional label should be emitted for a field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OptionalLabelDecision {
+    /// Emit `optional` keyword
+    Emit,
+    /// Do NOT emit `optional` keyword (array/Map types in proto3)
+    Skip,
+    /// Do NOT emit `optional` and emit a warning (optional + array)
+    WarnArray,
+    /// Do NOT emit `optional` and emit a warning (optional + map)
+    WarnMap,
+}
+
+/// Determine whether a proto3 field should emit the `optional` keyword.
+///
+/// Rules (ported from upstream TypeSpec protobuf emitter):
+/// - In proto2, `optional` is always emitted for optional fields
+/// - In proto3:
+///   - Array fields (model with indexer) should NOT emit `optional`
+///   - Map fields should NOT emit `optional`
+///   - Other optional fields SHOULD emit `optional`
+///   - `optional` + array is discouraged → warning
+///   - `optional` + map is discouraged → warning
+///
+/// Parameters:
+/// - `is_optional`: whether the TypeSpec property is optional
+/// - `field_type_id`: the TypeId of the field's type
+/// - `syntax`: the protobuf syntax version
+/// - `checker`: the type checker for resolving types
+pub fn should_emit_optional_label(
+    is_optional: bool,
+    field_type_id: TypeId,
+    syntax: ProtoSyntax,
+    checker: &crate::checker::Checker,
+) -> OptionalLabelDecision {
+    if !is_optional {
+        return OptionalLabelDecision::Skip;
+    }
+
+    if syntax == ProtoSyntax::Proto2 {
+        return OptionalLabelDecision::Emit;
+    }
+
+    // proto3: check if the field type is array or map
+    let resolved = checker.resolve_alias_chain(field_type_id);
+
+    if is_array_type(checker, resolved) {
+        return OptionalLabelDecision::WarnArray;
+    }
+
+    if is_map_type(checker, resolved) {
+        return OptionalLabelDecision::WarnMap;
+    }
+
+    OptionalLabelDecision::Emit
+}
+
+/// Check if a type is an array type (model with indexer).
+fn is_array_type(checker: &crate::checker::Checker, type_id: TypeId) -> bool {
+    match checker.get_type(type_id) {
+        Some(crate::checker::types::Type::Model(m)) => m.indexer.is_some() && !is_map_type(checker, type_id),
+        _ => false,
+    }
+}
+
+/// Check if a type is a Protobuf Map type.
+fn is_map_type(checker: &crate::checker::Checker, type_id: TypeId) -> bool {
+    match checker.get_type(type_id) {
+        Some(crate::checker::types::Type::Model(m)) => {
+            is_map(&checker.state_accessors, m.id)
+        }
+        _ => false,
+    }
+}
+
+// ============================================================================
 // Library creation
 // ============================================================================
 
@@ -608,6 +703,18 @@ pub fn create_protobuf_library() -> DiagnosticMap {
                 "disallowed-option-type",
                 "option '{name}' with type '{type}' is not allowed in a package declaration (only string, boolean, and numeric types are allowed)",
             )]),
+        ),
+        (
+            DIAG_OPTIONAL_ARRAY_FIELD.to_string(),
+            DiagnosticDefinition::warning(
+                "optional on an array field has no effect in proto3 and is not recommended",
+            ),
+        ),
+        (
+            DIAG_OPTIONAL_MAP_FIELD.to_string(),
+            DiagnosticDefinition::warning(
+                "optional on a map field has no effect in proto3 and is not recommended",
+            ),
         ),
     ])
 }
@@ -917,5 +1024,74 @@ mod tests {
 
         apply_package(&mut state, 2, None);
         assert_eq!(get_package(&state, 2), Some("".to_string()));
+    }
+
+    #[test]
+    fn test_optional_label_non_optional_field() {
+        let checker = crate::checker::Checker::new();
+        let result = should_emit_optional_label(false, 0, ProtoSyntax::Proto3, &checker);
+        assert_eq!(result, OptionalLabelDecision::Skip);
+    }
+
+    #[test]
+    fn test_optional_label_proto2() {
+        let checker = crate::checker::Checker::new();
+        let result = should_emit_optional_label(true, 0, ProtoSyntax::Proto2, &checker);
+        assert_eq!(result, OptionalLabelDecision::Emit);
+    }
+
+    #[test]
+    fn test_optional_label_proto3_simple_type() {
+        let mut checker = crate::checker::Checker::new();
+        let string_type = crate::checker::types::Type::String(crate::checker::types::StringType {
+            id: checker.next_type_id(),
+            value: String::new(),
+            node: None,
+            is_finished: true,
+        });
+        let string_id = checker.create_type(string_type);
+        let result = should_emit_optional_label(true, string_id, ProtoSyntax::Proto3, &checker);
+        assert_eq!(result, OptionalLabelDecision::Emit);
+    }
+
+    #[test]
+    fn test_optional_label_proto3_array_type() {
+        let mut checker = crate::checker::Checker::new();
+        let array_model = crate::checker::types::Type::Model(crate::checker::types::ModelType::new(
+            checker.next_type_id(),
+            "string[]".to_string(),
+            None,
+            None,
+        ));
+        let array_id = checker.create_type(array_model);
+        if let Some(crate::checker::types::Type::Model(m)) = checker.get_type_mut(array_id) {
+            m.indexer = Some((0, 0));
+        }
+        let result = should_emit_optional_label(true, array_id, ProtoSyntax::Proto3, &checker);
+        assert_eq!(result, OptionalLabelDecision::WarnArray);
+    }
+
+    #[test]
+    fn test_optional_label_proto3_map_type() {
+        let mut checker = crate::checker::Checker::new();
+        let map_model = crate::checker::types::Type::Model(crate::checker::types::ModelType::new(
+            checker.next_type_id(),
+            "Map".to_string(),
+            None,
+            None,
+        ));
+        let map_id = checker.create_type(map_model);
+        if let Some(crate::checker::types::Type::Model(m)) = checker.get_type_mut(map_id) {
+            m.indexer = Some((0, 0));
+        }
+        // Mark as protobuf map
+        apply_map(&mut checker.state_accessors, map_id);
+        let result = should_emit_optional_label(true, map_id, ProtoSyntax::Proto3, &checker);
+        assert_eq!(result, OptionalLabelDecision::WarnMap);
+    }
+
+    #[test]
+    fn test_proto_syntax_default() {
+        assert_eq!(ProtoSyntax::default(), ProtoSyntax::Proto3);
     }
 }

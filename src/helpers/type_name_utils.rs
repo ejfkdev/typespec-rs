@@ -424,19 +424,14 @@ fn get_function_signature(
     let params: Vec<String> = ft
         .parameters
         .iter()
-        .filter_map(|&param_id| {
-            let param = checker.get_type(param_id).cloned()?;
-            if let Type::FunctionParameter(fp) = param {
-                let rest = if fp.rest { "..." } else { "" };
-                let optional = if fp.optional { "?" } else { "" };
-                let type_name = fp
-                    .r#type
-                    .map(|tid| get_type_name(checker, tid, options))
-                    .unwrap_or_else(|| "unknown".to_string());
-                Some(format!("{}{}{}: {}", rest, fp.name, optional, type_name))
-            } else {
-                None
-            }
+        .map(|param| {
+            let rest = if param.rest { "..." } else { "" };
+            let optional = if param.optional { "?" } else { "" };
+            let type_name = param
+                .r#type
+                .map(|tid| get_type_name(checker, tid, options))
+                .unwrap_or_else(|| "unknown".to_string());
+            format!("{}{}{}: {}", rest, param.name, optional, type_name)
         })
         .collect();
     let return_type = ft

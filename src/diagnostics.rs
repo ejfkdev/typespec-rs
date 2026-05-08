@@ -324,8 +324,8 @@ impl DiagnosticCreator {
     /// * `message_id` - Optional message ID (defaults to "default")
     /// * `format` - Optional format values for message interpolation
     ///
-    /// # Panics
-    /// Panics if the code or message_id is not found in the diagnostic map.
+    /// If the code or message_id is not found, returns a fallback diagnostic
+    /// instead of panicking (ICE protection, ported from upstream fix).
     pub fn create_diagnostic(
         &self,
         code: &str,
@@ -335,35 +335,27 @@ impl DiagnosticCreator {
         let def = match self.diagnostics.get(code) {
             Some(d) => d,
             None => {
-                let codes: String = self
-                    .diagnostics
-                    .keys()
-                    .map(|c| format!(" - {}", c))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let error_msg = match &self.library_name {
-                    Some(lib) => format!(
-                        "Unexpected diagnostic code '{}'. It must match one of the code defined in the library '{}'. Defined codes:\n{}",
-                        code, lib, codes
-                    ),
-                    None => format!(
-                        "Unexpected diagnostic code '{}'. It must match one of the code defined in the compiler. Defined codes:\n{}",
-                        code, codes
-                    ),
+                // ICE protection: return fallback diagnostic instead of panicking
+                let full_code = match &self.library_name {
+                    Some(lib) => format!("{}/{}", lib, code),
+                    None => code.to_string(),
                 };
-                panic!("{}", error_msg);
+                let mut message = format!("Unknown diagnostic code '{}'", code);
+                for (key, value) in format {
+                    message = message.replace(&format!("{{{}}}", key), value);
+                }
+                return Diagnostic::warning(&full_code, &message);
             }
         };
 
         let msg_id = message_id.unwrap_or("default");
-        let message_text = def.get_message(msg_id).unwrap_or_else(|| {
-            let msgs: String = def.messages.iter().map(|(id, _)| format!(" - {}", id)).collect::<Vec<_>>().join("\n");
-            let error_msg = match &self.library_name {
-                Some(lib) => format!("Unexpected message id '{}' for code '{}' in library '{}'. Defined messages:\n{}", msg_id, code, lib, msgs),
-                None => format!("Unexpected message id '{}' for code '{}'. Defined messages:\n{}", msg_id, code, msgs),
-            };
-            panic!("{}", error_msg);
-        });
+        let message_text = match def.get_message(msg_id) {
+            Some(text) => text,
+            None => {
+                // ICE protection: use default message or fallback
+                def.get_message("default").unwrap_or(code)
+            }
+        };
 
         // Interpolate format values into the message
         let mut message = message_text.to_string();
@@ -694,16 +686,18 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Unexpected diagnostic code")]
-    fn test_diagnostic_creator_unknown_code() {
+    fn test_diagnostic_creator_unknown_code_returns_fallback() {
         let creator = DiagnosticCreator::new(
             HashMap::from([(
                 "known-code".to_string(),
                 DiagnosticDefinition::error("Known"),
             )]),
-            None,
+            Some("myLib".to_string()),
         );
-        creator.create_diagnostic("unknown-code", None, &[]);
+        let diag = creator.create_diagnostic("unknown-code", None, &[]);
+        assert_eq!(diag.code, "myLib/unknown-code");
+        assert_eq!(diag.severity, DiagnosticSeverity::Warning);
+        assert!(diag.message.contains("unknown-code"));
     }
 
     #[test]

@@ -208,11 +208,15 @@ impl OpenAPIEmitter {
 
     fn emit_operation_path(&self, checker: &Checker, op: &OperationType) -> String {
         let mut s = String::new();
-        // Generate a path from the operation name
-        let path = format!("/{}", to_kebab_case(&op.name));
+
+        // Resolve path from @route decorator, or fall back to kebab-case operation name
+        let path = self.resolve_route(checker, op);
+
+        // Resolve HTTP verb from decorator state
+        let verb = self.resolve_verb(checker, op);
 
         s.push_str(&format!("    {}:\n", path));
-        s.push_str("      get:\n");
+        s.push_str(&format!("      {}:\n", verb.to_lowercase()));
         s.push_str(&format!("        operationId: {}\n", op.name));
         s.push_str(&format!("        summary: {}\n", op.name));
 
@@ -220,15 +224,20 @@ impl OpenAPIEmitter {
         if let Some(params_id) = op.parameters
             && let Some(Type::Model(params_model)) = checker.get_type(params_id)
         {
+            let mut has_params = false;
             for param_name in &params_model.property_names {
                 if let Some(&prop_id) = params_model.properties.get(param_name)
                     && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
                 {
-                    s.push_str("        parameters:\n");
+                    if !has_params {
+                        s.push_str("        parameters:\n");
+                        has_params = true;
+                    }
+                    let param_in = self.resolve_param_location(checker, prop_id);
                     s.push_str("          - name: ");
                     s.push_str(param_name);
                     s.push('\n');
-                    s.push_str("            in: query\n");
+                    s.push_str(&format!("            in: {}\n", param_in));
                     if !prop.optional {
                         s.push_str("            required: true\n");
                     }
@@ -238,18 +247,137 @@ impl OpenAPIEmitter {
             }
         }
 
-        // Responses
+        // Responses — resolve status codes from return type
         s.push_str("        responses:\n");
-        s.push_str("          '200':\n");
-        s.push_str("            description: Success\n");
         if let Some(ret_id) = op.return_type {
-            s.push_str("            content:\n");
-            s.push_str("              application/json:\n");
-            s.push_str("                schema:\n");
-            s.push_str(&self.type_to_schema(checker, ret_id, 18));
+            self.emit_responses(checker, ret_id, &mut s);
+        } else {
+            s.push_str("          '204':\n");
+            s.push_str("            description: No Content\n");
         }
 
         s
+    }
+
+    /// Resolve the route path for an operation.
+    fn resolve_route(&self, checker: &Checker, op: &OperationType) -> String {
+        if let Some(node_id) = op.node {
+            let state = &checker.state_accessors;
+            if let Some(route) = state.get_state("TypeSpec.Http.route", node_id) {
+                return route.to_string();
+            }
+        }
+        format!("/{}", to_kebab_case(&op.name))
+    }
+
+    /// Resolve the HTTP verb for an operation.
+    fn resolve_verb(&self, checker: &Checker, op: &OperationType) -> String {
+        use crate::libs::http::get_verb;
+        if let Some(node_id) = op.node {
+            let verb = get_verb(&checker.state_accessors, node_id);
+            if let Some(v) = verb {
+                return format!("{:?}", v).to_lowercase();
+            }
+        }
+        "get".to_string()
+    }
+
+    /// Resolve parameter location (query, path, header, cookie).
+    fn resolve_param_location(&self, checker: &Checker, prop_id: TypeId) -> String {
+        let state = &checker.state_accessors;
+        if state.get_state("TypeSpec.Http.path", prop_id).is_some() {
+            "path".to_string()
+        } else if state.get_state("TypeSpec.Http.header", prop_id).is_some() {
+            "header".to_string()
+        } else if state.get_state("TypeSpec.Http.cookie", prop_id).is_some() {
+            "cookie".to_string()
+        } else {
+            "query".to_string()
+        }
+    }
+
+    /// Emit response entries based on return type analysis.
+    /// Uses resolve_response_variants to handle union return types.
+    fn emit_responses(&self, checker: &Checker, ret_id: TypeId, s: &mut String) {
+        use crate::libs::http::responses::{resolve_response_variants, ResolvedResponseVariant};
+
+        let variants = resolve_response_variants(checker, ret_id);
+
+        if variants.is_empty() {
+            s.push_str("          '200':\n");
+            s.push_str("            description: Success\n");
+            return;
+        }
+
+        for variant in &variants {
+            match variant {
+                ResolvedResponseVariant::Plain { type_id } => {
+                    let resolved = checker.resolve_alias_chain(*type_id);
+                    // Check if void
+                    if let Some(Type::Intrinsic(i)) = checker.get_type(resolved)
+                        && matches!(i.name, IntrinsicTypeName::Void)
+                    {
+                        s.push_str("          '204':\n");
+                        s.push_str("            description: No Content\n");
+                        continue;
+                    }
+                    s.push_str("          '200':\n");
+                    s.push_str("            description: Success\n");
+                    s.push_str("            content:\n");
+                    s.push_str("              application/json:\n");
+                    s.push_str("                schema:\n");
+                    s.push_str(&self.type_to_schema(checker, resolved, 18));
+                }
+                ResolvedResponseVariant::Envelope { type_id } => {
+                    // Extract status code from envelope model
+                    let status_code = self.extract_status_code(checker, *type_id);
+                    let body_type = self.extract_body_type(checker, *type_id);
+                    s.push_str(&format!("          '{}':\n", status_code));
+                    s.push_str("            description: Success\n");
+                    if let Some(body_id) = body_type {
+                        s.push_str("            content:\n");
+                        s.push_str("              application/json:\n");
+                        s.push_str("                schema:\n");
+                        s.push_str(&self.type_to_schema(checker, body_id, 18));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Extract the status code from a response envelope model.
+    fn extract_status_code(&self, checker: &Checker, type_id: TypeId) -> String {
+        let resolved = checker.resolve_alias_chain(type_id);
+        if let Some(Type::Model(m)) = checker.get_type(resolved) {
+            for name in &m.property_names {
+                if let Some(&prop_id) = m.properties.get(name) {
+                    let state = &checker.state_accessors;
+                    if let Some(codes) = state.get_state("TypeSpec.Http.statusCode", prop_id) {
+                        return codes.to_string();
+                    }
+                }
+            }
+        }
+        "200".to_string()
+    }
+
+    /// Extract the body type from a response envelope model.
+    fn extract_body_type(&self, checker: &Checker, type_id: TypeId) -> Option<TypeId> {
+        let resolved = checker.resolve_alias_chain(type_id);
+        if let Some(Type::Model(m)) = checker.get_type(resolved) {
+            for name in &m.property_names {
+                if let Some(&prop_id) = m.properties.get(name) {
+                    let state = &checker.state_accessors;
+                    if state.get_state("TypeSpec.Http.body", prop_id).is_some()
+                        && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
+                    {
+                        return Some(prop.r#type);
+                    }
+                }
+            }
+        }
+        // If no explicit @body property, the entire model is the body
+        Some(resolved)
     }
 
     /// Convert a TypeId to an OpenAPI schema fragment
@@ -429,6 +557,9 @@ impl OpenAPIEmitter {
                     }
                 }
                 Type::UnionVariant(v) => self.type_to_schema(checker, v.r#type, indent),
+                Type::ScalarConstructor(_) => format!("{}type: object\n", pad),
+                Type::FunctionType(_) => format!("{}type: object\n", pad),
+                Type::FunctionParameter(_) => format!("{}type: object\n", pad),
                 _ => format!("{}type: object\n", pad),
             },
         }

@@ -27,6 +27,9 @@ pub use types::*;
 pub mod operation;
 pub use operation::*;
 
+pub mod responses;
+pub use responses::*;
+
 pub mod auth;
 pub use auth::*;
 

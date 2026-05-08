@@ -12,6 +12,41 @@ use std::collections::HashMap;
 /// Reference to a linter rule: "libraryName/ruleName"
 pub type RuleRef = String;
 
+/// The value type for linter rule options.
+/// Ported from TS `LinterRuleEnableValue = boolean | Record<string, unknown>`.
+#[derive(Debug, Clone)]
+pub enum LinterRuleOptionValue {
+    /// Simple boolean enable/disable
+    Bool(bool),
+    /// Options object with key-value pairs
+    Object(HashMap<String, serde_json::Value>),
+}
+
+impl LinterRuleOptionValue {
+    /// Create a simple boolean value
+    pub fn from_bool(b: bool) -> Self {
+        Self::Bool(b)
+    }
+
+    /// Create an options object
+    pub fn from_object(map: HashMap<String, serde_json::Value>) -> Self {
+        Self::Object(map)
+    }
+
+    /// Check if this is a boolean value
+    pub fn is_bool(&self) -> bool {
+        matches!(self, Self::Bool(_))
+    }
+
+    /// Get the boolean value if applicable
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+}
+
 /// A linter rule definition
 #[derive(Debug, Clone)]
 pub struct LinterRule {
@@ -29,6 +64,12 @@ pub struct LinterRule {
     pub async_flag: bool,
     /// Messages for this rule
     pub messages: HashMap<String, String>,
+    /// JSON Schema describing valid options for this rule.
+    /// Ported from TS `LinterRuleDefinition.optionSchema`.
+    pub option_schema: Option<serde_json::Value>,
+    /// Default options when the rule is enabled without explicit options.
+    /// Ported from TS `LinterRuleDefinition.defaultOptions`.
+    pub default_options: Option<LinterRuleOptionValue>,
 }
 
 impl LinterRule {
@@ -42,6 +83,8 @@ impl LinterRule {
             url: None,
             async_flag: false,
             messages: HashMap::new(),
+            option_schema: None,
+            default_options: None,
         }
     }
 
@@ -60,7 +103,21 @@ impl LinterRule {
             url: None,
             async_flag: false,
             messages: HashMap::new(),
+            option_schema: None,
+            default_options: None,
         }
+    }
+
+    /// Set the option schema (JSON Schema describing valid options).
+    pub fn with_option_schema(mut self, schema: serde_json::Value) -> Self {
+        self.option_schema = Some(schema);
+        self
+    }
+
+    /// Set the default options for this rule.
+    pub fn with_default_options(mut self, options: LinterRuleOptionValue) -> Self {
+        self.default_options = Some(options);
+        self
     }
 
     /// Add a message to this rule
@@ -92,6 +149,30 @@ pub struct LinterRuleSet {
     pub enable: HashMap<String, bool>,
     /// Rules to disable
     pub disable: HashMap<String, bool>,
+    /// Rule options (name → option value).
+    /// Ported from TS linter rule config where `LinterRuleEnableValue = boolean | Record<string, unknown>`.
+    pub options: HashMap<String, LinterRuleOptionValue>,
+}
+
+/// Resolve the effective options for a linter rule by merging default options
+/// with user-provided options.
+/// Ported from TS `resolveRuleOptions()`.
+///
+/// Resolution order:
+/// 1. If the user provided options (`user_options`), use them
+/// 2. If the rule has default options, use them
+/// 3. Otherwise, default to `LinterRuleOptionValue::Bool(true)` (enabled)
+pub fn resolve_rule_options(
+    rule: &LinterRule,
+    user_options: Option<&LinterRuleOptionValue>,
+) -> LinterRuleOptionValue {
+    if let Some(opts) = user_options {
+        return opts.clone();
+    }
+    if let Some(ref defaults) = rule.default_options {
+        return defaults.clone();
+    }
+    LinterRuleOptionValue::Bool(true)
 }
 
 /// Parse a rule reference into (library_name, rule_name).

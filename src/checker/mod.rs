@@ -139,6 +139,69 @@ pub struct CustomDecoratorDef {
 }
 
 // ============================================================================
+// Global decorator registry
+// ============================================================================
+
+use std::sync::RwLock;
+
+/// Global decorator registry — persists across Checker instances.
+/// Register once at startup, all new Checkers automatically pick them up.
+static GLOBAL_DECORATORS: RwLock<Vec<CustomDecoratorDef>> = RwLock::new(Vec::new());
+
+/// Register a custom decorator globally. All subsequent `Checker::new()` calls
+/// will automatically include this decorator.
+///
+/// Duplicate registrations (same name + namespace) are silently ignored.
+///
+/// # Example
+///
+/// ```ignore
+/// // Call once at startup
+/// typespec_rs::checker::register_global_decorator("route", "HTTP", "Operation");
+/// typespec_rs::checker::register_global_decorator("tag", "API", "unknown");
+///
+/// // Every new Checker automatically has these decorators
+/// let mut checker = typespec_rs::checker::Checker::new();
+/// // No need to call checker.register_decorator() again!
+/// ```
+pub fn register_global_decorator(name: &str, namespace: &str, target_type: &str) {
+    if let Ok(mut registry) = GLOBAL_DECORATORS.write()
+        && !registry.iter().any(|d| d.name == name && d.namespace == namespace)
+    {
+        registry.push(CustomDecoratorDef {
+            name: name.to_string(),
+            namespace: namespace.to_string(),
+            target_type: target_type.to_string(),
+        });
+    }
+}
+
+/// Bulk-register custom decorators globally.
+///
+/// Duplicate registrations (same name + namespace) are silently ignored.
+pub fn register_global_decorators(decorators: Vec<(&str, &str, &str)>) {
+    if let Ok(mut registry) = GLOBAL_DECORATORS.write() {
+        for (name, namespace, target_type) in decorators {
+            if !registry.iter().any(|d| d.name == name && d.namespace == namespace) {
+                registry.push(CustomDecoratorDef {
+                    name: name.to_string(),
+                    namespace: namespace.to_string(),
+                    target_type: target_type.to_string(),
+                });
+            }
+        }
+    }
+}
+
+/// Returns the globally registered decorators (cloned).
+fn get_global_decorators() -> Vec<CustomDecoratorDef> {
+    GLOBAL_DECORATORS
+        .read()
+        .map(|r| r.clone())
+        .unwrap_or_default()
+}
+
+// ============================================================================
 // Check Context and Flags
 // ============================================================================
 
@@ -433,7 +496,7 @@ impl Checker {
             spread_sources: HashMap::new(),
             pending_const_checks: HashSet::new(),
             state_accessors: crate::state_accessors::StateAccessors::new(),
-            custom_decorators: Vec::new(),
+            custom_decorators: get_global_decorators(),
         }
     }
 

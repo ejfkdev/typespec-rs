@@ -42,7 +42,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-typespec_rs = "0.4.2"
+typespec_rs = "0.4.3"
 ```
 
 Parse TypeSpec and emit YAML/JSON:
@@ -241,7 +241,7 @@ let result = Parser::new(source, ParseOptions::new(vec![])
 
 ```toml
 [dependencies]
-tspc = { version = "0.4.2", features = ["wasm-extensions"] }
+tspc = { version = "0.4.3", features = ["wasm-extensions"] }
 ```
 
 ```bash

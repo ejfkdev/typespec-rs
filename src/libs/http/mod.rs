@@ -60,10 +60,7 @@ pub use tsp_sources::*;
 pub fn http_library_source() -> String {
     format!(
         "{}\n\n{}\n\n{}\n\n{}",
-        HTTP_DECORATORS_TSP,
-        HTTP_MAIN_TSP,
-        HTTP_AUTH_TSP,
-        HTTP_PRIVATE_DECORATORS_TSP
+        HTTP_DECORATORS_TSP, HTTP_MAIN_TSP, HTTP_AUTH_TSP, HTTP_PRIVATE_DECORATORS_TSP
     )
 }
 

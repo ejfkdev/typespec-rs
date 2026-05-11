@@ -156,6 +156,15 @@ impl TypeGraphSerializer {
                 json.push_str(&format!(",\"name\":\"{}\"", escape_json(&p.name)));
                 json.push_str(&format!(",\"type\":{}", p.r#type));
                 json.push_str(&format!(",\"optional\":{}", p.optional));
+                if let Some(dv) = p.default_value {
+                    json.push_str(&format!(",\"defaultValue\":{}", dv));
+                }
+                if let Some(ref doc) = p.doc {
+                    json.push_str(&format!(",\"doc\":\"{}\"", escape_json(doc)));
+                }
+                if let Some(ref summary) = p.summary {
+                    json.push_str(&format!(",\"summary\":\"{}\"", escape_json(summary)));
+                }
             }
             Type::Interface(i) => {
                 if !i.name.is_empty() {
@@ -211,6 +220,12 @@ impl TypeGraphSerializer {
                 if let Some(v) = m.value {
                     json.push_str(&format!(",\"value\":{}", v));
                 }
+                if let Some(ref doc) = m.doc {
+                    json.push_str(&format!(",\"doc\":\"{}\"", escape_json(doc)));
+                }
+                if let Some(ref summary) = m.summary {
+                    json.push_str(&format!(",\"summary\":\"{}\"", escape_json(summary)));
+                }
             }
             Type::Union(u) => {
                 if !u.name.is_empty() {
@@ -234,6 +249,12 @@ impl TypeGraphSerializer {
             Type::UnionVariant(v) => {
                 json.push_str(&format!(",\"name\":\"{}\"", escape_json(&v.name)));
                 json.push_str(&format!(",\"type\":{}", v.r#type));
+                if let Some(ref doc) = v.doc {
+                    json.push_str(&format!(",\"doc\":\"{}\"", escape_json(doc)));
+                }
+                if let Some(ref summary) = v.summary {
+                    json.push_str(&format!(",\"summary\":\"{}\"", escape_json(summary)));
+                }
             }
             Type::Scalar(s) => {
                 if !s.name.is_empty() {
@@ -341,29 +362,29 @@ impl TypeGraphSerializer {
         if let Some(decorators) = t.decorators()
             && !decorators.is_empty()
         {
-                json.push_str(",\"decorators\":[");
-                let mut first = true;
-                for dec in decorators {
-                    if !first {
+            json.push_str(",\"decorators\":[");
+            let mut first = true;
+            for dec in decorators {
+                if !first {
+                    json.push(',');
+                }
+                json.push('{');
+                if let Some(def) = dec.definition {
+                    json.push_str(&format!("\"definition\":{}", def));
+                }
+                json.push_str(",\"args\":[");
+                let mut af = true;
+                for arg in &dec.args {
+                    if !af {
                         json.push(',');
                     }
-                    json.push('{');
-                    if let Some(def) = dec.definition {
-                        json.push_str(&format!("\"definition\":{}", def));
-                    }
-                    json.push_str(",\"args\":[");
-                    let mut af = true;
-                    for arg in &dec.args {
-                        if !af {
-                            json.push(',');
-                        }
-                        Self::serialize_decorator_arg(json, arg);
-                        af = false;
-                    }
-                    json.push_str("]}");
-                    first = false;
+                    Self::serialize_decorator_arg(json, arg);
+                    af = false;
                 }
-                json.push(']');
+                json.push_str("]}");
+                first = false;
+            }
+            json.push(']');
         }
 
         json.push('}');
@@ -556,9 +577,11 @@ mod tests {
         let json = TypeGraphSerializer::serialize(&checker);
         let v = parse_json(&json);
         let types = &v["types"];
-        let found = types.as_object().unwrap().values().any(|t| {
-            t["kind"] == "Scalar" && t["name"] == "myString"
-        });
+        let found = types
+            .as_object()
+            .unwrap()
+            .values()
+            .any(|t| t["kind"] == "Scalar" && t["name"] == "myString");
         assert!(found, "should find myString scalar");
     }
 
@@ -568,9 +591,11 @@ mod tests {
         let json = TypeGraphSerializer::serialize(&checker);
         let v = parse_json(&json);
         let types = &v["types"];
-        let found = types.as_object().unwrap().values().any(|t| {
-            t["kind"] == "Namespace" && t["name"] == "MyNs"
-        });
+        let found = types
+            .as_object()
+            .unwrap()
+            .values()
+            .any(|t| t["kind"] == "Namespace" && t["name"] == "MyNs");
         assert!(found, "should find MyNs namespace");
     }
 
@@ -587,21 +612,25 @@ mod tests {
         let json = TypeGraphSerializer::serialize(&checker);
         let v = parse_json(&json);
         let types = &v["types"];
-        let found = types.as_object().unwrap().values().any(|t| {
-            t["kind"] == "Tuple"
-        });
+        let found = types
+            .as_object()
+            .unwrap()
+            .values()
+            .any(|t| t["kind"] == "Tuple");
         assert!(found, "should find a Tuple type");
     }
 
     #[test]
     fn test_serialize_model_inheritance() {
-        let checker = check("model Base { id: string; } model Derived extends Base { name: string; }");
+        let checker =
+            check("model Base { id: string; } model Derived extends Base { name: string; }");
         let json = TypeGraphSerializer::serialize(&checker);
         let v = parse_json(&json);
         let types = &v["types"];
-        let found = types.as_object().unwrap().values().any(|t| {
-            t["kind"] == "Model" && t["name"] == "Derived" && t["baseModel"].is_number()
-        });
+        let found =
+            types.as_object().unwrap().values().any(|t| {
+                t["kind"] == "Model" && t["name"] == "Derived" && t["baseModel"].is_number()
+            });
         assert!(found, "Derived should have baseModel");
     }
 
@@ -627,19 +656,25 @@ mod tests {
 
         // Verify CLI namespace and its decorators are in the type graph
         let types = &v["types"];
-        let cli_ns = types.as_object().unwrap().values().find(|t| {
-            t["kind"] == "Namespace" && t["name"] == "CLI"
-        });
+        let cli_ns = types
+            .as_object()
+            .unwrap()
+            .values()
+            .find(|t| t["kind"] == "Namespace" && t["name"] == "CLI");
         assert!(cli_ns.is_some(), "should find CLI namespace");
 
-        let cmd_dec = types.as_object().unwrap().values().find(|t| {
-            t["kind"] == "Decorator" && t["name"] == "command"
-        });
+        let cmd_dec = types
+            .as_object()
+            .unwrap()
+            .values()
+            .find(|t| t["kind"] == "Decorator" && t["name"] == "command");
         assert!(cmd_dec.is_some(), "should find command decorator");
 
-        let flag_dec = types.as_object().unwrap().values().find(|t| {
-            t["kind"] == "Decorator" && t["name"] == "flag"
-        });
+        let flag_dec = types
+            .as_object()
+            .unwrap()
+            .values()
+            .find(|t| t["kind"] == "Decorator" && t["name"] == "flag");
         assert!(flag_dec.is_some(), "should find flag decorator");
     }
 
@@ -649,7 +684,10 @@ mod tests {
         let json = TypeGraphSerializer::serialize(&checker);
         let v = parse_json(&json);
         let types = &v["types"];
-        let intrinsic_count = types.as_object().unwrap().values()
+        let intrinsic_count = types
+            .as_object()
+            .unwrap()
+            .values()
             .filter(|t| t["kind"] == "Intrinsic")
             .count();
         assert!(intrinsic_count > 0, "should have intrinsic types");

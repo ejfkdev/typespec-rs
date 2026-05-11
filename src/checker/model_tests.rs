@@ -2359,6 +2359,8 @@ fn test_define_property_adds_to_model() {
         model: Some(model_id),
         source_property: None,
         decorators: vec![],
+        doc: None,
+        summary: None,
         is_finished: true,
     }));
 
@@ -2397,6 +2399,8 @@ fn test_define_property_duplicate_rejected() {
         model: None,
         source_property: None,
         decorators: vec![],
+        doc: None,
+        summary: None,
         is_finished: true,
     }));
 
@@ -2431,6 +2435,8 @@ fn test_define_property_duplicate_rejected() {
         model: Some(model_id),
         source_property: None,
         decorators: vec![],
+        doc: None,
+        summary: None,
         is_finished: true,
     }));
 

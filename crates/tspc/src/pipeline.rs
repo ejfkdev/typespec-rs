@@ -224,25 +224,15 @@ impl Pipeline {
                     };
                     for dec_app in decorators {
                         if let Some(def_id) = dec_app.definition
-                            && let Some(Type::Decorator(dt)) =
-                                checker.type_store.get(def_id)
+                            && let Some(Type::Decorator(dt)) = checker.type_store.get(def_id)
                             && dt.name == *dec_name
-                            && Self::namespace_matches(
-                                checker,
-                                dt.namespace,
-                                dec_namespace,
-                            )
-                            {
-                                let input = Self::build_decorator_input(
-                                    type_id, &dt.name, dec_app,
-                                );
-                                if let Err(e) = ext.handle_decorator(&input) {
-                                    eprintln!(
-                                        "Warning: decorator handler failed: {}",
-                                        e
-                                    );
-                                }
+                            && Self::namespace_matches(checker, dt.namespace, dec_namespace)
+                        {
+                            let input = Self::build_decorator_input(type_id, &dt.name, dec_app);
+                            if let Err(e) = ext.handle_decorator(&input) {
+                                eprintln!("Warning: decorator handler failed: {}", e);
                             }
+                        }
                     }
                 }
             }
@@ -291,11 +281,7 @@ impl Pipeline {
     }
 
     #[cfg(feature = "wasm-extensions")]
-    fn namespace_matches(
-        checker: &Checker,
-        ns_type_id: Option<TypeId>,
-        expected_ns: &str,
-    ) -> bool {
+    fn namespace_matches(checker: &Checker, ns_type_id: Option<TypeId>, expected_ns: &str) -> bool {
         match ns_type_id {
             None => expected_ns.is_empty(),
             Some(id) => {
@@ -319,10 +305,7 @@ impl Pipeline {
             .iter()
             .map(|arg| match &arg.js_value {
                 Some(typespec_rs::checker::types::DecoratorMarshalledValue::String(s)) => {
-                    format!(
-                        "\"{}\"",
-                        s.replace('\\', "\\\\").replace('"', "\\\"")
-                    )
+                    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
                 }
                 Some(typespec_rs::checker::types::DecoratorMarshalledValue::Number(n)) => {
                     format!("{}", n)

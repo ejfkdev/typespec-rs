@@ -216,7 +216,8 @@ impl Checker {
                 let param_type_id = self.create_type(Type::FunctionParameter(param.clone()));
                 // Register in declared_types for lookup
                 if !param.name.is_empty() {
-                    self.declared_types.insert(param.name.clone(), param_type_id);
+                    self.declared_types
+                        .insert(param.name.clone(), param_type_id);
                 }
             }
         }

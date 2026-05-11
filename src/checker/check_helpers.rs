@@ -507,7 +507,10 @@ impl Checker {
         if type_name.is_empty() {
             format!("Model already has a property named '{}'.", prop_name)
         } else {
-            format!("Model '{}' already has a property named '{}'.", type_name, prop_name)
+            format!(
+                "Model '{}' already has a property named '{}'.",
+                type_name, prop_name
+            )
         }
     }
 }

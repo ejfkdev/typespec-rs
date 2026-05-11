@@ -809,7 +809,10 @@ impl Checker {
     /// Returns None if the type is not a template or any parameter lacks a default.
     /// Ported from upstream PR #9670: instantiate templated aliases in base position
     /// of member expression when all parameters are defaultable.
-    pub(crate) fn instantiate_template_with_defaults(&mut self, template_type_id: TypeId) -> Option<TypeId> {
+    pub(crate) fn instantiate_template_with_defaults(
+        &mut self,
+        template_type_id: TypeId,
+    ) -> Option<TypeId> {
         let default_args = self.get_template_default_args(template_type_id);
         if default_args.is_empty() {
             return None;
@@ -884,7 +887,10 @@ impl Checker {
                 } else {
                     self.error(
                         "invalid-ref",
-                        &format!("Interface '{}' has no operation '{}'", iface.name, member_name),
+                        &format!(
+                            "Interface '{}' has no operation '{}'",
+                            iface.name, member_name
+                        ),
                     );
                     self.error_type
                 }

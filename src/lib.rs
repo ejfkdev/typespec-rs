@@ -67,9 +67,9 @@ pub mod deprecation;
 pub mod helpers;
 #[doc(hidden)]
 pub mod intrinsic_type_state;
+pub mod libs;
 #[doc(hidden)]
 pub mod loader;
-pub mod libs;
 #[doc(hidden)]
 pub mod modifiers;
 #[doc(hidden)]

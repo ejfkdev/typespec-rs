@@ -70,6 +70,8 @@ impl Checker {
                         value,
                         source_member: None,
                         decorators: Vec::new(),
+                        doc: None,
+                        summary: None,
                         is_finished: true,
                     }));
 

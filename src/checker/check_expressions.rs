@@ -82,6 +82,8 @@ impl Checker {
                 r#type: option_type,
                 union: None,
                 decorators: Vec::new(),
+                doc: None,
+                summary: None,
                 is_finished: true,
             }));
 
@@ -619,7 +621,9 @@ impl Checker {
                             "missing-arguments",
                             &format!(
                                 "Function '{}' expects at least {} argument(s), but got {}.",
-                                ft.name, min_params, arguments.len()
+                                ft.name,
+                                min_params,
+                                arguments.len()
                             ),
                         );
                     } else if max_params != usize::MAX && arguments.len() > max_params {
@@ -627,7 +631,9 @@ impl Checker {
                             "too-many-arguments",
                             &format!(
                                 "Function '{}' expects at most {} argument(s), but got {}.",
-                                ft.name, max_params, arguments.len()
+                                ft.name,
+                                max_params,
+                                arguments.len()
                             ),
                         );
                     }
@@ -737,6 +743,8 @@ impl Checker {
                 model: None,
                 source_property: None,
                 decorators: Vec::new(),
+                doc: None,
+                summary: None,
                 is_finished: true,
             }));
 

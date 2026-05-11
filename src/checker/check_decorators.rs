@@ -199,6 +199,269 @@ impl Checker {
         {
             *decs = decorator_apps;
         }
+
+        // Evaluate well-known decorators: apply their side effects to
+        // StateAccessors and Type.doc/summary fields.
+        self.evaluate_std_decorators(type_id);
+    }
+
+    /// Evaluate well-known TypeSpec decorators after they're stored on a type.
+    /// This applies side effects like setting StateAccessors entries and
+    /// populating Type.doc/summary fields.
+    fn evaluate_std_decorators(&mut self, type_id: TypeId) {
+        let ast = match self.ast.as_ref() {
+            Some(a) => a.clone(),
+            None => return,
+        };
+
+        let decorator_apps: Vec<(String, Vec<DecoratorArgument>)> = match self.get_type(type_id) {
+            Some(t) => match t.decorators() {
+                Some(decs) => decs
+                    .iter()
+                    .map(|d| {
+                        // Primary: try to get name from DecoratorType definition
+                        let name = d
+                            .definition
+                            .and_then(|def_id| {
+                                self.get_type(def_id).and_then(|t| match t {
+                                    Type::Decorator(dt) => Some(dt.name.clone()),
+                                    _ => None,
+                                })
+                            })
+                            .unwrap_or_else(|| {
+                                // Fallback: extract name from AST decorator node
+                                if let Some(AstNode::DecoratorExpression(expr)) =
+                                    ast.id_to_node(d.decorator)
+                                {
+                                    let full_name = Self::get_identifier_name(&ast, expr.target);
+                                    // Extract short name from qualified name (e.g., "TypeSpec.doc" -> "doc")
+                                    if let Some(pos) = full_name.rfind('.') {
+                                        full_name[pos + 1..].to_string()
+                                    } else {
+                                        full_name
+                                    }
+                                } else {
+                                    String::new()
+                                }
+                            });
+                        (name, d.args.clone())
+                    })
+                    .collect(),
+                None => return,
+            },
+            None => return,
+        };
+
+        for (dec_name, args) in decorator_apps {
+            match dec_name.as_str() {
+                "doc" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::String(doc_text)) = &arg.js_value
+                    {
+                        self.set_type_doc(type_id, doc_text.clone());
+                        crate::libs::compiler::apply_doc_with_source(
+                            &mut self.state_accessors,
+                            type_id,
+                            doc_text,
+                            crate::intrinsic_type_state::DocSource::Decorator,
+                        );
+                    }
+                }
+                "summary" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::String(summary_text)) = &arg.js_value
+                    {
+                        self.set_type_summary(type_id, summary_text.clone());
+                        crate::libs::compiler::apply_summary(
+                            &mut self.state_accessors,
+                            type_id,
+                            summary_text,
+                        );
+                    }
+                }
+                "minValue" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::Number(v)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_min_value(
+                            &mut self.state_accessors,
+                            type_id,
+                            *v,
+                        );
+                    }
+                }
+                "maxValue" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::Number(v)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_max_value(
+                            &mut self.state_accessors,
+                            type_id,
+                            *v,
+                        );
+                    }
+                }
+                "minValueExclusive" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::Number(v)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_min_value_exclusive(
+                            &mut self.state_accessors,
+                            type_id,
+                            *v,
+                        );
+                    }
+                }
+                "maxValueExclusive" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::Number(v)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_max_value_exclusive(
+                            &mut self.state_accessors,
+                            type_id,
+                            *v,
+                        );
+                    }
+                }
+                "minLength" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::Number(v)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_min_length(
+                            &mut self.state_accessors,
+                            type_id,
+                            *v as i64,
+                        );
+                    }
+                }
+                "maxLength" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::Number(v)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_max_length(
+                            &mut self.state_accessors,
+                            type_id,
+                            *v as i64,
+                        );
+                    }
+                }
+                "pattern" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::String(p)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_pattern(
+                            &mut self.state_accessors,
+                            type_id,
+                            p,
+                            None,
+                        );
+                    }
+                }
+                "format" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::String(f)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_format(&mut self.state_accessors, type_id, f);
+                    }
+                }
+                "minItems" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::Number(v)) = &arg.js_value
+                        && let Ok(n) = crate::numeric::Numeric::new(&v.to_string())
+                    {
+                        crate::intrinsic_type_state::set_min_items(
+                            &mut self.state_accessors,
+                            type_id,
+                            &n,
+                        );
+                    }
+                }
+                "maxItems" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::Number(v)) = &arg.js_value
+                        && let Ok(n) = crate::numeric::Numeric::new(&v.to_string())
+                    {
+                        crate::intrinsic_type_state::set_max_items(
+                            &mut self.state_accessors,
+                            type_id,
+                            &n,
+                        );
+                    }
+                }
+                "error" => {
+                    crate::libs::compiler::apply_error(&mut self.state_accessors, type_id);
+                }
+                "tag" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::String(t)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_tag(&mut self.state_accessors, type_id, t);
+                    }
+                }
+                "discriminator" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::String(d)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_discriminator(
+                            &mut self.state_accessors,
+                            type_id,
+                            d,
+                        );
+                    }
+                }
+                "encode" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::String(e)) = &arg.js_value
+                    {
+                        crate::libs::compiler::apply_encode(
+                            &mut self.state_accessors,
+                            type_id,
+                            Some(e),
+                            None,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Set the `doc` field on a type.
+    fn set_type_doc(&mut self, type_id: TypeId, doc: String) {
+        if let Some(t) = self.get_type_mut(type_id) {
+            match t {
+                Type::Model(m) => m.doc = Some(doc),
+                Type::ModelProperty(p) => p.doc = Some(doc),
+                Type::Interface(i) => i.doc = Some(doc),
+                Type::Operation(o) => o.doc = Some(doc),
+                Type::Enum(e) => e.doc = Some(doc),
+                Type::EnumMember(m) => m.doc = Some(doc),
+                Type::Union(u) => u.doc = Some(doc),
+                Type::UnionVariant(v) => v.doc = Some(doc),
+                Type::Scalar(s) => s.doc = Some(doc),
+                Type::Namespace(ns) => ns.doc = Some(doc),
+                _ => {}
+            }
+        }
+    }
+
+    /// Set the `summary` field on a type.
+    fn set_type_summary(&mut self, type_id: TypeId, summary: String) {
+        if let Some(t) = self.get_type_mut(type_id) {
+            match t {
+                Type::Model(m) => m.summary = Some(summary),
+                Type::ModelProperty(p) => p.summary = Some(summary),
+                Type::Interface(i) => i.summary = Some(summary),
+                Type::Operation(o) => o.summary = Some(summary),
+                Type::Enum(e) => e.summary = Some(summary),
+                Type::EnumMember(m) => m.summary = Some(summary),
+                Type::Union(u) => u.summary = Some(summary),
+                Type::UnionVariant(v) => v.summary = Some(summary),
+                Type::Scalar(s) => s.summary = Some(summary),
+                Type::Namespace(ns) => ns.summary = Some(summary),
+                _ => {}
+            }
+        }
     }
 
     /// Check that @overload target operation is in the same container.
@@ -347,12 +610,8 @@ impl Checker {
             Some(AstNode::StringLiteral(s)) => {
                 Some(DecoratorMarshalledValue::String(s.value.clone()))
             }
-            Some(AstNode::NumericLiteral(n)) => {
-                Some(DecoratorMarshalledValue::Number(n.value))
-            }
-            Some(AstNode::BooleanLiteral(b)) => {
-                Some(DecoratorMarshalledValue::Boolean(b.value))
-            }
+            Some(AstNode::NumericLiteral(n)) => Some(DecoratorMarshalledValue::Number(n.value)),
+            Some(AstNode::BooleanLiteral(b)) => Some(DecoratorMarshalledValue::Boolean(b.value)),
             Some(AstNode::ObjectLiteral(obj)) => {
                 let mut record = HashMap::new();
                 for &prop_id in &obj.properties {

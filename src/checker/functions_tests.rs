@@ -199,7 +199,10 @@ fn test_function_in_namespace_callable() {
     use crate::checker::types::Type;
     let checker = check_fn("namespace MyLib { extern fn helper(x: int32): string; }");
     let found_fn = checker.declared_types.get("helper").copied();
-    assert!(found_fn.is_some(), "Function 'helper' should be in declared_types");
+    assert!(
+        found_fn.is_some(),
+        "Function 'helper' should be in declared_types"
+    );
     if let Some(fn_id) = found_fn {
         assert!(
             matches!(checker.get_type(fn_id), Some(Type::FunctionType(_))),

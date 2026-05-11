@@ -32,7 +32,7 @@ This project is in **early development**. The core compiler pipeline works:
 | WASM Extensions | Working |
 | Programmatic Decorator API | Working |
 
-2,840+ tests passing.
+2,900+ tests passing.
 
 ## Quick Start
 
@@ -42,7 +42,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-typespec_rs = "0.4.0"
+typespec_rs = "0.4.2"
 ```
 
 Parse TypeSpec and emit YAML/JSON:
@@ -102,6 +102,71 @@ echo 'model Pet { name: string }' | tspc -f json -
 ```
 
 ## Custom Decorators
+
+### Public Checker API
+
+After running `check_program()`, the `Checker` provides rich accessor methods for downstream consumers (emitters, code generators, validation tools):
+
+```rust
+use typespec_rs::checker::Checker;
+use typespec_rs::parser;
+
+let result = parser::parse(source);
+let mut checker = Checker::new();
+checker.set_parse_result(result.root_id, result.builder);
+checker.check_program();
+
+// --- Decorator lookup ---
+let model_id = checker.lookup_type_by_fqn("MyNs.Pet").unwrap();
+
+// Find decorators by name (handles both "doc" and "TypeSpec.doc")
+if let Some(dec) = checker.find_decorator(model_id, "doc") {
+    // inspect dec.args, etc.
+}
+
+// Extract typed arguments directly
+let doc: Option<String> = checker.get_decorator_string_arg(model_id, "doc", 0);
+let min_val: Option<f64> = checker.get_decorator_numeric_arg(model_id, "minValue", 0);
+
+// --- Constraint accessors ---
+checker.get_type_min_value(model_id);   // from @minValue
+checker.get_type_max_value(model_id);   // from @maxValue
+checker.get_type_min_length(model_id);  // from @minLength
+checker.get_type_max_length(model_id);  // from @maxLength
+checker.get_type_pattern(model_id);     // from @pattern
+checker.get_type_format(model_id);      // from @format
+checker.get_type_doc(model_id);         // from @doc
+checker.get_type_summary(model_id);     // from @summary
+checker.is_type_error(model_id);        // from @error
+
+// --- Type lookup ---
+checker.lookup_type_by_fqn("MyNs.Pet");           // Option<TypeId>
+checker.lookup_type_by_fqn("A.B.C.NestedModel");  // nested namespaces
+
+// --- Type iteration ---
+for (id, model) in checker.iter_models() { /* ... */ }
+for (id, op) in checker.iter_operations() { /* ... */ }
+for (id, en) in checker.iter_enums() { /* ... */ }
+for (id, ns) in checker.iter_namespaces() { /* ... */ }
+for (id, iface) in checker.iter_interfaces() { /* ... */ }
+
+// --- Property access ---
+let prop_id = checker.get_model_property(model_id, "name").unwrap();
+let prop_type = checker.get_property_type(prop_id);  // resolves aliases
+
+// Walk all properties including inherited ones (base first)
+for (name, prop_id) in checker.walk_model_properties(model_id) {
+    // ...
+}
+
+// --- Value extraction ---
+checker.extract_default_value(prop_id);       // "42" from `count: int32 = 42`
+checker.extract_enum_member_value(member_id); // "red" from `Red: "red"`
+```
+
+All `Type` variants now expose `doc()` and `summary()` methods that return `Option<&str>`, populated from `@doc` / `@summary` decorators. `ModelProperty`, `EnumMember`, and `UnionVariant` also carry their own `doc` and `summary` fields.
+
+### Custom Decorators
 
 typespec-rs provides two ways to register custom decorators:
 
@@ -176,7 +241,7 @@ let result = Parser::new(source, ParseOptions::new(vec![])
 
 ```toml
 [dependencies]
-tspc = { version = "0.4.0", features = ["wasm-extensions"] }
+tspc = { version = "0.4.2", features = ["wasm-extensions"] }
 ```
 
 ```bash
@@ -294,11 +359,13 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 - Protobuf proto3 `optional` label logic with array/map warnings
 - ICE-protected diagnostic creation (fallback instead of panic)
 - Templated alias member expression resolution with default parameter instantiation
+- Public Checker helper API: decorator lookup, constraint accessors, type iteration, property walking, value extraction
+- `@doc`/`@summary` fields on Model, ModelProperty, EnumMember, UnionVariant, Namespace — populated from decorator evaluation
+- Standard decorator evaluation pipeline: `@doc`, `@summary`, `@minValue`, `@maxValue`, `@pattern`, `@format`, `@minLength`, `@maxLength`, `@minItems`, `@maxItems`, `@error`, `@tag`, `@discriminator`, `@encode`
 
 What's not yet ported:
 
 - Full `Program` pipeline (multi-file compilation, import resolution)
-- Decorator execution at `finishType` time
 - Language Server Protocol (LSP) support
 - Source loader (async I/O)
 

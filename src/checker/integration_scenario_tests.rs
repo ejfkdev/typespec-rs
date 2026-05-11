@@ -2,8 +2,8 @@
 //! Tests all 7 scenarios (A-L) to verify current implementation status.
 
 use crate::checker::test_utils::{check_with_decorators, has_diagnostic};
-use crate::checker::types::{DecoratorMarshalledValue, Type};
 use crate::checker::type_utils::get_fully_qualified_name;
+use crate::checker::types::{DecoratorMarshalledValue, Type};
 use crate::checker::{Checker, DecoratorParamDef};
 use crate::parser;
 
@@ -24,7 +24,11 @@ fn test_scenario_a_route_on_interface() {
         vec![("route", "HTTP", "Interface")],
     );
 
-    let chat_id = checker.declared_types.get("Chat").copied().expect("Chat should exist");
+    let chat_id = checker
+        .declared_types
+        .get("Chat")
+        .copied()
+        .expect("Chat should exist");
     let iface = match checker.get_type(chat_id) {
         Some(Type::Interface(i)) => i,
         _ => panic!("expected Interface"),
@@ -58,7 +62,11 @@ fn test_scenario_b_command_on_operation() {
         vec![("command", "CLI", "Operation")],
     );
 
-    let op_id = checker.declared_types.get("gitStatus").copied().expect("gitStatus should exist");
+    let op_id = checker
+        .declared_types
+        .get("gitStatus")
+        .copied()
+        .expect("gitStatus should exist");
     let op = match checker.get_type(op_id) {
         Some(Type::Operation(o)) => o,
         _ => panic!("expected Operation"),
@@ -94,13 +102,20 @@ fn test_scenario_c_header_with_object_param() {
         vec![("header", "HTTP", "unknown")],
     );
 
-    let model_id = checker.declared_types.get("Request").copied().expect("Request should exist");
+    let model_id = checker
+        .declared_types
+        .get("Request")
+        .copied()
+        .expect("Request should exist");
     let model = match checker.get_type(model_id) {
         Some(Type::Model(m)) => m,
         _ => panic!("expected Model"),
     };
 
-    let prop_id = model.properties.get("requestId").expect("requestId property should exist");
+    let prop_id = model
+        .properties
+        .get("requestId")
+        .expect("requestId property should exist");
     let prop = match checker.get_type(*prop_id) {
         Some(Type::ModelProperty(p)) => p,
         _ => panic!("expected ModelProperty"),
@@ -110,7 +125,10 @@ fn test_scenario_c_header_with_object_param() {
     let dec = &prop.decorators[0];
 
     // definition should be resolved
-    assert!(dec.definition.is_some(), "property decorator definition should be resolved");
+    assert!(
+        dec.definition.is_some(),
+        "property decorator definition should be resolved"
+    );
 
     // args should be populated
     assert_eq!(dec.args.len(), 1, "should have 1 argument");
@@ -139,7 +157,11 @@ fn test_scenario_d_namespace_hierarchy() {
         vec![],
     );
 
-    let llm_id = checker.declared_types.get("Llm").copied().expect("Llm namespace should exist");
+    let llm_id = checker
+        .declared_types
+        .get("Llm")
+        .copied()
+        .expect("Llm namespace should exist");
     let llm_ns = match checker.get_type(llm_id) {
         Some(Type::Namespace(ns)) => ns,
         _ => panic!("expected Namespace"),
@@ -153,14 +175,19 @@ fn test_scenario_d_namespace_hierarchy() {
     );
 
     // Chat interface's namespace should point to Llm, not global
-    let chat_id = checker.declared_types.get("Chat").copied().expect("Chat should exist");
+    let chat_id = checker
+        .declared_types
+        .get("Chat")
+        .copied()
+        .expect("Chat should exist");
     let chat_iface = match checker.get_type(chat_id) {
         Some(Type::Interface(i)) => i,
         _ => panic!("expected Interface"),
     };
 
     assert_eq!(
-        chat_iface.namespace, Some(llm_id),
+        chat_iface.namespace,
+        Some(llm_id),
         "Chat.namespace should point to Llm namespace, not global"
     );
 }
@@ -183,7 +210,11 @@ fn test_scenario_e_decorator_inheritance() {
         vec![("route", "HTTP", "unknown")],
     );
 
-    let chat_id = checker.declared_types.get("Chat").copied().expect("Chat should exist");
+    let chat_id = checker
+        .declared_types
+        .get("Chat")
+        .copied()
+        .expect("Chat should exist");
     let iface = match checker.get_type(chat_id) {
         Some(Type::Interface(i)) => i,
         _ => panic!("expected Interface"),
@@ -197,7 +228,10 @@ fn test_scenario_e_decorator_inheritance() {
         };
 
         // Operation has its own @route decorator
-        assert!(!op.decorators.is_empty(), "operation should have at least 1 decorator");
+        assert!(
+            !op.decorators.is_empty(),
+            "operation should have at least 1 decorator"
+        );
 
         // Check if get_effective_route exists and works
         let effective_route = checker.get_effective_route(op_id);
@@ -242,14 +276,21 @@ fn test_scenario_g_using_dotted_namespace() {
     );
 
     // Check if the property decorator was resolved
-    let opts_id = checker.declared_types.get("Options").copied().expect("Options should exist");
+    let opts_id = checker
+        .declared_types
+        .get("Options")
+        .copied()
+        .expect("Options should exist");
     if let Some(Type::Model(m)) = checker.get_type(opts_id)
         && let Some(prop_id) = m.properties.get("verbose")
         && let Some(Type::ModelProperty(prop)) = checker.get_type(*prop_id)
     {
         assert_eq!(prop.decorators.len(), 1, "verbose should have @cliFlag");
         let dec = &prop.decorators[0];
-        assert!(dec.definition.is_some(), "cliFlag definition should be resolved");
+        assert!(
+            dec.definition.is_some(),
+            "cliFlag definition should be resolved"
+        );
     }
 }
 
@@ -279,7 +320,11 @@ fn test_scenario_h_multiple_custom_namespaces() {
         checker.diagnostics()
     );
 
-    let op_id = checker.declared_types.get("getData").copied().expect("getData should exist");
+    let op_id = checker
+        .declared_types
+        .get("getData")
+        .copied()
+        .expect("getData should exist");
     let op = match checker.get_type(op_id) {
         Some(Type::Operation(o)) => o,
         _ => panic!("expected Operation"),
@@ -297,10 +342,12 @@ fn test_scenario_h_multiple_custom_namespaces() {
     // rateLimit(100) — check numeric arg
     let rate_limit_dec = op.decorators.iter().find(|d| {
         d.definition
-            .and_then(|id| checker.get_type(id).and_then(|t| match t {
-                Type::Decorator(dt) => Some(dt.name.clone()),
-                _ => None,
-            }))
+            .and_then(|id| {
+                checker.get_type(id).and_then(|t| match t {
+                    Type::Decorator(dt) => Some(dt.name.clone()),
+                    _ => None,
+                })
+            })
             .is_some_and(|n| n == "rateLimit")
     });
     if let Some(dec) = rate_limit_dec {
@@ -327,8 +374,16 @@ fn test_scenario_i_same_name_types_different_namespaces() {
     );
 
     // FQN should differentiate them
-    let a_ns_id = checker.declared_types.get("A").copied().expect("A should exist");
-    let b_ns_id = checker.declared_types.get("B").copied().expect("B should exist");
+    let a_ns_id = checker
+        .declared_types
+        .get("A")
+        .copied()
+        .expect("A should exist");
+    let b_ns_id = checker
+        .declared_types
+        .get("B")
+        .copied()
+        .expect("B should exist");
 
     // Find Request in each namespace
     let a_req = {
@@ -336,7 +391,10 @@ fn test_scenario_i_same_name_types_different_namespaces() {
             Some(Type::Namespace(ns)) => ns,
             _ => panic!("expected Namespace"),
         };
-        ns.models.get("Request").copied().expect("A.Request should exist")
+        ns.models
+            .get("Request")
+            .copied()
+            .expect("A.Request should exist")
     };
 
     let b_req = {
@@ -344,14 +402,23 @@ fn test_scenario_i_same_name_types_different_namespaces() {
             Some(Type::Namespace(ns)) => ns,
             _ => panic!("expected Namespace"),
         };
-        ns.models.get("Request").copied().expect("B.Request should exist")
+        ns.models
+            .get("Request")
+            .copied()
+            .expect("B.Request should exist")
     };
 
     let fqn_a = get_fully_qualified_name(&checker.type_store, a_req);
     let fqn_b = get_fully_qualified_name(&checker.type_store, b_req);
 
-    assert_eq!(fqn_a, "A.Request", "FQN for A.Request should be 'A.Request'");
-    assert_eq!(fqn_b, "B.Request", "FQN for B.Request should be 'B.Request'");
+    assert_eq!(
+        fqn_a, "A.Request",
+        "FQN for A.Request should be 'A.Request'"
+    );
+    assert_eq!(
+        fqn_b, "B.Request",
+        "FQN for B.Request should be 'B.Request'"
+    );
 }
 
 // ============================================================================
@@ -371,13 +438,20 @@ fn test_scenario_k_model_property_structured_decorator_args() {
         vec![("cliFlag", "CLI", "unknown")],
     );
 
-    let opts_id = checker.declared_types.get("Options").copied().expect("Options should exist");
+    let opts_id = checker
+        .declared_types
+        .get("Options")
+        .copied()
+        .expect("Options should exist");
     let model = match checker.get_type(opts_id) {
         Some(Type::Model(m)) => m,
         _ => panic!("expected Model"),
     };
 
-    let prop_id = model.properties.get("verbose").expect("verbose property should exist");
+    let prop_id = model
+        .properties
+        .get("verbose")
+        .expect("verbose property should exist");
     let prop = match checker.get_type(*prop_id) {
         Some(Type::ModelProperty(p)) => p,
         _ => panic!("expected ModelProperty"),
@@ -385,14 +459,20 @@ fn test_scenario_k_model_property_structured_decorator_args() {
 
     assert_eq!(prop.decorators.len(), 1);
     let dec = &prop.decorators[0];
-    assert!(dec.definition.is_some(), "cliFlag definition should be resolved");
+    assert!(
+        dec.definition.is_some(),
+        "cliFlag definition should be resolved"
+    );
     assert_eq!(dec.args.len(), 1);
 
     // The arg should be a Record with "short" and "description" keys
     match &dec.args[0].js_value {
         Some(DecoratorMarshalledValue::Record(map)) => {
             assert!(map.contains_key("short"), "record should contain 'short'");
-            assert!(map.contains_key("description"), "record should contain 'description'");
+            assert!(
+                map.contains_key("description"),
+                "record should contain 'description'"
+            );
         }
         other => panic!("expected Record js_value, got {:?}", other),
     }
@@ -416,13 +496,20 @@ fn test_scenario_l_multiple_decorators_on_property() {
         vec![("header", "HTTP", "unknown"), ("query", "HTTP", "unknown")],
     );
 
-    let model_id = checker.declared_types.get("Request").copied().expect("Request should exist");
+    let model_id = checker
+        .declared_types
+        .get("Request")
+        .copied()
+        .expect("Request should exist");
     let model = match checker.get_type(model_id) {
         Some(Type::Model(m)) => m,
         _ => panic!("expected Model"),
     };
 
-    let prop_id = model.properties.get("page").expect("page property should exist");
+    let prop_id = model
+        .properties
+        .get("page")
+        .expect("page property should exist");
     let prop = match checker.get_type(*prop_id) {
         Some(Type::ModelProperty(p)) => p,
         _ => panic!("expected ModelProperty"),
@@ -481,7 +568,11 @@ fn test_bug2_no_invalid_argument_count_for_paramless_decorators() {
     );
 
     // Decorator should still be applied with correct args
-    let op_id = checker.declared_types.get("gitStatus").copied().expect("gitStatus should exist");
+    let op_id = checker
+        .declared_types
+        .get("gitStatus")
+        .copied()
+        .expect("gitStatus should exist");
     let op = match checker.get_type(op_id) {
         Some(Type::Operation(o)) => o,
         _ => panic!("expected Operation"),
@@ -498,11 +589,13 @@ fn test_bug2_no_invalid_argument_count_for_paramless_decorators() {
 #[test]
 fn test_bug2_decorator_with_params_enforces_count() {
     let mut checker = {
-        let result = parser::parse(r#"
+        let result = parser::parse(
+            r#"
             using CLI;
             @command("status")
             op gitStatus(): string;
-        "#);
+        "#,
+        );
         let mut c = Checker::new();
         c.register_decorator_with_params(
             "command",
@@ -532,11 +625,13 @@ fn test_bug2_decorator_with_params_enforces_count() {
 #[test]
 fn test_bug2_decorator_with_params_rejects_wrong_count() {
     let mut checker = {
-        let result = parser::parse(r#"
+        let result = parser::parse(
+            r#"
             using CLI;
             @command("status", "extra")
             op gitStatus(): string;
-        "#);
+        "#,
+        );
         let mut c = Checker::new();
         c.register_decorator_with_params(
             "command",
@@ -621,7 +716,11 @@ fn test_bug1_overlapping_namespace_decorator_and_user_code() {
     );
 
     // Llm namespace should have the operation
-    let llm_id = checker.declared_types.get("Llm").copied().expect("Llm should exist");
+    let llm_id = checker
+        .declared_types
+        .get("Llm")
+        .copied()
+        .expect("Llm should exist");
     let llm_ns = match checker.get_type(llm_id) {
         Some(Type::Namespace(ns)) => ns,
         _ => panic!("expected Namespace"),

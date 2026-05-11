@@ -90,10 +90,7 @@ fn test_registered_decorator_args_populated() {
     if let Some(DecoratorMarshalledValue::String(s)) = &arg.js_value {
         assert_eq!(s, "/api/pets");
     } else {
-        panic!(
-            "expected String marshalled value, got {:?}",
-            arg.js_value
-        );
+        panic!("expected String marshalled value, got {:?}", arg.js_value);
     }
 }
 
@@ -153,10 +150,7 @@ fn test_decorator_arg_boolean_marshall() {
     if let Some(DecoratorMarshalledValue::Boolean(b)) = &arg.js_value {
         assert!(*b);
     } else {
-        panic!(
-            "expected Boolean marshalled value, got {:?}",
-            arg.js_value
-        );
+        panic!("expected Boolean marshalled value, got {:?}", arg.js_value);
     }
 }
 
@@ -359,10 +353,7 @@ fn test_multiple_namespaces_using() {
         @tag("pet")
         op listPets(): void;
     "#,
-        vec![
-            ("route", "HTTP", "Operation"),
-            ("tag", "API", "Operation"),
-        ],
+        vec![("route", "HTTP", "Operation"), ("tag", "API", "Operation")],
     );
 
     let op_type = checker
@@ -396,10 +387,7 @@ fn test_multiple_namespaces_using() {
 fn test_custom_namespace_has_decorator_declarations() {
     // Custom namespace created by register_decorator should have
     // decorator_declarations populated
-    let checker = check_with_decorators(
-        "",
-        vec![("route", "HTTP", "Operation")],
-    );
+    let checker = check_with_decorators("", vec![("route", "HTTP", "Operation")]);
 
     let http_id = checker
         .declared_types
@@ -414,7 +402,8 @@ fn test_custom_namespace_has_decorator_declarations() {
                 "HTTP namespace should contain 'route' decorator"
             );
             assert!(
-                ns.decorator_declaration_names.contains(&"route".to_string()),
+                ns.decorator_declaration_names
+                    .contains(&"route".to_string()),
                 "HTTP namespace decorator_declaration_names should contain 'route'"
             );
         }
@@ -549,10 +538,7 @@ fn test_fully_qualified_name_for_global_type() {
         .expect("Pet should exist");
 
     let fqn = get_fully_qualified_name(&checker.type_store, pet_id);
-    assert_eq!(
-        fqn, "Pet",
-        "FQN for global model should just be 'Pet'"
-    );
+    assert_eq!(fqn, "Pet", "FQN for global model should just be 'Pet'");
 }
 
 #[test]

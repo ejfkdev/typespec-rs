@@ -1,7 +1,7 @@
 //! Integration tests for tspc compilation pipeline
 
-use typespec_rs::checker::{Checker, CustomDecoratorDef};
 use typespec_rs::checker::types::Type;
+use typespec_rs::checker::{Checker, CustomDecoratorDef};
 use typespec_rs::diagnostics::DiagnosticSeverity;
 use typespec_rs::parser;
 
@@ -13,10 +13,7 @@ fn parse_and_check(source: &str) -> Checker {
     checker
 }
 
-fn parse_and_check_with_decorators(
-    source: &str,
-    decorators: Vec<(&str, &str, &str)>,
-) -> Checker {
+fn parse_and_check_with_decorators(source: &str, decorators: Vec<(&str, &str, &str)>) -> Checker {
     let parse_result = parser::parse(source);
     let mut checker = Checker::new();
     checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());

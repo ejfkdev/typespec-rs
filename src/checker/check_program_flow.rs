@@ -246,9 +246,7 @@ impl Checker {
         let unfinished: Vec<TypeId> = self
             .type_store
             .iter()
-            .filter(|(_, t)| {
-                matches!(t, Type::Namespace(ns) if !ns.is_finished)
-            })
+            .filter(|(_, t)| matches!(t, Type::Namespace(ns) if !ns.is_finished))
             .map(|(id, _)| id)
             .collect();
 

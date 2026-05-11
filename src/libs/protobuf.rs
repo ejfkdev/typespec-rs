@@ -536,7 +536,9 @@ pub fn should_emit_optional_label(
 /// Check if a type is an array type (model with indexer).
 fn is_array_type(checker: &crate::checker::Checker, type_id: TypeId) -> bool {
     match checker.get_type(type_id) {
-        Some(crate::checker::types::Type::Model(m)) => m.indexer.is_some() && !is_map_type(checker, type_id),
+        Some(crate::checker::types::Type::Model(m)) => {
+            m.indexer.is_some() && !is_map_type(checker, type_id)
+        }
         _ => false,
     }
 }
@@ -544,9 +546,7 @@ fn is_array_type(checker: &crate::checker::Checker, type_id: TypeId) -> bool {
 /// Check if a type is a Protobuf Map type.
 fn is_map_type(checker: &crate::checker::Checker, type_id: TypeId) -> bool {
     match checker.get_type(type_id) {
-        Some(crate::checker::types::Type::Model(m)) => {
-            is_map(&checker.state_accessors, m.id)
-        }
+        Some(crate::checker::types::Type::Model(m)) => is_map(&checker.state_accessors, m.id),
         _ => false,
     }
 }
@@ -1057,12 +1057,13 @@ mod tests {
     #[test]
     fn test_optional_label_proto3_array_type() {
         let mut checker = crate::checker::Checker::new();
-        let array_model = crate::checker::types::Type::Model(crate::checker::types::ModelType::new(
-            checker.next_type_id(),
-            "string[]".to_string(),
-            None,
-            None,
-        ));
+        let array_model =
+            crate::checker::types::Type::Model(crate::checker::types::ModelType::new(
+                checker.next_type_id(),
+                "string[]".to_string(),
+                None,
+                None,
+            ));
         let array_id = checker.create_type(array_model);
         if let Some(crate::checker::types::Type::Model(m)) = checker.get_type_mut(array_id) {
             m.indexer = Some((0, 0));

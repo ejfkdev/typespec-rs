@@ -83,6 +83,8 @@ impl Checker {
                 r#type: variant_type,
                 union: Some(type_id),
                 decorators: Vec::new(),
+                doc: None,
+                summary: None,
                 is_finished: true,
             }));
 

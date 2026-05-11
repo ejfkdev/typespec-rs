@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use serde::Deserialize;
 use wasmtime::*;
 
@@ -308,12 +308,7 @@ fn host_state_get_read(mut caller: Caller<'_, HostState>, buf_ptr: i32) {
     }
 }
 
-fn host_state_add(
-    mut caller: Caller<'_, HostState>,
-    key_ptr: i32,
-    key_len: i32,
-    type_id: i32,
-) {
+fn host_state_add(mut caller: Caller<'_, HostState>, key_ptr: i32, key_len: i32, type_id: i32) {
     let key = read_caller_string(&mut caller, key_ptr, key_len).unwrap_or_default();
     caller
         .data_mut()
@@ -393,7 +388,9 @@ fn read_caller_string(caller: &mut Caller<'_, HostState>, ptr: i32, len: i32) ->
     if end > data.len() {
         return None;
     }
-    std::str::from_utf8(&data[start..end]).ok().map(|s| s.to_string())
+    std::str::from_utf8(&data[start..end])
+        .ok()
+        .map(|s| s.to_string())
 }
 
 impl WasmExtension {
@@ -425,7 +422,9 @@ impl WasmExtension {
     /// `input_json` is `{ "type_id": N, "decorator_name": "...", "args": [...] }`
     pub fn handle_decorator(&mut self, input_json: &str) -> Result<i32> {
         let (ptr, len) = self.write_guest_string(input_json)?;
-        let result = self.func_handle_decorator.call(&mut self.store, (ptr, len))?;
+        let result = self
+            .func_handle_decorator
+            .call(&mut self.store, (ptr, len))?;
         self.free_guest_string(ptr, len)?;
         Ok(result)
     }

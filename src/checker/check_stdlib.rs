@@ -562,6 +562,8 @@ impl Checker {
                 value: Some(value_type_id),
                 source_member: None,
                 decorators: Vec::new(),
+                doc: None,
+                summary: None,
                 is_finished: true,
             }));
             members_map.insert(member_name.to_string(), member_id);
@@ -734,7 +736,11 @@ mod tests {
         // Should not create a duplicate
         let ts_id = checker.declared_types["TypeSpec"];
         if let Some(Type::Namespace(ns)) = checker.get_type(ts_id) {
-            let count = ns.decorator_declaration_names.iter().filter(|n| *n == "doc").count();
+            let count = ns
+                .decorator_declaration_names
+                .iter()
+                .filter(|n| *n == "doc")
+                .count();
             assert_eq!(count, 1, "should not duplicate existing decorator");
         }
     }

@@ -1930,7 +1930,8 @@ model Foo {}
 
     #[test]
     fn test_parse_with_multiple_libraries() {
-        let lib1 = "namespace Lib1;\nextern dec flag(target: ModelProperty, name?: valueof string);";
+        let lib1 =
+            "namespace Lib1;\nextern dec flag(target: ModelProperty, name?: valueof string);";
         let lib2 = "namespace Lib2;\nextern dec arg(target: Operation, name?: valueof string);";
         let result = crate::parser::parse_with_libraries(
             "model Pet { name: string }",
@@ -1994,16 +1995,14 @@ model Foo {}
 
     #[test]
     fn test_register_library_duplicate_ignored() {
-        crate::parser::register_library(
-            "test_dupe",
-            "namespace TestDupe1;".to_string(),
-        );
-        crate::parser::register_library(
-            "test_dupe",
-            "namespace TestDupe2;".to_string(),
-        );
+        crate::parser::register_library("test_dupe", "namespace TestDupe1;".to_string());
+        crate::parser::register_library("test_dupe", "namespace TestDupe2;".to_string());
         let options = crate::parser::ParseOptions::default();
-        let dupe_libs: Vec<_> = options.libraries.iter().filter(|l| l.contains("TestDupe")).collect();
+        let dupe_libs: Vec<_> = options
+            .libraries
+            .iter()
+            .filter(|l| l.contains("TestDupe"))
+            .collect();
         assert_eq!(dupe_libs.len(), 1);
         assert!(dupe_libs[0].contains("TestDupe1"));
     }

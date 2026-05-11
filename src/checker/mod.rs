@@ -34,6 +34,7 @@ mod check_template_instantiation;
 mod check_union;
 mod check_visibility;
 pub mod decorator_utils;
+mod helpers;
 pub mod type_relation;
 pub mod type_utils;
 pub mod types;
@@ -208,7 +209,9 @@ pub fn register_global_decorator_with_params(
     parameters: Vec<DecoratorParamDef>,
 ) {
     if let Ok(mut registry) = GLOBAL_DECORATORS.write()
-        && !registry.iter().any(|d| d.name == name && d.namespace == namespace)
+        && !registry
+            .iter()
+            .any(|d| d.name == name && d.namespace == namespace)
     {
         registry.push(CustomDecoratorDef {
             name: name.to_string(),
@@ -225,7 +228,10 @@ pub fn register_global_decorator_with_params(
 pub fn register_global_decorators(decorators: Vec<(&str, &str, &str)>) {
     if let Ok(mut registry) = GLOBAL_DECORATORS.write() {
         for (name, namespace, target_type) in decorators {
-            if !registry.iter().any(|d| d.name == name && d.namespace == namespace) {
+            if !registry
+                .iter()
+                .any(|d| d.name == name && d.namespace == namespace)
+            {
                 registry.push(CustomDecoratorDef {
                     name: name.to_string(),
                     namespace: namespace.to_string(),
@@ -458,6 +464,61 @@ pub struct Checker {
     // ---- Custom decorator registration ----
     /// Custom decorators registered via `register_decorator()`, processed during `check_program()`
     pub custom_decorators: Vec<CustomDecoratorDef>,
+}
+
+// ============================================================================
+// ResolvedModelProperty — fully resolved property info for downstream consumers
+// ============================================================================
+
+/// Fully resolved property constraints extracted from TypeSpec decorators
+/// and stored in the state_accessors during type checking.
+#[derive(Debug, Clone, Default)]
+pub struct PropertyConstraints {
+    pub min_value: Option<f64>,
+    pub max_value: Option<f64>,
+    pub exclusive_min: bool,
+    pub exclusive_max: bool,
+    pub min_length: Option<u32>,
+    pub max_length: Option<u32>,
+    pub pattern: Option<String>,
+    pub format: Option<String>,
+}
+
+/// HTTP parameter location, derived from `@path`, `@query`, `@header`, `@body` etc.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HttpLocation {
+    Path,
+    Query,
+    Header,
+    Cookie,
+    Body,
+    BodyRoot,
+    MultipartBody,
+}
+
+/// Fully resolved model property — a flat, easy-to-consume representation
+/// of a `ModelPropertyType` with all decorator-derived information extracted.
+///
+/// This is the primary data structure for downstream consumers (emitters,
+/// MCP adapters, HTTP gateways) that need parameter metadata without
+/// navigating the checker's internal type graph.
+#[derive(Debug, Clone)]
+pub struct ResolvedModelProperty {
+    pub name: String,
+    /// Resolved type name: "string", "int32", "boolean", "object", "array", etc.
+    pub type_name: String,
+    pub optional: bool,
+    /// Default value from `prop = value` syntax
+    pub default_value: Option<DecoratorMarshalledValue>,
+    pub doc: Option<String>,
+    pub enum_values: Option<Vec<String>>,
+    pub constraints: PropertyConstraints,
+    pub http_location: Option<HttpLocation>,
+    /// Nested properties for object types
+    pub properties: Vec<ResolvedModelProperty>,
+    /// Element descriptor for array types
+    pub items: Option<Box<ResolvedModelProperty>>,
+    pub deprecated: bool,
 }
 
 impl Checker {
@@ -722,6 +783,8 @@ impl Checker {
                 r#type: opt,
                 union: None, // will be backfilled
                 decorators: Vec::new(),
+                doc: None,
+                summary: None,
                 is_finished: true,
             }));
             variant_ids.push(variant_id);
@@ -1248,6 +1311,230 @@ impl Checker {
         None
     }
 
+    /// Resolve a ModelPropertyType into a flat, fully extracted representation.
+    ///
+    /// This method extracts:
+    /// - Type name (scalar name like "string", "int32", or "object"/"array")
+    /// - Default value from `prop = value` syntax
+    /// - Doc, enum values, and all constraint decorators via `state_accessors`
+    /// - HTTP parameter location (@path, @query, @header, @body)
+    /// - Nested properties for object types, items for array types
+    pub fn resolve_model_property(&self, prop_id: TypeId) -> Option<ResolvedModelProperty> {
+        let prop = match self.get_type(prop_id)? {
+            Type::ModelProperty(p) => p.clone(),
+            _ => return None,
+        };
+
+        let (type_name, properties, items, enum_values) = self.resolve_type_details(prop.r#type);
+
+        let default_value = prop
+            .default_value
+            .and_then(|dv_id| self.resolve_default_value(dv_id));
+
+        let constraints = self.extract_constraints(prop_id, prop.r#type);
+        let http_location = self.resolve_http_location(prop_id);
+        let doc = self.extract_doc(prop_id, &prop);
+        let deprecated = self.is_deprecated(prop_id);
+
+        Some(ResolvedModelProperty {
+            name: prop.name,
+            type_name,
+            optional: prop.optional,
+            default_value,
+            doc,
+            enum_values,
+            constraints,
+            http_location,
+            properties,
+            items,
+            deprecated,
+        })
+    }
+
+    /// Resolve the type name, nested properties, items, and enum values for a TypeId.
+    #[allow(clippy::type_complexity)]
+    fn resolve_type_details(
+        &self,
+        type_id: TypeId,
+    ) -> (
+        String,
+        Vec<ResolvedModelProperty>,
+        Option<Box<ResolvedModelProperty>>,
+        Option<Vec<String>>,
+    ) {
+        let Some(t) = self.get_type(type_id) else {
+            return ("string".into(), Vec::new(), None, None);
+        };
+
+        match t {
+            Type::Scalar(s) => (s.name.clone(), Vec::new(), None, None),
+            Type::String(_) => ("string".into(), Vec::new(), None, None),
+            Type::Number(_) => ("number".into(), Vec::new(), None, None),
+            Type::Boolean(_) => ("boolean".into(), Vec::new(), None, None),
+            Type::Enum(e) => {
+                let names = Some(e.member_names.clone());
+                ("string".into(), Vec::new(), None, names)
+            }
+            Type::Tuple(tuple) => {
+                let items = tuple.values.first().map(|&elem_id| {
+                    let (tn, _, _, _) = self.resolve_type_details(elem_id);
+                    Box::new(ResolvedModelProperty {
+                        name: "item".into(),
+                        type_name: tn,
+                        optional: false,
+                        default_value: None,
+                        doc: None,
+                        enum_values: None,
+                        constraints: PropertyConstraints::default(),
+                        http_location: None,
+                        properties: Vec::new(),
+                        items: None,
+                        deprecated: false,
+                    })
+                });
+                ("array".into(), Vec::new(), items, None)
+            }
+            Type::Model(model) => {
+                if model.indexer.is_some() {
+                    let items = model.indexer.map(|(_, val_id)| {
+                        let (tn, _, _, _) = self.resolve_type_details(val_id);
+                        Box::new(ResolvedModelProperty {
+                            name: "item".into(),
+                            type_name: tn,
+                            optional: false,
+                            default_value: None,
+                            doc: None,
+                            enum_values: None,
+                            constraints: PropertyConstraints::default(),
+                            http_location: None,
+                            properties: Vec::new(),
+                            items: None,
+                            deprecated: false,
+                        })
+                    });
+                    return ("array".into(), Vec::new(), items, None);
+                }
+
+                let props: Vec<ResolvedModelProperty> = model
+                    .property_names
+                    .iter()
+                    .filter_map(|name| {
+                        let prop_id = model.properties.get(name)?;
+                        self.resolve_model_property(*prop_id)
+                    })
+                    .collect();
+
+                ("object".into(), props, None, None)
+            }
+            Type::Union(union) => {
+                for vname in &union.variant_names {
+                    if let Some(&vid) = union.variants.get(vname)
+                        && let Some(Type::UnionVariant(v)) = self.get_type(vid)
+                    {
+                        return self.resolve_type_details(v.r#type);
+                    }
+                }
+                ("string".into(), Vec::new(), None, None)
+            }
+            Type::Intrinsic(intrinsic) => {
+                let name = match intrinsic.name {
+                    IntrinsicTypeName::Void => "void",
+                    _ => "string",
+                };
+                (name.into(), Vec::new(), None, None)
+            }
+            _ => ("string".into(), Vec::new(), None, None),
+        }
+    }
+
+    /// Extract default value from a TypeId (string literal, number, boolean, enum member).
+    fn resolve_default_value(&self, type_id: TypeId) -> Option<DecoratorMarshalledValue> {
+        match self.get_type(type_id)? {
+            Type::String(s) => Some(DecoratorMarshalledValue::String(s.value.clone())),
+            Type::Number(n) => Some(DecoratorMarshalledValue::Number(n.value)),
+            Type::Boolean(b) => Some(DecoratorMarshalledValue::Boolean(b.value)),
+            Type::EnumMember(m) => Some(DecoratorMarshalledValue::String(m.name.clone())),
+            _ => None,
+        }
+    }
+
+    /// Extract property constraints from state_accessors (populated during checking).
+    #[allow(clippy::field_reassign_with_default)]
+    fn extract_constraints(&self, prop_id: TypeId, type_id: TypeId) -> PropertyConstraints {
+        let state = &self.state_accessors;
+        use crate::libs::compiler;
+
+        let mut c = PropertyConstraints::default();
+
+        // Primary source: state_accessors from the property itself
+        c.min_value = compiler::get_min_value(state, prop_id);
+        c.max_value = compiler::get_max_value(state, prop_id);
+        c.exclusive_min = compiler::get_min_value_exclusive(state, prop_id).is_some();
+        c.exclusive_max = compiler::get_max_value_exclusive(state, prop_id).is_some();
+        c.min_length = compiler::get_min_length(state, prop_id).map(|v| v as u32);
+        c.max_length = compiler::get_max_length(state, prop_id).map(|v| v as u32);
+        c.pattern = compiler::get_pattern(state, prop_id);
+        c.format = compiler::get_format(state, prop_id);
+
+        // Fallback: check the type's state_accessors (e.g., constraints on Scalar)
+        if c.min_value.is_none() {
+            c.min_value = compiler::get_min_value(state, type_id);
+            if c.min_value.is_some() && !c.exclusive_min {
+                c.exclusive_min = compiler::get_min_value_exclusive(state, type_id).is_some();
+            }
+        }
+        if c.max_value.is_none() {
+            c.max_value = compiler::get_max_value(state, type_id);
+            if c.max_value.is_some() && !c.exclusive_max {
+                c.exclusive_max = compiler::get_max_value_exclusive(state, type_id).is_some();
+            }
+        }
+        if c.min_length.is_none() {
+            c.min_length = compiler::get_min_length(state, type_id).map(|v| v as u32);
+        }
+        if c.max_length.is_none() {
+            c.max_length = compiler::get_max_length(state, type_id).map(|v| v as u32);
+        }
+        if c.pattern.is_none() {
+            c.pattern = compiler::get_pattern(state, type_id);
+        }
+        if c.format.is_none() {
+            c.format = compiler::get_format(state, type_id);
+        }
+
+        c
+    }
+
+    /// Resolve HTTP parameter location from state_accessors.
+    fn resolve_http_location(&self, prop_id: TypeId) -> Option<HttpLocation> {
+        let state = &self.state_accessors;
+        use crate::libs::http;
+
+        if http::is_path(state, prop_id) {
+            Some(HttpLocation::Path)
+        } else if http::is_header(state, prop_id) {
+            Some(HttpLocation::Header)
+        } else if http::is_query(state, prop_id) {
+            Some(HttpLocation::Query)
+        } else if http::is_cookie(state, prop_id) {
+            Some(HttpLocation::Cookie)
+        } else if http::is_body(state, prop_id) {
+            Some(HttpLocation::Body)
+        } else if http::is_body_root(state, prop_id) {
+            Some(HttpLocation::BodyRoot)
+        } else if http::is_multipart_body(state, prop_id) {
+            Some(HttpLocation::MultipartBody)
+        } else {
+            None
+        }
+    }
+
+    /// Extract doc string from state_accessors, falling back to the property's doc field.
+    fn extract_doc(&self, prop_id: TypeId, prop: &ModelPropertyType) -> Option<String> {
+        let state = &self.state_accessors;
+        crate::libs::compiler::get_doc(state, prop_id).or(prop.doc.clone())
+    }
+
     /// Resolve the effective model for an anonymous model by finding a named
     /// source model that has the same set of properties.
     /// Ported from TS getEffectiveModelType (anonymous model resolution).
@@ -1650,6 +1937,8 @@ mod circular_ref_tests;
 #[cfg(test)]
 mod clone_type_tests;
 #[cfg(test)]
+mod custom_decorator_tests;
+#[cfg(test)]
 mod decorators_tests;
 #[cfg(test)]
 mod deprecation_tests;
@@ -1666,7 +1955,11 @@ mod functions_tests;
 #[cfg(test)]
 mod global_ns_tests;
 #[cfg(test)]
+mod helpers_tests;
+#[cfg(test)]
 mod imports_tests;
+#[cfg(test)]
+mod integration_scenario_tests;
 #[cfg(test)]
 mod internal_tests;
 #[cfg(test)]
@@ -1701,10 +1994,6 @@ mod type_utils_tests;
 mod typeof_tests;
 #[cfg(test)]
 mod union_tests;
-#[cfg(test)]
-mod custom_decorator_tests;
-#[cfg(test)]
-mod integration_scenario_tests;
 #[cfg(test)]
 mod unused_template_parameter_tests;
 #[cfg(test)]

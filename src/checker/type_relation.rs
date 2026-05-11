@@ -1065,6 +1065,8 @@ mod tests {
             model: None,
             source_property: None,
             decorators: vec![],
+            doc: None,
+            summary: None,
             is_finished: true,
         }));
 

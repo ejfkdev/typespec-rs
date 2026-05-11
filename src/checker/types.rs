@@ -250,6 +250,8 @@ pub struct ModelPropertyType {
     /// TS: ModelProperty.sourceProperty
     pub source_property: Option<TypeId>,
     pub decorators: Vec<DecoratorApplication>,
+    pub doc: Option<String>,
+    pub summary: Option<String>,
     pub is_finished: bool,
 }
 
@@ -390,6 +392,8 @@ pub struct EnumMemberType {
     /// this tracks the enum member we copied from
     pub source_member: Option<TypeId>,
     pub decorators: Vec<DecoratorApplication>,
+    pub doc: Option<String>,
+    pub summary: Option<String>,
     pub is_finished: bool,
 }
 
@@ -453,6 +457,8 @@ pub struct UnionVariantType {
     pub r#type: TypeId,
     pub union: Option<TypeId>,
     pub decorators: Vec<DecoratorApplication>,
+    pub doc: Option<String>,
+    pub summary: Option<String>,
     pub is_finished: bool,
 }
 
@@ -979,12 +985,12 @@ impl Type {
 
     /// Get the doc comment for this type, if any
     pub fn doc(&self) -> Option<&str> {
-        type_dispatch_partial!(opt self, [Model, Interface, Operation, Enum, Scalar, Union, Namespace], t, t.doc.as_deref())
+        type_dispatch_partial!(opt self, [Model, ModelProperty, Interface, Operation, Enum, EnumMember, Union, UnionVariant, Scalar, Namespace], t, t.doc.as_deref())
     }
 
     /// Get the summary comment for this type, if any
     pub fn summary(&self) -> Option<&str> {
-        type_dispatch_partial!(opt self, [Model, Interface, Operation, Enum, Scalar, Union], t, t.summary.as_deref())
+        type_dispatch_partial!(opt self, [Model, ModelProperty, Interface, Operation, Enum, EnumMember, Union, UnionVariant, Scalar, Namespace], t, t.summary.as_deref())
     }
 
     /// Check if this type is finished

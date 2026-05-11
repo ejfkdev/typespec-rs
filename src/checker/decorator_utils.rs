@@ -490,6 +490,8 @@ mod tests {
             model: None,
             source_property: None,
             decorators: vec![],
+            doc: None,
+            summary: None,
             is_finished: true,
         }));
         assert_eq!(get_property_type(&store, prop), string_type);
@@ -784,6 +786,8 @@ mod tests {
             r#enum: None,
             source_member: None,
             decorators: vec![],
+            doc: None,
+            summary: None,
             node: None,
             is_finished: true,
         }));
@@ -841,6 +845,8 @@ mod tests {
             model: None,
             source_property: None,
             decorators: vec![],
+            doc: None,
+            summary: None,
             is_finished: true,
         }));
         let mut properties = HashMap::new();

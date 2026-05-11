@@ -71,7 +71,9 @@ impl Checker {
 
         // Use pre-registered type if available, otherwise create new
         let current_ns = self.current_namespace;
-        let type_id = if ctx.mapper.is_none() && let Some(&existing_id) = self.node_type_map.get(&node_id) {
+        let type_id = if ctx.mapper.is_none()
+            && let Some(&existing_id) = self.node_type_map.get(&node_id)
+        {
             // Update pre-registered type in-place
             if let Some(t) = self.get_type_mut(existing_id)
                 && let Type::Operation(o) = t

@@ -299,7 +299,7 @@ impl OpenAPIEmitter {
     /// Emit response entries based on return type analysis.
     /// Uses resolve_response_variants to handle union return types.
     fn emit_responses(&self, checker: &Checker, ret_id: TypeId, s: &mut String) {
-        use crate::libs::http::responses::{resolve_response_variants, ResolvedResponseVariant};
+        use crate::libs::http::responses::{ResolvedResponseVariant, resolve_response_variants};
 
         let variants = resolve_response_variants(checker, ret_id);
 

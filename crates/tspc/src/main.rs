@@ -54,10 +54,7 @@ struct Cli {
 
 fn main() {
     // Register built-in libraries
-    typespec_rs::parser::register_library(
-        "http",
-        typespec_rs::libs::http::http_library_source(),
-    );
+    typespec_rs::parser::register_library("http", typespec_rs::libs::http::http_library_source());
 
     let cli = Cli::parse();
 

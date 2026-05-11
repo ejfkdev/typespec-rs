@@ -7,8 +7,8 @@
 //! - `resolve_response_variants` — recursively flattens union variants into plain/envelope groups
 //! - `ResponseIndex` — deduplicates responses by status code
 
-use crate::checker::types::{IntrinsicTypeName, Type, TypeId};
 use crate::checker::Checker;
+use crate::checker::types::{IntrinsicTypeName, Type, TypeId};
 use crate::libs::http::operation::HttpOperationResponse;
 use crate::libs::status_codes::StatusCodeEntry as HttpStatusCodesEntry;
 
@@ -54,9 +54,10 @@ pub fn is_plain_response_body(checker: &Checker, type_id: TypeId) -> bool {
     let resolved = checker.resolve_alias_chain(type_id);
 
     match checker.get_type(resolved) {
-        Some(Type::Intrinsic(i)) => {
-            !matches!(i.name, IntrinsicTypeName::Void | IntrinsicTypeName::ErrorType)
-        }
+        Some(Type::Intrinsic(i)) => !matches!(
+            i.name,
+            IntrinsicTypeName::Void | IntrinsicTypeName::ErrorType
+        ),
         Some(Type::Model(m)) => {
             for name in &m.property_names {
                 if let Some(&prop_id) = m.properties.get(name)
@@ -200,10 +201,7 @@ fn resolve_response_variants_inner(
 }
 
 /// Classify a single type as plain or envelope.
-fn classify_variant(
-    checker: &Checker,
-    type_id: TypeId,
-) -> Vec<ResolvedResponseVariant> {
+fn classify_variant(checker: &Checker, type_id: TypeId) -> Vec<ResolvedResponseVariant> {
     if is_plain_response_body(checker, type_id) {
         vec![ResolvedResponseVariant::Plain { type_id }]
     } else {
@@ -369,10 +367,7 @@ mod tests {
         let variants = resolve_response_variants(&checker, shape_id);
         // A non-discriminated union with all plain variants
         // should produce a single plain variant (the union itself)
-        assert!(
-            !variants.is_empty(),
-            "Should produce at least one variant"
-        );
+        assert!(!variants.is_empty(), "Should produce at least one variant");
         assert!(
             matches!(variants[0], ResolvedResponseVariant::Plain { .. }),
             "Union of plain types should be Plain"

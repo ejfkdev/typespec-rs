@@ -93,12 +93,7 @@ impl Checker {
                 None
             };
             let new_id = {
-                let mut m = ModelType::new(
-                    self.next_type_id(),
-                    name,
-                    Some(node_id),
-                    current_ns,
-                );
+                let mut m = ModelType::new(self.next_type_id(), name, Some(node_id), current_ns);
                 m.template_node = template_node;
                 self.create_type(Type::Model(m))
             };
@@ -327,6 +322,8 @@ impl Checker {
                         model: Some(type_id),
                         source_property: None,
                         decorators: Vec::new(),
+                        doc: None,
+                        summary: None,
                         is_finished: false,
                     }));
 

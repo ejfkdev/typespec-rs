@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use crate::checker::types::{Type, TypeId};
 use crate::checker::Checker;
+use crate::checker::types::{Type, TypeId};
 
 // ============================================================================
 // Placeholder — deferred value that can be filled later
@@ -395,7 +395,10 @@ impl<T: Default + Debug + Clone> ObjectValue<T> {
     }
 
     pub fn get_property(&self, key: &str) -> Option<&ObjectPropertyValue<T>> {
-        self.properties.iter().find(|p| p.key == key).map(|p| &p.value)
+        self.properties
+            .iter()
+            .find(|p| p.key == key)
+            .map(|p| &p.value)
     }
 }
 
@@ -721,12 +724,7 @@ pub trait TypeEmitter<T: Default + Debug + Clone>: Send + Sync {
     }
 
     /// Create a source file for emitted content.
-    fn source_file(
-        &self,
-        _checker: &Checker,
-        _path: &str,
-        _content: T,
-    ) -> SourceFile<T> {
+    fn source_file(&self, _checker: &Checker, _path: &str, _content: T) -> SourceFile<T> {
         SourceFile::new(_path.to_string(), _content)
     }
 
@@ -866,35 +864,27 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                     let (_key_type, value_type) = m.indexer.unwrap();
                     (
                         "arrayDeclaration",
-                        self.type_emitter.array_declaration(
-                            checker,
-                            type_id,
-                            &name,
-                            value_type,
-                            self,
-                        ),
+                        self.type_emitter
+                            .array_declaration(checker, type_id, &name, value_type, self),
                     )
                 } else if is_array {
                     let (_key_type, value_type) = m.indexer.unwrap();
                     (
                         "arrayLiteral",
-                        self.type_emitter.array_literal(checker, type_id, value_type, self),
+                        self.type_emitter
+                            .array_literal(checker, type_id, value_type, self),
                     )
                 } else if has_name && is_template_instance {
                     (
                         "modelInstantiation",
-                        self.type_emitter.model_instantiation(
-                            checker,
-                            type_id,
-                            &name,
-                            &m,
-                            self,
-                        ),
+                        self.type_emitter
+                            .model_instantiation(checker, type_id, &name, &m, self),
                     )
                 } else if has_name {
                     (
                         "modelDeclaration",
-                        self.type_emitter.model_declaration(checker, type_id, &name, &m, self),
+                        self.type_emitter
+                            .model_declaration(checker, type_id, &name, &m, self),
                     )
                 } else {
                     (
@@ -909,18 +899,14 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 if is_template_instance {
                     (
                         "scalarInstantiation",
-                        self.type_emitter.scalar_instantiation(
-                            checker,
-                            type_id,
-                            &name,
-                            &s,
-                            self,
-                        ),
+                        self.type_emitter
+                            .scalar_instantiation(checker, type_id, &name, &s, self),
                     )
                 } else {
                     (
                         "scalarDeclaration",
-                        self.type_emitter.scalar_declaration(checker, type_id, &name, &s, self),
+                        self.type_emitter
+                            .scalar_declaration(checker, type_id, &name, &s, self),
                     )
                 }
             }
@@ -928,7 +914,8 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 let name = e.name.clone();
                 (
                     "enumDeclaration",
-                    self.type_emitter.enum_declaration(checker, type_id, &name, &e, self),
+                    self.type_emitter
+                        .enum_declaration(checker, type_id, &name, &e, self),
                 )
             }
             Some(Type::Union(u)) => {
@@ -937,13 +924,8 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 if is_template_instance && !name.is_empty() {
                     (
                         "unionInstantiation",
-                        self.type_emitter.union_instantiation(
-                            checker,
-                            type_id,
-                            &name,
-                            &u,
-                            self,
-                        ),
+                        self.type_emitter
+                            .union_instantiation(checker, type_id, &name, &u, self),
                     )
                 } else if name.is_empty() {
                     (
@@ -953,7 +935,8 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 } else {
                     (
                         "unionDeclaration",
-                        self.type_emitter.union_declaration(checker, type_id, &name, &u, self),
+                        self.type_emitter
+                            .union_declaration(checker, type_id, &name, &u, self),
                     )
                 }
             }
@@ -961,7 +944,8 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 let name = i.name.clone();
                 (
                     "interfaceDeclaration",
-                    self.type_emitter.interface_declaration(checker, type_id, &name, &i, self),
+                    self.type_emitter
+                        .interface_declaration(checker, type_id, &name, &i, self),
                 )
             }
             Some(Type::Operation(o)) => {
@@ -971,18 +955,14 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 if is_interface_op {
                     (
                         "interfaceOperationDeclaration",
-                        self.type_emitter.interface_operation_declaration(
-                            checker,
-                            type_id,
-                            &name,
-                            &o,
-                            self,
-                        ),
+                        self.type_emitter
+                            .interface_operation_declaration(checker, type_id, &name, &o, self),
                     )
                 } else {
                     (
                         "operationDeclaration",
-                        self.type_emitter.operation_declaration(checker, type_id, &name, &o, self),
+                        self.type_emitter
+                            .operation_declaration(checker, type_id, &name, &o, self),
                     )
                 }
             }
@@ -990,12 +970,16 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 let name = ns.name.clone();
                 (
                     "namespace",
-                    self.type_emitter.emit_namespace(checker, type_id, &name, &ns, self),
+                    self.type_emitter
+                        .emit_namespace(checker, type_id, &name, &ns, self),
                 )
             }
             Some(Type::Intrinsic(i)) => {
                 let name = format!("{:?}", i.name);
-                ("intrinsic", self.type_emitter.intrinsic(checker, type_id, &name, self))
+                (
+                    "intrinsic",
+                    self.type_emitter.intrinsic(checker, type_id, &name, self),
+                )
             }
             _ => return EmitEntity::None,
         };
@@ -1019,14 +1003,9 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
             let (path_up, path_down, common_scope) =
                 self.resolve_declaration_reference_scope_inner(checker, decl);
             let scope_ref = common_scope.as_ref();
-            return self.type_emitter.reference(
-                checker,
-                decl,
-                &path_up,
-                &path_down,
-                scope_ref,
-                self,
-            );
+            return self
+                .type_emitter
+                .reference(checker, decl, &path_up, &path_down, scope_ref, self);
         }
 
         // If circular, create a placeholder for later resolution
@@ -1106,12 +1085,7 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
     }
 
     /// Wrap a value as a declaration result.
-    pub fn result_declaration(
-        &self,
-        value: T,
-        type_id: TypeId,
-        name: String,
-    ) -> EmitEntity<T> {
+    pub fn result_declaration(&self, value: T, type_id: TypeId, name: String) -> EmitEntity<T> {
         EmitEntity::Declaration(Declaration {
             value,
             type_id,

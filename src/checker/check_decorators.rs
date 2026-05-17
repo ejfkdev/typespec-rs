@@ -491,7 +491,11 @@ impl Checker {
                             _ => None,
                         })
                     });
-                    crate::libs::http::apply_header(&mut self.state_accessors, type_id, name.as_deref());
+                    crate::libs::http::apply_header(
+                        &mut self.state_accessors,
+                        type_id,
+                        name.as_deref(),
+                    );
                 }
                 "query" => {
                     let name = args.first().and_then(|a| {
@@ -500,7 +504,11 @@ impl Checker {
                             _ => None,
                         })
                     });
-                    crate::libs::http::apply_query(&mut self.state_accessors, type_id, name.as_deref());
+                    crate::libs::http::apply_query(
+                        &mut self.state_accessors,
+                        type_id,
+                        name.as_deref(),
+                    );
                 }
                 "path" => {
                     let name = args.first().and_then(|a| {
@@ -509,7 +517,11 @@ impl Checker {
                             _ => None,
                         })
                     });
-                    crate::libs::http::apply_path(&mut self.state_accessors, type_id, name.as_deref());
+                    crate::libs::http::apply_path(
+                        &mut self.state_accessors,
+                        type_id,
+                        name.as_deref(),
+                    );
                 }
                 "body" => {
                     crate::libs::http::apply_body(&mut self.state_accessors, type_id);
@@ -530,7 +542,11 @@ impl Checker {
                             _ => None,
                         })
                     });
-                    crate::libs::http::apply_cookie(&mut self.state_accessors, type_id, name.as_deref());
+                    crate::libs::http::apply_cookie(
+                        &mut self.state_accessors,
+                        type_id,
+                        name.as_deref(),
+                    );
                 }
                 "multipartBody" => {
                     crate::libs::http::apply_multipart_body(&mut self.state_accessors, type_id);

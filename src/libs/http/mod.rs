@@ -172,7 +172,11 @@ flag_decorator!(
 );
 
 // Visibility, auth, service decorators
-flag_decorator!(apply_visibility_decorator, has_visibility_decorator, STATE_VISIBILITY);
+flag_decorator!(
+    apply_visibility_decorator,
+    has_visibility_decorator,
+    STATE_VISIBILITY
+);
 flag_decorator!(apply_use_auth, has_use_auth, STATE_USE_AUTH);
 flag_decorator!(apply_service, has_service, STATE_SERVICE);
 
@@ -1315,8 +1319,10 @@ mod tests {
                     // Default header name should be kebab-cased property name
                     let name = get_header_name(&checker.state_accessors, prop_id);
                     // The default name is either the property name or kebab-case
-                    assert!(name.is_some() || is_header(&checker.state_accessors, prop_id),
-                        "Header should be applied with or without explicit name");
+                    assert!(
+                        name.is_some() || is_header(&checker.state_accessors, prop_id),
+                        "Header should be applied with or without explicit name"
+                    );
                 }
             }
         }
@@ -1424,7 +1430,7 @@ mod tests {
             @patch op patchOp(): void;
             @delete op deleteOp(): void;
             @head op headOp(): void;
-        "#
+        "#,
         );
 
         for (name, expected_verb) in [
@@ -1437,7 +1443,13 @@ mod tests {
         ] {
             if let Some(&op_id) = checker.declared_types.get(name) {
                 let verb = get_verb(&checker.state_accessors, op_id);
-                assert_eq!(verb, Some(expected_verb), "Verb for {} should be {:?}", name, expected_verb);
+                assert_eq!(
+                    verb,
+                    Some(expected_verb),
+                    "Verb for {} should be {:?}",
+                    name,
+                    expected_verb
+                );
             }
         }
     }
@@ -1460,7 +1472,7 @@ mod tests {
             @service(#{title: "My API"})
             namespace MyService;
             @get op index(): void;
-        "#
+        "#,
         );
         if let Some(&ns_id) = checker.declared_types.get("MyService") {
             assert!(has_service(&checker.state_accessors, ns_id));

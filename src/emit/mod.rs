@@ -30,10 +30,9 @@ pub mod openapi_emitter;
 pub mod yaml_emitter;
 
 pub use asset_emitter::{
-    AssetEmitter, TypeEmitter, EmitEntity, EmitEntityKind, Declaration, RawCode,
-    CircularEmit, Scope, ScopeKind, SourceFile, EmittedSourceFile,
-    ObjectBuilder, ObjectValue, ArrayBuilder, Placeholder, ReferenceCycle,
-    EmitContext, ObjectProperty, ObjectPropertyValue,
+    ArrayBuilder, AssetEmitter, CircularEmit, Declaration, EmitContext, EmitEntity, EmitEntityKind,
+    EmittedSourceFile, ObjectBuilder, ObjectProperty, ObjectPropertyValue, ObjectValue,
+    Placeholder, RawCode, ReferenceCycle, Scope, ScopeKind, SourceFile, TypeEmitter,
 };
 pub use emitter::Emitter;
 pub use json_emitter::JsonEmitter;

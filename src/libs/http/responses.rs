@@ -248,12 +248,10 @@ impl ResponseIndex {
     /// Consume the index and return all responses sorted by status code.
     pub fn into_values(self) -> Vec<HttpOperationResponse> {
         let mut vals: Vec<_> = self.responses.into_values().collect();
-        vals.sort_by_key(|r| {
-            match &r.status_codes {
-                HttpStatusCodesEntry::Code(code) => code.to_string(),
-                HttpStatusCodesEntry::Range(range) => format!("{}-{}", range.start, range.end),
-                HttpStatusCodesEntry::Wildcard => "*".to_string(),
-            }
+        vals.sort_by_key(|r| match &r.status_codes {
+            HttpStatusCodesEntry::Code(code) => code.to_string(),
+            HttpStatusCodesEntry::Range(range) => format!("{}-{}", range.start, range.end),
+            HttpStatusCodesEntry::Wildcard => "*".to_string(),
         });
         vals
     }
@@ -280,10 +278,10 @@ impl ResponseIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::libs::status_codes::HttpStatusCodeRange;
-    use crate::state_accessors::StateAccessors;
     use crate::checker::Checker;
+    use crate::libs::status_codes::HttpStatusCodeRange;
     use crate::parser;
+    use crate::state_accessors::StateAccessors;
 
     fn check(source: &str) -> Checker {
         let parse_result = parser::parse(source);
@@ -429,18 +427,20 @@ mod tests {
             model Cat { meow: boolean }
             model Dog { bark: boolean }
             @get op get(): Cat | Dog;
-        "#
+        "#,
         );
         let op_id = checker.declared_types.get("get").copied();
         if let Some(op_id) = op_id {
             let responses = super::super::operations::get_responses_for_operation(
-                &checker, &checker.state_accessors, op_id,
+                &checker,
+                &checker.state_accessors,
+                op_id,
             );
             // Should group plain variants into one response (200)
             assert!(!responses.is_empty(), "Should have at least one response");
-            let has_200 = responses.iter().any(|r| {
-                matches!(r.status_codes, HttpStatusCodesEntry::Code(200))
-            });
+            let has_200 = responses
+                .iter()
+                .any(|r| matches!(r.status_codes, HttpStatusCodesEntry::Code(200)));
             assert!(has_200, "Should have 200 response for plain union");
         }
     }
@@ -452,12 +452,14 @@ mod tests {
             r#"
             model NotFoundResponse { @statusCode code: 404; message: string }
             @get op get(): NotFoundResponse;
-        "#
+        "#,
         );
         let op_id = checker.declared_types.get("get").copied();
         if let Some(op_id) = op_id {
             let responses = super::super::operations::get_responses_for_operation(
-                &checker, &checker.state_accessors, op_id,
+                &checker,
+                &checker.state_accessors,
+                op_id,
             );
             assert!(!responses.is_empty(), "Should have responses");
         }
@@ -470,11 +472,13 @@ mod tests {
         let op_id = checker.declared_types.get("test").copied();
         if let Some(op_id) = op_id {
             let responses = super::super::operations::get_responses_for_operation(
-                &checker, &checker.state_accessors, op_id,
+                &checker,
+                &checker.state_accessors,
+                op_id,
             );
-            let has_204 = responses.iter().any(|r| {
-                matches!(r.status_codes, HttpStatusCodesEntry::Code(204))
-            });
+            let has_204 = responses
+                .iter()
+                .any(|r| matches!(r.status_codes, HttpStatusCodesEntry::Code(204)));
             assert!(has_204, "Void response should produce 204");
         }
     }

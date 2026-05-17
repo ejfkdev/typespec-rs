@@ -12,20 +12,19 @@
 //! - `should_treat_as_body_property()` — reclassify inappropriate metadata as body property
 //! - `collect_http_operations()` — gather all HTTP operations from a namespace
 
-use crate::checker::types::{IntrinsicTypeName, ModelType, OperationType, Type, TypeId};
 use crate::checker::Checker;
+use crate::checker::types::{IntrinsicTypeName, ModelType, OperationType, Type, TypeId};
 use crate::state_accessors::StateAccessors;
 
 use super::auth::Authentication;
 use super::operation::*;
 use super::responses::ResponseIndex;
 use super::types::HttpVerb;
-use super::visibility::{get_default_visibility_for_verb, Visibility};
+use super::visibility::{Visibility, get_default_visibility_for_verb};
 // Import from parent mod.rs
 use super::{
-    default_cookie_name, default_header_name, get_patch_options, get_verb, is_body,
-    is_body_ignore, is_body_root, is_cookie, is_header, is_multipart_body, is_path, is_query,
-    is_status_code,
+    default_cookie_name, default_header_name, get_patch_options, get_verb, is_body, is_body_ignore,
+    is_body_root, is_cookie, is_header, is_multipart_body, is_path, is_query, is_status_code,
 };
 
 // State key constants
@@ -307,7 +306,10 @@ pub fn should_treat_as_body_property(
     match disposition {
         HttpPayloadDisposition::Request => matches!(property_kind, HttpPropertyKind::StatusCode),
         HttpPayloadDisposition::Response => {
-            matches!(property_kind, HttpPropertyKind::Query | HttpPropertyKind::Path)
+            matches!(
+                property_kind,
+                HttpPropertyKind::Query | HttpPropertyKind::Path
+            )
         }
         HttpPayloadDisposition::Multipart => matches!(
             property_kind,
@@ -451,7 +453,15 @@ fn walk_and_classify_model(
 
     // Walk base model properties first (inherited)
     if let Some(base_id) = model.base_model {
-        walk_and_classify_model(checker, state, base_id, visibility, disposition, payload, visited);
+        walk_and_classify_model(
+            checker,
+            state,
+            base_id,
+            visibility,
+            disposition,
+            payload,
+            visited,
+        );
     }
 
     for prop_name in &model.property_names.clone() {
@@ -466,7 +476,13 @@ fn walk_and_classify_model(
         }
 
         classify_property(
-            checker, state, prop_id, prop_name, visibility, disposition, payload,
+            checker,
+            state,
+            prop_id,
+            prop_name,
+            visibility,
+            disposition,
+            payload,
         );
     }
 }
@@ -558,20 +574,21 @@ fn classify_property(
                 .get_state(STATE_QUERY, prop_id)
                 .filter(|s| !s.is_empty())
                 .unwrap_or(prop_name);
-            payload.queries.push(HttpOperationParameter::Query(
-                HttpOperationQueryParameter {
+            payload
+                .queries
+                .push(HttpOperationParameter::Query(HttpOperationQueryParameter {
                     options: QueryParameterOptions::new(query_name.to_string(), None),
                     param: prop_id,
-                },
-            ));
+                }));
         }
         HttpPropertyKind::Path => {
             let path_name = state
                 .get_state(STATE_PATH, prop_id)
                 .filter(|s| !s.is_empty())
                 .unwrap_or(prop_name);
-            payload.paths.push(HttpOperationParameter::Path(
-                HttpOperationPathParameter {
+            payload
+                .paths
+                .push(HttpOperationParameter::Path(HttpOperationPathParameter {
                     options: PathParameterOptions::new(
                         path_name.to_string(),
                         None,
@@ -579,8 +596,7 @@ fn classify_property(
                         None,
                     ),
                     param: prop_id,
-                },
-            ));
+                }));
         }
         HttpPropertyKind::StatusCode => {
             payload.status_codes.push(prop_id);
@@ -787,12 +803,14 @@ fn parse_authentication_string(s: &str) -> Option<Authentication> {
             let schemes: Vec<super::auth::HttpAuth> = part
                 .split(',')
                 .filter(|name| !name.is_empty())
-                .map(|name| super::auth::HttpAuth::NoAuth(super::auth::NoAuth {
-                    base: super::auth::HttpAuthBase {
-                        id: name.to_string(),
-                        description: None,
-                    },
-                }))
+                .map(|name| {
+                    super::auth::HttpAuth::NoAuth(super::auth::NoAuth {
+                        base: super::auth::HttpAuthBase {
+                            id: name.to_string(),
+                            description: None,
+                        },
+                    })
+                })
                 .collect();
             super::auth::AuthenticationOption { schemes }
         })
@@ -878,12 +896,10 @@ fn process_plain_response(
     }
 
     // Default: 200 with body
-    let description = checker
-        .get_type(resolved)
-        .and_then(|t| match t {
-            Type::Model(m) => m.doc.clone(),
-            _ => None,
-        });
+    let description = checker.get_type(resolved).and_then(|t| match t {
+        Type::Model(m) => m.doc.clone(),
+        _ => None,
+    });
 
     let response = HttpOperationResponse {
         status_codes: super::operation::HttpStatusCodesEntry::Code(200),
@@ -963,12 +979,10 @@ fn process_envelope_response(
         }
     }
 
-    let description = checker
-        .get_type(resolved)
-        .and_then(|t| match t {
-            Type::Model(m) => m.doc.clone(),
-            _ => None,
-        });
+    let description = checker.get_type(resolved).and_then(|t| match t {
+        Type::Model(m) => m.doc.clone(),
+        _ => None,
+    });
 
     // Add response for each status code
     for status_code in status_codes {
@@ -1018,13 +1032,8 @@ pub fn get_http_operation(
     let container = op.interface_.or(op.namespace).unwrap_or(operation_id);
 
     // Resolve parameters with verb-aware visibility
-    let (parameters, inferred_verb) = resolve_operation_parameters(
-        checker,
-        state,
-        &op,
-        &route,
-        explicit_verb,
-    );
+    let (parameters, inferred_verb) =
+        resolve_operation_parameters(checker, state, &op, &route, explicit_verb);
 
     let verb = explicit_verb.unwrap_or(inferred_verb);
 
@@ -1088,7 +1097,8 @@ fn resolve_operation_parameters(
             visibility,
             HttpPayloadDisposition::Request,
         );
-        let parameters = build_http_operation_parameters(checker, state, &payload, params_model_id, verb);
+        let parameters =
+            build_http_operation_parameters(checker, state, &payload, params_model_id, verb);
         (parameters, verb)
     } else {
         // Try POST first (if there's a body, use POST)
@@ -1102,8 +1112,13 @@ fn resolve_operation_parameters(
         );
 
         if post_payload.body_type.is_some() || !post_payload.multipart_body_props.is_empty() {
-            let parameters =
-                build_http_operation_parameters(checker, state, &post_payload, params_model_id, HttpVerb::Post);
+            let parameters = build_http_operation_parameters(
+                checker,
+                state,
+                &post_payload,
+                params_model_id,
+                HttpVerb::Post,
+            );
             (parameters, HttpVerb::Post)
         } else {
             // No body → GET
@@ -1115,8 +1130,13 @@ fn resolve_operation_parameters(
                 get_visibility,
                 HttpPayloadDisposition::Request,
             );
-            let parameters =
-                build_http_operation_parameters(checker, state, &get_payload, params_model_id, HttpVerb::Get);
+            let parameters = build_http_operation_parameters(
+                checker,
+                state,
+                &get_payload,
+                params_model_id,
+                HttpVerb::Get,
+            );
             (parameters, HttpVerb::Get)
         }
     }
@@ -1140,17 +1160,19 @@ fn build_http_operation_parameters(
     // Add Content-Type parameter if present
     for ct_prop in &payload.content_type_props {
         if let Some(header_name) = state.get_state(STATE_HEADER, *ct_prop) {
-            parameters.push(HttpOperationParameter::Header(HttpOperationHeaderParameter {
-                options: HeaderFieldOptions::new(
-                    if header_name.is_empty() {
-                        "Content-Type".to_string()
-                    } else {
-                        header_name.to_string()
-                    },
-                    None,
-                ),
-                param: *ct_prop,
-            }));
+            parameters.push(HttpOperationParameter::Header(
+                HttpOperationHeaderParameter {
+                    options: HeaderFieldOptions::new(
+                        if header_name.is_empty() {
+                            "Content-Type".to_string()
+                        } else {
+                            header_name.to_string()
+                        },
+                        None,
+                    ),
+                    param: *ct_prop,
+                },
+            ));
         }
     }
 
@@ -1337,8 +1359,8 @@ fn parse_status_codes(s: &str) -> Vec<super::operation::HttpStatusCodesEntry> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::responses::is_plain_response_body;
+    use super::*;
 
     #[test]
     fn test_extract_path_param_names() {
@@ -1725,7 +1747,10 @@ mod tests {
         if let Some(&model_id) = checker.declared_types.get("Resp") {
             if let Some(Type::Model(m)) = checker.get_type(model_id) {
                 if let Some(&prop_id) = m.properties.get("code") {
-                    assert!(super::super::is_status_code(&checker.state_accessors, prop_id));
+                    assert!(super::super::is_status_code(
+                        &checker.state_accessors,
+                        prop_id
+                    ));
                 }
             }
         }
@@ -1737,7 +1762,10 @@ mod tests {
         if let Some(&model_id) = checker.declared_types.get("Params") {
             if let Some(Type::Model(m)) = checker.get_type(model_id) {
                 if let Some(&prop_id) = m.properties.get("key") {
-                    assert!(super::super::is_body_ignore(&checker.state_accessors, prop_id));
+                    assert!(super::super::is_body_ignore(
+                        &checker.state_accessors,
+                        prop_id
+                    ));
                 }
             }
         }
@@ -1765,7 +1793,11 @@ mod tests {
         if let Some(Type::Model(m)) = checker.get_type(resp_id) {
             for name in &m.property_names {
                 if let Some(&prop_id) = m.properties.get(name) {
-                    if checker.state_accessors.get_state("TypeSpec.Http.statusCode", prop_id).is_some() {
+                    if checker
+                        .state_accessors
+                        .get_state("TypeSpec.Http.statusCode", prop_id)
+                        .is_some()
+                    {
                         status_applied = true;
                         break;
                     }
@@ -1800,7 +1832,11 @@ mod tests {
         if let Some(Type::Model(m)) = checker.get_type(resp_id) {
             for name in &m.property_names {
                 if let Some(&prop_id) = m.properties.get(name) {
-                    if checker.state_accessors.get_state("TypeSpec.Http.body", prop_id).is_some() {
+                    if checker
+                        .state_accessors
+                        .get_state("TypeSpec.Http.body", prop_id)
+                        .is_some()
+                    {
                         body_applied = true;
                         break;
                     }
@@ -1823,7 +1859,11 @@ mod tests {
         let op_id = find_operation(&checker, "read").unwrap();
         let http_op = get_http_operation(&checker, &checker.state_accessors, op_id);
         if let Some(op) = http_op {
-            assert_eq!(op.verb, HttpVerb::Get, "Operation without body should infer GET");
+            assert_eq!(
+                op.verb,
+                HttpVerb::Get,
+                "Operation without body should infer GET"
+            );
         }
     }
 
@@ -1834,7 +1874,11 @@ mod tests {
         let op_id = find_operation(&checker, "get").unwrap();
         let http_op = get_http_operation(&checker, &checker.state_accessors, op_id);
         if let Some(op) = http_op {
-            assert_eq!(op.verb, HttpVerb::Post, "Operation with body should infer POST");
+            assert_eq!(
+                op.verb,
+                HttpVerb::Post,
+                "Operation with body should infer POST"
+            );
         }
     }
 
@@ -1843,7 +1887,8 @@ mod tests {
     #[test]
     fn test_route_path_resolution() {
         // Ported from routes.test.ts: "maps route interpolated params to the operation param"
-        let checker = compile_http("@route(\"/foo/{myParam}\") @get op test(@path myParam: string): void;");
+        let checker =
+            compile_http("@route(\"/foo/{myParam}\") @get op test(@path myParam: string): void;");
         let op_id = find_operation(&checker, "test").unwrap();
         let route = resolve_path_and_parameters(&checker, &checker.state_accessors, op_id);
         assert_eq!(route.path, "/foo/{myParam}");
@@ -1874,8 +1919,12 @@ mod tests {
         if let Some(&ns_id) = checker.declared_types.get("Things") {
             if let Some(Type::Namespace(ns)) = checker.get_type(ns_id) {
                 if let Some(&op_id) = ns.operations.get("GetThing") {
-                    let route = resolve_path_and_parameters(&checker, &checker.state_accessors, op_id);
-                    assert_eq!(route.path, "/things", "Route should combine namespace route");
+                    let route =
+                        resolve_path_and_parameters(&checker, &checker.state_accessors, op_id);
+                    assert_eq!(
+                        route.path, "/things",
+                        "Route should combine namespace route"
+                    );
                 }
             }
         }
@@ -1887,7 +1936,10 @@ mod tests {
         let checker = compile_http("@route(\"/foo/\") @get op index(): void;");
         let op_id = find_operation(&checker, "index").unwrap();
         let route = resolve_path_and_parameters(&checker, &checker.state_accessors, op_id);
-        assert!(route.path.ends_with('/'), "Trailing slash should be preserved");
+        assert!(
+            route.path.ends_with('/'),
+            "Trailing slash should be preserved"
+        );
     }
 
     #[test]
@@ -1902,18 +1954,33 @@ mod tests {
         assert!(http_op.is_some());
         let op = http_op.unwrap();
         // @path parameter should be classified as path param
-        let path_params: Vec<_> = op.parameters.parameters.iter()
+        let path_params: Vec<_> = op
+            .parameters
+            .parameters
+            .iter()
             .filter(|p| matches!(p, HttpOperationParameter::Path(_)))
             .collect();
-        assert!(!path_params.is_empty(), "Should have at least one path parameter");
+        assert!(
+            !path_params.is_empty(),
+            "Should have at least one path parameter"
+        );
     }
 
     #[test]
     fn test_join_path_segments_empty_segments() {
         // Ported from routes.test.ts joinPathSegments tests
-        assert_eq!(join_path_segments(&["foo".to_string(), "".to_string()]), "/foo");
-        assert_eq!(join_path_segments(&["foo".to_string(), "".to_string(), "bar".to_string()]), "/foo/bar");
-        assert_eq!(join_path_segments(&["".to_string(), "bar".to_string()]), "/bar");
+        assert_eq!(
+            join_path_segments(&["foo".to_string(), "".to_string()]),
+            "/foo"
+        );
+        assert_eq!(
+            join_path_segments(&["foo".to_string(), "".to_string(), "bar".to_string()]),
+            "/foo/bar"
+        );
+        assert_eq!(
+            join_path_segments(&["".to_string(), "bar".to_string()]),
+            "/bar"
+        );
     }
 
     // ---- get_http_operation full pipeline tests (from parameters.test.ts) ----
@@ -1934,7 +2001,8 @@ mod tests {
     fn test_get_http_operation_with_query_param() {
         // Ported from parameters.test.ts: "resolve body when defined with @body"
         // Note: Without @get, the verb is inferred from body presence → POST
-        let checker = compile_http("@get op get(@query select: string, @body bodyParam: string): string;");
+        let checker =
+            compile_http("@get op get(@query select: string, @body bodyParam: string): string;");
         let op_id = find_operation(&checker, "get").unwrap();
         let http_op = get_http_operation(&checker, &checker.state_accessors, op_id);
         assert!(http_op.is_some());
@@ -1942,17 +2010,31 @@ mod tests {
         // @get decorator sets the verb explicitly
         let verb = super::super::get_verb(&checker.state_accessors, op_id);
         if verb == Some(HttpVerb::Get) {
-            assert_eq!(op.verb, HttpVerb::Get, "Explicit @get should set verb to GET");
+            assert_eq!(
+                op.verb,
+                HttpVerb::Get,
+                "Explicit @get should set verb to GET"
+            );
         } else {
             // If @get wasn't resolved, verb is inferred from body → POST
-            assert_eq!(op.verb, HttpVerb::Post, "Body present without explicit verb → POST");
+            assert_eq!(
+                op.verb,
+                HttpVerb::Post,
+                "Body present without explicit verb → POST"
+            );
         }
 
         // Check query parameter
-        let query_params: Vec<_> = op.parameters.parameters.iter()
+        let query_params: Vec<_> = op
+            .parameters
+            .parameters
+            .iter()
             .filter(|p| matches!(p, HttpOperationParameter::Query(_)))
             .collect();
-        assert!(!query_params.is_empty(), "Should have at least one query parameter");
+        assert!(
+            !query_params.is_empty(),
+            "Should have at least one query parameter"
+        );
 
         // Check body exists
         assert!(op.parameters.body.is_some(), "Should have a body");
@@ -1961,21 +2043,26 @@ mod tests {
     #[test]
     fn test_get_http_operation_single_unannotated_param_as_body() {
         // Ported from parameters.test.ts: "resolves single unannotated parameter as request body"
-        let checker = compile_http("@get op get(@query select: string, unannotatedBodyParam: string): string;");
+        let checker = compile_http(
+            "@get op get(@query select: string, unannotatedBodyParam: string): string;",
+        );
         let op_id = find_operation(&checker, "get").unwrap();
         let http_op = get_http_operation(&checker, &checker.state_accessors, op_id);
         assert!(http_op.is_some());
         let op = http_op.unwrap();
 
         // The unannotated param becomes part of the body
-        assert!(op.parameters.body.is_some(), "Unannotated param should become body");
+        assert!(
+            op.parameters.body.is_some(),
+            "Unannotated param should become body"
+        );
     }
 
     #[test]
     fn test_get_http_operation_multiple_unannotated_params_as_body() {
         // Ported from parameters.test.ts: "resolves multiple unannotated parameters as request body"
         let checker = compile_http(
-            "@get op get(@query select: string, param1: string, param2: string): string;"
+            "@get op get(@query select: string, param1: string, param2: string): string;",
         );
         let op_id = find_operation(&checker, "get").unwrap();
         let http_op = get_http_operation(&checker, &checker.state_accessors, op_id);
@@ -1983,7 +2070,10 @@ mod tests {
         let op = http_op.unwrap();
 
         // Multiple unannotated params become a body
-        assert!(op.parameters.body.is_some(), "Multiple unannotated params should become body");
+        assert!(
+            op.parameters.body.is_some(),
+            "Multiple unannotated params should become body"
+        );
     }
 
     #[test]
@@ -1993,7 +2083,7 @@ mod tests {
             r#"
             @route("/test/{name}/sub/{foo}")
             @get op get(name: string, foo: string): string;
-        "#
+        "#,
         );
         let op_id = find_operation(&checker, "get").unwrap();
         let http_op = get_http_operation(&checker, &checker.state_accessors, op_id);
@@ -2027,17 +2117,21 @@ mod tests {
         assert!(!responses.is_empty(), "Should have responses");
 
         // Check that at least one response has status code
-        let has_201 = responses.iter().any(|r| {
-            matches!(r.status_codes, HttpStatusCodesEntry::Code(201))
-        });
+        let has_201 = responses
+            .iter()
+            .any(|r| matches!(r.status_codes, HttpStatusCodesEntry::Code(201)));
         if !has_201 {
             // Decorator may not have been applied yet; check if any status code exists
-            let has_any_code = responses.iter().any(|r| {
-                matches!(r.status_codes, HttpStatusCodesEntry::Code(_))
-            });
-            assert!(has_any_code || responses.iter().any(|r| {
-                matches!(r.status_codes, HttpStatusCodesEntry::Code(200))
-            }), "Should have a status code response");
+            let has_any_code = responses
+                .iter()
+                .any(|r| matches!(r.status_codes, HttpStatusCodesEntry::Code(_)));
+            assert!(
+                has_any_code
+                    || responses
+                        .iter()
+                        .any(|r| { matches!(r.status_codes, HttpStatusCodesEntry::Code(200)) }),
+                "Should have a status code response"
+            );
         }
     }
 
@@ -2048,9 +2142,9 @@ mod tests {
         let op_id = find_operation(&checker, "test").unwrap();
         let responses = get_responses_for_operation(&checker, &checker.state_accessors, op_id);
 
-        let has_204 = responses.iter().any(|r| {
-            matches!(r.status_codes, HttpStatusCodesEntry::Code(204))
-        });
+        let has_204 = responses
+            .iter()
+            .any(|r| matches!(r.status_codes, HttpStatusCodesEntry::Code(204)));
         assert!(has_204, "Void return should produce 204 No Content");
     }
 
@@ -2061,15 +2155,15 @@ mod tests {
             r#"
             model Pet { name: string }
             @get op test(): Pet;
-        "#
+        "#,
         );
         let op_id = find_operation(&checker, "test").unwrap();
         let responses = get_responses_for_operation(&checker, &checker.state_accessors, op_id);
 
         assert!(!responses.is_empty());
-        let has_200 = responses.iter().any(|r| {
-            matches!(r.status_codes, HttpStatusCodesEntry::Code(200))
-        });
+        let has_200 = responses
+            .iter()
+            .any(|r| matches!(r.status_codes, HttpStatusCodesEntry::Code(200)));
         assert!(has_200, "Plain model response should have 200 status code");
     }
 
@@ -2080,8 +2174,11 @@ mod tests {
         let checker = compile_http("model Params { @header name: string; }");
         if let Some(&model_id) = checker.declared_types.get("Params") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Request,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Request,
             );
             assert_eq!(payload.headers.len(), 1, "Should have one header param");
             assert!(payload.queries.is_empty());
@@ -2094,8 +2191,11 @@ mod tests {
         let checker = compile_http("model Params { @query select: string; }");
         if let Some(&model_id) = checker.declared_types.get("Params") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Request,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Request,
             );
             assert_eq!(payload.queries.len(), 1, "Should have one query param");
             assert!(payload.headers.is_empty());
@@ -2107,8 +2207,11 @@ mod tests {
         let checker = compile_http("model Params { @path id: string; }");
         if let Some(&model_id) = checker.declared_types.get("Params") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Request,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Request,
             );
             assert_eq!(payload.paths.len(), 1, "Should have one path param");
             assert!(payload.headers.is_empty());
@@ -2120,11 +2223,17 @@ mod tests {
         let checker = compile_http("model Params { @body data: string; }");
         if let Some(&model_id) = checker.declared_types.get("Params") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Request,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Request,
             );
             assert!(payload.body_type.is_some(), "Should have body type");
-            assert!(payload.body_is_explicit, "Body should be explicit from @body decorator");
+            assert!(
+                payload.body_is_explicit,
+                "Body should be explicit from @body decorator"
+            );
         }
     }
 
@@ -2139,12 +2248,15 @@ mod tests {
                 @path id: string;
                 @body data: string;
             }
-        "#
+        "#,
         );
         if let Some(&model_id) = checker.declared_types.get("Params") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Request,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Request,
             );
             assert_eq!(payload.headers.len(), 1);
             assert_eq!(payload.queries.len(), 1);
@@ -2160,10 +2272,16 @@ mod tests {
         let checker = compile_http("model Params { name: string; age: int32; }");
         if let Some(&model_id) = checker.declared_types.get("Params") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Request,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Request,
             );
-            assert!(payload.body_type.is_some(), "Unannotated properties should infer body");
+            assert!(
+                payload.body_type.is_some(),
+                "Unannotated properties should infer body"
+            );
         }
     }
 
@@ -2174,25 +2292,31 @@ mod tests {
         // case-insensitively. In our implementation, the header name comes from the
         // decorator argument or the property name.
         let checker = compile_http(
-            r#"model Resp { @header contentType: "application/json", @body data: string; }"#
+            r#"model Resp { @header contentType: "application/json", @body data: string; }"#,
         );
         if let Some(&model_id) = checker.declared_types.get("Resp") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Response,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Response,
             );
             // If the decorator resolved correctly, contentType property should be detected
             // as ContentType kind. Otherwise it falls back to Header kind.
             let has_ct = !payload.content_type_props.is_empty();
             let has_header = payload.headers.iter().any(|h| {
                 if let HttpOperationParameter::Header(hp) = h {
-                    hp.options.name.to_lowercase() == "content-type" || hp.options.name.to_lowercase() == "contenttype"
+                    hp.options.name.to_lowercase() == "content-type"
+                        || hp.options.name.to_lowercase() == "contenttype"
                 } else {
                     false
                 }
             });
-            assert!(has_ct || has_header,
-                "Content-Type should be detected as either ContentType or Header");
+            assert!(
+                has_ct || has_header,
+                "Content-Type should be detected as either ContentType or Header"
+            );
         }
     }
 
@@ -2202,13 +2326,18 @@ mod tests {
         let checker = compile_http("model Params { @statusCode code: 200; }");
         if let Some(&model_id) = checker.declared_types.get("Params") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Request,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Request,
             );
             // @statusCode in request should NOT appear in status_codes
             // It should be treated as body property (inapplicable metadata)
-            assert!(payload.status_codes.is_empty(),
-                "@statusCode in request should not create status code entries");
+            assert!(
+                payload.status_codes.is_empty(),
+                "@statusCode in request should not create status code entries"
+            );
         }
     }
 
@@ -2218,12 +2347,17 @@ mod tests {
         let checker = compile_http("model Resp { @query filter: string; data: string; }");
         if let Some(&model_id) = checker.declared_types.get("Resp") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Response,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Response,
             );
             // @query in response should NOT appear in queries
-            assert!(payload.queries.is_empty(),
-                "@query in response should not create query entries");
+            assert!(
+                payload.queries.is_empty(),
+                "@query in response should not create query entries"
+            );
         }
     }
 
@@ -2233,8 +2367,11 @@ mod tests {
         let checker = compile_http("model Params { @bodyIgnore key: string; }");
         if let Some(&model_id) = checker.declared_types.get("Params") {
             let payload = resolve_http_payload(
-                &checker, &checker.state_accessors, model_id,
-                Visibility::All, HttpPayloadDisposition::Request,
+                &checker,
+                &checker.state_accessors,
+                model_id,
+                Visibility::All,
+                HttpPayloadDisposition::Request,
             );
             // @bodyIgnore property should not appear in any category
             assert!(payload.headers.is_empty());
@@ -2242,8 +2379,10 @@ mod tests {
             assert!(payload.paths.is_empty());
             assert!(payload.status_codes.is_empty());
             // It should also NOT be inferred as body
-            assert!(payload.body_type.is_none() || !payload.body_is_explicit,
-                "@bodyIgnore should not create body");
+            assert!(
+                payload.body_type.is_none() || !payload.body_is_explicit,
+                "@bodyIgnore should not create body"
+            );
         }
     }
 
@@ -2289,21 +2428,38 @@ mod tests {
         let state = StateAccessors::new();
 
         let get_vis = resolve_request_visibility(&state, 0, HttpVerb::Get);
-        assert!(get_vis.contains(Visibility::Query), "GET should have Query visibility");
+        assert!(
+            get_vis.contains(Visibility::Query),
+            "GET should have Query visibility"
+        );
 
         let post_vis = resolve_request_visibility(&state, 0, HttpVerb::Post);
-        assert!(post_vis.contains(Visibility::Create), "POST should have Create visibility");
+        assert!(
+            post_vis.contains(Visibility::Create),
+            "POST should have Create visibility"
+        );
 
         let put_vis = resolve_request_visibility(&state, 0, HttpVerb::Put);
-        assert!(put_vis.contains(Visibility::Create) && put_vis.contains(Visibility::Update),
-            "PUT should have Create|Update visibility");
+        assert!(
+            put_vis.contains(Visibility::Create) && put_vis.contains(Visibility::Update),
+            "PUT should have Create|Update visibility"
+        );
 
         let patch_vis = resolve_request_visibility(&state, 0, HttpVerb::Patch);
-        assert!(patch_vis.contains(Visibility::Update), "PATCH should have Update visibility");
-        assert!(patch_vis.contains(Visibility::Patch), "PATCH should have Patch visibility");
+        assert!(
+            patch_vis.contains(Visibility::Update),
+            "PATCH should have Update visibility"
+        );
+        assert!(
+            patch_vis.contains(Visibility::Patch),
+            "PATCH should have Patch visibility"
+        );
 
         let delete_vis = resolve_request_visibility(&state, 0, HttpVerb::Delete);
-        assert!(delete_vis.contains(Visibility::Delete), "DELETE should have Delete visibility");
+        assert!(
+            delete_vis.contains(Visibility::Delete),
+            "DELETE should have Delete visibility"
+        );
     }
 
     // ---- Shared route test (from routes.test.ts) ----
@@ -2314,7 +2470,10 @@ mod tests {
         let checker = compile_http("@sharedRoute @route(\"/get1\") @get op test(): string;");
         let op_id = find_operation(&checker, "test").unwrap();
         // Check if the sharedRoute state was applied
-        let has_shared = checker.state_accessors.get_state(STATE_SHARED_ROUTES, op_id).is_some();
+        let has_shared = checker
+            .state_accessors
+            .get_state(STATE_SHARED_ROUTES, op_id)
+            .is_some();
         if has_shared {
             let route = resolve_path_and_parameters(&checker, &checker.state_accessors, op_id);
             assert!(route.shared, "@sharedRoute should make route shared");
@@ -2335,7 +2494,7 @@ mod tests {
             @server("https://example.com", "Production")
             namespace MyService;
             @get op index(): void;
-        "#
+        "#,
         );
         if let Some(&ns_id) = checker.declared_types.get("MyService") {
             let server = super::super::operation::get_server(&checker.state_accessors, ns_id);
@@ -2356,7 +2515,7 @@ mod tests {
             namespace Things {
                 @get op GetThing(): string;
             }
-        "#
+        "#,
         );
         if let Some(&ns_id) = checker.declared_types.get("Things") {
             let ops = collect_http_operations(&checker, &checker.state_accessors, ns_id);
@@ -2386,17 +2545,24 @@ mod tests {
             namespace MyService {
                 @get op index(): void;
             }
-        "#
+        "#,
         );
         // This tests that the decorator is applied; actual auth parsing may be simplified
         if let Some(&ns_id) = checker.declared_types.get("MyService") {
-            let has_auth = checker.state_accessors.get_state("TypeSpec.Http.useAuth", ns_id).is_some();
+            let has_auth = checker
+                .state_accessors
+                .get_state("TypeSpec.Http.useAuth", ns_id)
+                .is_some();
             // Auth decorator may or may not be applied depending on decorator resolution
             if has_auth {
                 if let Some(&op_id) = checker.declared_types.get("index") {
-                    let auth = get_authentication_for_operation(&checker.state_accessors, op_id, &checker);
+                    let auth =
+                        get_authentication_for_operation(&checker.state_accessors, op_id, &checker);
                     // Auth should walk up from operation to namespace
-                    assert!(auth.is_some(), "Operation should inherit auth from namespace");
+                    assert!(
+                        auth.is_some(),
+                        "Operation should inherit auth from namespace"
+                    );
                 }
             }
         }

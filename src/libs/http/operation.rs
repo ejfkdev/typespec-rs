@@ -308,13 +308,9 @@ fn get_status_codes_from_type_inner(
 
     match checker.get_type(resolved) {
         // Number literal: e.g., 201
-        Some(crate::checker::types::Type::Number(n)) => {
-            validate_status_code(n.value as i64)
-        }
+        Some(crate::checker::types::Type::Number(n)) => validate_status_code(n.value as i64),
         // String literal: e.g., "201", "2xx", "*"
-        Some(crate::checker::types::Type::String(s)) => {
-            parse_status_code_string(&s.value)
-        }
+        Some(crate::checker::types::Type::String(s)) => parse_status_code_string(&s.value),
         // Union: collect from all variants
         Some(crate::checker::types::Type::Union(u)) => {
             let mut codes = Vec::new();

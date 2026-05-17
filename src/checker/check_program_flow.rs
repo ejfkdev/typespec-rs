@@ -30,6 +30,9 @@ impl Checker {
 
         // 6. Report unused using declarations
         self.report_unused_usings();
+
+        // 7. Run deferred validations
+        self.run_deferred_validations();
     }
 
     /// Check a single source file (TypeSpecScript node)

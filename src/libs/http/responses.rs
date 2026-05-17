@@ -245,6 +245,19 @@ impl ResponseIndex {
         vals
     }
 
+    /// Consume the index and return all responses sorted by status code.
+    pub fn into_values(self) -> Vec<HttpOperationResponse> {
+        let mut vals: Vec<_> = self.responses.into_values().collect();
+        vals.sort_by_key(|r| {
+            match &r.status_codes {
+                HttpStatusCodesEntry::Code(code) => code.to_string(),
+                HttpStatusCodesEntry::Range(range) => format!("{}-{}", range.start, range.end),
+                HttpStatusCodesEntry::Wildcard => "*".to_string(),
+            }
+        });
+        vals
+    }
+
     /// Compute the index key for a status code entry.
     fn index_key(&self, status_code: &HttpStatusCodesEntry) -> String {
         match status_code {
@@ -267,6 +280,8 @@ impl ResponseIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::libs::status_codes::HttpStatusCodeRange;
+    use crate::state_accessors::StateAccessors;
     use crate::checker::Checker;
     use crate::parser;
 
@@ -372,5 +387,132 @@ mod tests {
             matches!(variants[0], ResolvedResponseVariant::Plain { .. }),
             "Union of plain types should be Plain"
         );
+    }
+
+    // ---- Integration tests ported from upstream responses.test.ts ----
+    // These use the full compile_http helper with decorator registration
+
+    fn compile_http(source: &str) -> Checker {
+        let parse_result = parser::parse(source);
+        let mut checker = Checker::new();
+        checker.register_decorators(vec![
+            ("get", "TypeSpec.Http", "Operation"),
+            ("post", "TypeSpec.Http", "Operation"),
+            ("put", "TypeSpec.Http", "Operation"),
+            ("patch", "TypeSpec.Http", "Operation"),
+            ("delete", "TypeSpec.Http", "Operation"),
+            ("head", "TypeSpec.Http", "Operation"),
+            ("route", "TypeSpec.Http", "Operation"),
+            ("header", "TypeSpec.Http", "ModelProperty"),
+            ("query", "TypeSpec.Http", "ModelProperty"),
+            ("path", "TypeSpec.Http", "ModelProperty"),
+            ("body", "TypeSpec.Http", "ModelProperty"),
+            ("bodyRoot", "TypeSpec.Http", "ModelProperty"),
+            ("bodyIgnore", "TypeSpec.Http", "ModelProperty"),
+            ("statusCode", "TypeSpec.Http", "ModelProperty"),
+            ("cookie", "TypeSpec.Http", "ModelProperty"),
+            ("multipartBody", "TypeSpec.Http", "ModelProperty"),
+            ("visibility", "TypeSpec.Http", "ModelProperty"),
+            ("service", "TypeSpec.Http", "Namespace"),
+            ("sharedRoute", "TypeSpec.Http", "Operation"),
+        ]);
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.check_program();
+        checker
+    }
+
+    #[test]
+    fn test_plain_union_response_groups_into_single() {
+        // Ported from responses.test.ts: "groups plain model variants into a single union response"
+        let checker = compile_http(
+            r#"
+            model Cat { meow: boolean }
+            model Dog { bark: boolean }
+            @get op get(): Cat | Dog;
+        "#
+        );
+        let op_id = checker.declared_types.get("get").copied();
+        if let Some(op_id) = op_id {
+            let responses = super::super::operations::get_responses_for_operation(
+                &checker, &checker.state_accessors, op_id,
+            );
+            // Should group plain variants into one response (200)
+            assert!(!responses.is_empty(), "Should have at least one response");
+            let has_200 = responses.iter().any(|r| {
+                matches!(r.status_codes, HttpStatusCodesEntry::Code(200))
+            });
+            assert!(has_200, "Should have 200 response for plain union");
+        }
+    }
+
+    #[test]
+    fn test_envelope_response_with_status_code() {
+        // Ported from responses.test.ts: envelope with @statusCode creates separate response
+        let checker = compile_http(
+            r#"
+            model NotFoundResponse { @statusCode code: 404; message: string }
+            @get op get(): NotFoundResponse;
+        "#
+        );
+        let op_id = checker.declared_types.get("get").copied();
+        if let Some(op_id) = op_id {
+            let responses = super::super::operations::get_responses_for_operation(
+                &checker, &checker.state_accessors, op_id,
+            );
+            assert!(!responses.is_empty(), "Should have responses");
+        }
+    }
+
+    #[test]
+    fn test_void_response_204() {
+        // Ported from responses.test.ts: void produces 204 No Content
+        let checker = compile_http("@get op test(): void;");
+        let op_id = checker.declared_types.get("test").copied();
+        if let Some(op_id) = op_id {
+            let responses = super::super::operations::get_responses_for_operation(
+                &checker, &checker.state_accessors, op_id,
+            );
+            let has_204 = responses.iter().any(|r| {
+                matches!(r.status_codes, HttpStatusCodesEntry::Code(204))
+            });
+            assert!(has_204, "Void response should produce 204");
+        }
+    }
+
+    #[test]
+    fn test_status_code_range() {
+        // Test that status code ranges work (2xx, etc.)
+        let mut state = StateAccessors::new();
+        state.set_state("TypeSpec.Http.statusCode", 1, "2xx".to_string());
+        let codes = super::super::operation::get_status_codes(&state, 1);
+        assert_eq!(codes.len(), 1);
+        assert!(matches!(codes[0], HttpStatusCodesEntry::Range(_)));
+    }
+
+    #[test]
+    fn test_response_index_wildcard() {
+        let mut index = ResponseIndex::new();
+        let response = HttpOperationResponse {
+            status_codes: HttpStatusCodesEntry::Wildcard,
+            response_type: 0,
+            description: Some("Error".to_string()),
+            responses: vec![],
+        };
+        index.set(HttpStatusCodesEntry::Wildcard, response);
+        assert!(index.get(&HttpStatusCodesEntry::Wildcard).is_some());
+    }
+
+    #[test]
+    fn test_status_code_range_boundaries() {
+        // Verify HttpStatusCodeRange boundaries
+        let range = HttpStatusCodeRange::new(200, 299);
+        assert!(range.is_some());
+        let r = range.unwrap();
+        assert_eq!(r.start, 200);
+        assert_eq!(r.end, 299);
+
+        // Invalid range (start > end)
+        let invalid = HttpStatusCodeRange::new(300, 200);
+        assert!(invalid.is_none());
     }
 }

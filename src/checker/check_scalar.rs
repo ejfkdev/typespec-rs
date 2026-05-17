@@ -138,6 +138,20 @@ impl Checker {
         // Process directives (e.g., #deprecated) early so deprecated context works
         self.process_and_mark_directives(node_id, type_id);
 
+        // Back-link constructors to their parent scalar
+        let ctor_ids: Vec<TypeId> = if let Some(Type::Scalar(s)) = self.get_type(type_id) {
+            s.constructors.clone()
+        } else {
+            Vec::new()
+        };
+        for ctor_id in ctor_ids {
+            if let Some(t) = self.get_type_mut(ctor_id)
+                && let Type::ScalarConstructor(sc) = t
+            {
+                sc.scalar = Some(type_id);
+            }
+        }
+
         if let Some(base_id) = base_scalar
             && let Some(t) = self.get_type_mut(base_id)
             && let Type::Scalar(base) = t

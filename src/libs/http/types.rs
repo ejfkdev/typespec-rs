@@ -65,6 +65,12 @@ pub const STATE_FILE: &str = "TypeSpec.Http.file";
 pub const STATE_HTTP_PART: &str = "TypeSpec.Http.httpPart";
 /// State key for merge patch property options
 pub const STATE_MERGE_PATCH_PROPERTY_OPTIONS: &str = "TypeSpec.Http.mergePatchPropertyOptions";
+/// State key for @visibility decorator
+pub const STATE_VISIBILITY: &str = "TypeSpec.Http.visibility";
+/// State key for @useAuth decorator
+pub const STATE_USE_AUTH: &str = "TypeSpec.Http.useAuth";
+/// State key for @service decorator
+pub const STATE_SERVICE: &str = "TypeSpec.Http.service";
 
 // ============================================================================
 // Diagnostic codes

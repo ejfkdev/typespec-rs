@@ -261,11 +261,9 @@ impl OpenAPIEmitter {
 
     /// Resolve the route path for an operation.
     fn resolve_route(&self, checker: &Checker, op: &OperationType) -> String {
-        if let Some(node_id) = op.node {
-            let state = &checker.state_accessors;
-            if let Some(route) = state.get_state("TypeSpec.Http.route", node_id) {
-                return route.to_string();
-            }
+        let state = &checker.state_accessors;
+        if let Some(route) = state.get_state("TypeSpec.Http.route", op.id) {
+            return route.to_string();
         }
         format!("/{}", to_kebab_case(&op.name))
     }
@@ -273,11 +271,9 @@ impl OpenAPIEmitter {
     /// Resolve the HTTP verb for an operation.
     fn resolve_verb(&self, checker: &Checker, op: &OperationType) -> String {
         use crate::libs::http::get_verb;
-        if let Some(node_id) = op.node {
-            let verb = get_verb(&checker.state_accessors, node_id);
-            if let Some(v) = verb {
-                return format!("{:?}", v).to_lowercase();
-            }
+        let verb = get_verb(&checker.state_accessors, op.id);
+        if let Some(v) = verb {
+            return format!("{:?}", v).to_lowercase();
         }
         "get".to_string()
     }
@@ -409,6 +405,12 @@ impl OpenAPIEmitter {
                             let mut s = format!("{}type: array\n", pad);
                             s.push_str(&format!("{}items:\n", pad));
                             s.push_str(&self.type_to_schema(checker, *val, indent + 2));
+                            if crate::libs::json_schema::is_unique_items(
+                                &checker.state_accessors,
+                                type_id,
+                            ) {
+                                s.push_str(&format!("{}uniqueItems: true\n", pad));
+                            }
                             s
                         } else {
                             format!("{}type: object\n", pad)
@@ -538,6 +540,10 @@ impl OpenAPIEmitter {
                         for &val_id in &t.values {
                             s.push_str(&self.type_to_schema(checker, val_id, indent + 4));
                         }
+                    }
+                    if crate::libs::json_schema::is_unique_items(&checker.state_accessors, type_id)
+                    {
+                        s.push_str(&format!("{}uniqueItems: true\n", pad));
                     }
                     s
                 }

@@ -23,11 +23,18 @@
 //! println!("{}", result.output);
 //! ```
 
+pub mod asset_emitter;
 pub mod emitter;
 pub mod json_emitter;
 pub mod openapi_emitter;
 pub mod yaml_emitter;
 
+pub use asset_emitter::{
+    AssetEmitter, TypeEmitter, EmitEntity, EmitEntityKind, Declaration, RawCode,
+    CircularEmit, Scope, ScopeKind, SourceFile, EmittedSourceFile,
+    ObjectBuilder, ObjectValue, ArrayBuilder, Placeholder, ReferenceCycle,
+    EmitContext, ObjectProperty, ObjectPropertyValue,
+};
 pub use emitter::Emitter;
 pub use json_emitter::JsonEmitter;
 pub use openapi_emitter::OpenAPIEmitter;

@@ -717,9 +717,38 @@ impl Checker {
                     // Check if the spread target resolves to an ObjectValue
                     // TS: checkObjectSpreadProperty — if not ObjectValue, emit "spread-object"
                     let spread_type = self.check_node(ctx, spread.target);
+                    let resolved = self.resolve_alias_chain(spread_type);
                     // Check if the spread type is a Model (which represents an object)
-                    let is_model = matches!(self.get_type(spread_type), Some(Type::Model(_)));
-                    if !is_model {
+                    if let Some(Type::Model(src_model)) = self.get_type(resolved).cloned() {
+                        // Merge properties from spread target
+                        for src_name in &src_model.property_names {
+                            if let Some(&src_prop_id) = src_model.properties.get(src_name)
+                                && let Some(Type::ModelProperty(src_prop)) =
+                                    self.get_type(src_prop_id).cloned()
+                            {
+                                // Don't overwrite explicitly set properties
+                                if !properties.contains_key(src_name) {
+                                    let new_prop_id =
+                                        self.create_type(Type::ModelProperty(ModelPropertyType {
+                                            id: self.next_type_id(),
+                                            name: src_prop.name.clone(),
+                                            node: src_prop.node,
+                                            r#type: src_prop.r#type,
+                                            optional: src_prop.optional,
+                                            default_value: src_prop.default_value,
+                                            model: None,
+                                            source_property: Some(src_prop_id),
+                                            decorators: src_prop.decorators.clone(),
+                                            doc: src_prop.doc.clone(),
+                                            summary: src_prop.summary.clone(),
+                                            is_finished: true,
+                                        }));
+                                    properties.insert(src_name.clone(), new_prop_id);
+                                    property_names.push(src_name.clone());
+                                }
+                            }
+                        }
+                    } else {
                         self.error(
                             "spread-object",
                             "Cannot spread properties of non-object type.",

@@ -123,19 +123,24 @@ impl Checker {
             // Check constraint for circular references
             // Add ALL template parameter names to pending set before checking constraint,
             // so mutual constraints (A extends B, B extends A) are detected.
-            let constraint = if let Some(constraint_id) = param_node.constraint {
+            let (constraint, value_constraint) = if let Some(constraint_id) = param_node.constraint
+            {
                 // Add all param names to detect mutual circular constraints
                 for pname in &param_names {
                     self.pending_template_constraint_names.insert(pname.clone());
                 }
-                let constraint_type = self.check_node(ctx, constraint_id);
+
+                // Check for mixed constraint (e.g., `T extends string | valueof int32`)
+                let (type_constraint, value_constraint) =
+                    self.check_mixed_constraint(ctx, constraint_id);
+
                 // Remove all param names after checking
                 for pname in &param_names {
                     self.pending_template_constraint_names.remove(pname);
                 }
-                Some(constraint_type)
+                (type_constraint, value_constraint)
             } else {
-                None
+                (None, None)
             };
 
             let default = if let Some(default_id) = param_node.default {
@@ -162,6 +167,7 @@ impl Checker {
                 name,
                 node: Some(param_id),
                 constraint,
+                value_constraint,
                 default,
                 is_finished: true,
             }));
@@ -236,5 +242,62 @@ impl Checker {
             AstNode::ValueOfExpression(expr) => self.expr_references_names(ast, expr.target, names),
             _ => false,
         }
+    }
+
+    /// Check a constraint for mixed type/value parts (e.g., `string | valueof int32`).
+    /// Returns (type_constraint, value_constraint).
+    /// If the constraint is purely a type (no `valueof`), returns (Some(type), None).
+    /// If the constraint has both type and value parts, splits them accordingly.
+    pub(crate) fn check_mixed_constraint(
+        &mut self,
+        ctx: &CheckContext,
+        constraint_node_id: NodeId,
+    ) -> (Option<TypeId>, Option<TypeId>) {
+        let ast = require_ast_or!(self, (None, None));
+
+        // Check if the constraint is a union expression containing valueof parts
+        if let Some(AstNode::UnionExpression(union_expr)) = ast.id_to_node(constraint_node_id) {
+            let mut type_options = Vec::new();
+            let mut value_options = Vec::new();
+
+            for &option_id in &union_expr.options {
+                if matches!(
+                    ast.id_to_node(option_id),
+                    Some(AstNode::ValueOfExpression(_))
+                ) {
+                    // valueof part — check the target type
+                    let value_type = self.check_node(ctx, option_id);
+                    value_options.push(value_type);
+                } else {
+                    // Regular type part
+                    let type_id = self.check_node(ctx, option_id);
+                    type_options.push(type_id);
+                }
+            }
+
+            if !value_options.is_empty() {
+                // Mixed constraint detected
+                let type_constraint = if type_options.len() == 1 {
+                    Some(type_options.into_iter().next().unwrap())
+                } else if type_options.is_empty() {
+                    None
+                } else {
+                    // Create a union of type options
+                    Some(self.create_union(type_options))
+                };
+
+                let value_constraint = if value_options.len() == 1 {
+                    Some(value_options.into_iter().next().unwrap())
+                } else {
+                    Some(self.create_union(value_options))
+                };
+
+                return (type_constraint, value_constraint);
+            }
+        }
+
+        // Not a mixed constraint — just a regular type constraint
+        let constraint_type = self.check_node(ctx, constraint_node_id);
+        (Some(constraint_type), None)
     }
 }

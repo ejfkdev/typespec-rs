@@ -1050,25 +1050,51 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Check for decimal point
+        // Check for decimal point — only consume if followed by a digit
+        // This prevents "123.foo" from being tokenized as "123." + "foo"
+        // (matching the intent of upstream TS which emits a "digit-expected" error)
         if let Some(&'.') = self.chars.peek() {
-            self.chars.next();
-            self.chars_consumed += 1;
-            self.position.column += 1;
-            self.scan_required_digits();
-        }
-
-        // Check for exponent
-        if let Some(&'e') | Some(&'E') = self.chars.peek() {
-            self.chars.next();
-            self.chars_consumed += 1;
-            self.position.column += 1;
-            if let Some(&'+') | Some(&'-') = self.chars.peek() {
-                self.chars.next();
+            // Lookahead: check if the character after '.' is a digit
+            let has_trailing_digit = {
+                let mut peek = self.chars.clone();
+                peek.next(); // skip '.'
+                matches!(peek.peek(), Some(&c) if is_digit(c))
+            };
+            if has_trailing_digit {
+                self.chars.next(); // consume '.'
                 self.chars_consumed += 1;
                 self.position.column += 1;
+                self.scan_required_digits();
             }
-            self.scan_required_digits();
+        }
+
+        // Check for exponent — only consume if followed by a digit or sign+digit
+        // This prevents "1emyType" from being tokenized as "1e" + "myType"
+        if let Some(&'e') | Some(&'E') = self.chars.peek() {
+            // Lookahead: check if after 'e' there's a digit, or a sign followed by a digit
+            let has_exponent_digits = {
+                let mut peek = self.chars.clone();
+                peek.next(); // skip 'e'/'E'
+                match peek.peek() {
+                    Some(&c) if is_digit(c) => true,
+                    Some(&'+') | Some(&'-') => {
+                        peek.next(); // skip sign
+                        matches!(peek.peek(), Some(&c) if is_digit(c))
+                    }
+                    _ => false,
+                }
+            };
+            if has_exponent_digits {
+                self.chars.next(); // consume 'e'/'E'
+                self.chars_consumed += 1;
+                self.position.column += 1;
+                if let Some(&'+') | Some(&'-') = self.chars.peek() {
+                    self.chars.next();
+                    self.chars_consumed += 1;
+                    self.position.column += 1;
+                }
+                self.scan_required_digits();
+            }
         }
 
         self.finish_token(TokenKind::NumericLiteral)

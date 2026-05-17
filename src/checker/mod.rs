@@ -332,6 +332,31 @@ pub struct SymbolLinks {
 }
 
 // ============================================================================
+// Deferred Validation
+// ============================================================================
+
+/// When to run a deferred validation
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DeferredValidationTiming {
+    /// Run after the target type is finished
+    AfterTypeFinished,
+    /// Run after the entire program is checked
+    AfterProgramChecked,
+}
+
+/// A deferred validation callback.
+/// Allows decorators to register validation that runs later in the checking pipeline.
+#[derive(Debug, Clone)]
+pub struct DeferredValidation {
+    /// The type being validated
+    pub target_type: TypeId,
+    /// The decorator that registered this validation
+    pub decorator: TypeId,
+    /// When to run this validation
+    pub timing: DeferredValidationTiming,
+}
+
+// ============================================================================
 // Checker
 // ============================================================================
 
@@ -430,8 +455,8 @@ pub struct Checker {
     pub internal_declarations: HashSet<TypeId>,
 
     // ---- Template parameter scope ----
-    /// Stack of template parameter scopes (each scope maps name to NodeId)
-    pub template_param_scope: Vec<HashMap<String, NodeId>>,
+    /// Stack of template parameter scopes (each scope maps name to TypeId)
+    pub template_param_scope: Vec<HashMap<String, TypeId>>,
 
     // ---- Unused using tracking ----
     /// List of (NodeId, namespace_name) for all using declarations
@@ -464,6 +489,18 @@ pub struct Checker {
     // ---- Custom decorator registration ----
     /// Custom decorators registered via `register_decorator()`, processed during `check_program()`
     pub custom_decorators: Vec<CustomDecoratorDef>,
+
+    // ---- Template parameter access cache ----
+    /// Cache for TemplateParameterAccess types, keyed by access path (e.g., "T.id")
+    pub template_access_symbol_cache: HashMap<String, TypeId>,
+
+    // ---- Import tracking ----
+    /// Map from import path to NodeId for duplicate import detection
+    pub import_paths: HashMap<String, NodeId>,
+
+    // ---- Deferred validations ----
+    /// Deferred validations to run after types are finished or program is checked
+    pub deferred_validations: Vec<DeferredValidation>,
 }
 
 // ============================================================================
@@ -602,6 +639,9 @@ impl Checker {
             pending_const_checks: HashSet::new(),
             state_accessors: crate::state_accessors::StateAccessors::new(),
             custom_decorators: get_global_decorators(),
+            template_access_symbol_cache: HashMap::new(),
+            import_paths: HashMap::new(),
+            deferred_validations: Vec::new(),
         }
     }
 
@@ -725,6 +765,41 @@ impl Checker {
     /// Add a warning diagnostic (convenience shorthand)
     pub(crate) fn warning(&mut self, code: &str, msg: &str) {
         self.add_diagnostic(Diagnostic::warning(code, msg));
+    }
+
+    // ========================================================================
+    // Deferred validations
+    // ========================================================================
+
+    /// Register a deferred validation to run later.
+    pub fn defer_validation(
+        &mut self,
+        target_type: TypeId,
+        decorator: TypeId,
+        timing: DeferredValidationTiming,
+    ) {
+        self.deferred_validations.push(DeferredValidation {
+            target_type,
+            decorator,
+            timing,
+        });
+    }
+
+    /// Run all deferred validations with AfterProgramChecked timing.
+    fn run_deferred_validations(&mut self) {
+        let validations: Vec<DeferredValidation> = self
+            .deferred_validations
+            .iter()
+            .filter(|v| v.timing == DeferredValidationTiming::AfterProgramChecked)
+            .cloned()
+            .collect();
+
+        for validation in validations {
+            // Placeholder: In the future, this will invoke decorator-specific
+            // validation callbacks. For now, the infrastructure is in place
+            // for decorators to register and the checker to dispatch.
+            let _ = (validation.target_type, validation.decorator);
+        }
     }
 
     /// Get a human-readable string for a type (convenience shorthand)
@@ -1068,6 +1143,17 @@ impl Checker {
                     _ => String::new(),
                 };
                 if !path_str.is_empty() {
+                    // Check for duplicate imports
+                    if self.import_paths.contains_key(&path_str) {
+                        self.warning(
+                            "duplicate-import",
+                            &format!("Import '{}' is duplicated.", path_str),
+                        );
+                    } else {
+                        self.import_paths.insert(path_str.clone(), node_id);
+                    }
+                    // Self-import check (file importing itself)
+                    // We can't fully detect this without file path info, but we skip for now
                     self.error(
                         "import-not-found",
                         &format!("Cannot find import '{}'", path_str),

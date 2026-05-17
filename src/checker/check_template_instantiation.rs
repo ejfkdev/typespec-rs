@@ -852,6 +852,18 @@ impl Checker {
                 if let Some(&prop_id) = m.properties.get(member_name) {
                     prop_id
                 } else {
+                    // Walk base model chain for inherited properties
+                    let mut current = m.base_model;
+                    while let Some(base_id) = current {
+                        if let Some(Type::Model(base)) = self.get_type(base_id) {
+                            if let Some(&prop_id) = base.properties.get(member_name) {
+                                return prop_id;
+                            }
+                            current = base.base_model;
+                        } else {
+                            break;
+                        }
+                    }
                     self.error(
                         "invalid-ref",
                         &format!("Model '{}' has no property '{}'", m.name, member_name),

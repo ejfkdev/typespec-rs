@@ -421,6 +421,165 @@ impl Checker {
                         );
                     }
                 }
+                "patch" => {
+                    crate::libs::http::operation::apply_patch(
+                        &mut self.state_accessors,
+                        type_id,
+                        None,
+                    );
+                    self.warning(
+                        "deprecated-implicit-optionality",
+                        "@patch with implicit optionality is deprecated. Pass {implicitOptionality: false} to opt out.",
+                    );
+                }
+
+                // ---- HTTP verb decorators ----
+                "get" => {
+                    crate::libs::http::apply_verb(
+                        &mut self.state_accessors,
+                        type_id,
+                        crate::libs::http::types::HttpVerb::Get,
+                    );
+                }
+                "post" => {
+                    crate::libs::http::apply_verb(
+                        &mut self.state_accessors,
+                        type_id,
+                        crate::libs::http::types::HttpVerb::Post,
+                    );
+                }
+                "put" => {
+                    crate::libs::http::apply_verb(
+                        &mut self.state_accessors,
+                        type_id,
+                        crate::libs::http::types::HttpVerb::Put,
+                    );
+                }
+                "delete" => {
+                    crate::libs::http::apply_verb(
+                        &mut self.state_accessors,
+                        type_id,
+                        crate::libs::http::types::HttpVerb::Delete,
+                    );
+                }
+                "head" => {
+                    crate::libs::http::apply_verb(
+                        &mut self.state_accessors,
+                        type_id,
+                        crate::libs::http::types::HttpVerb::Head,
+                    );
+                }
+
+                // ---- HTTP route decorator ----
+                "route" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::String(route_str)) = &arg.js_value
+                    {
+                        crate::libs::http::apply_route(
+                            &mut self.state_accessors,
+                            type_id,
+                            route_str,
+                        );
+                    }
+                }
+
+                // ---- HTTP parameter/metadata decorators ----
+                "header" => {
+                    let name = args.first().and_then(|a| {
+                        a.js_value.as_ref().and_then(|v| match v {
+                            DecoratorMarshalledValue::String(s) => Some(s.clone()),
+                            _ => None,
+                        })
+                    });
+                    crate::libs::http::apply_header(&mut self.state_accessors, type_id, name.as_deref());
+                }
+                "query" => {
+                    let name = args.first().and_then(|a| {
+                        a.js_value.as_ref().and_then(|v| match v {
+                            DecoratorMarshalledValue::String(s) => Some(s.clone()),
+                            _ => None,
+                        })
+                    });
+                    crate::libs::http::apply_query(&mut self.state_accessors, type_id, name.as_deref());
+                }
+                "path" => {
+                    let name = args.first().and_then(|a| {
+                        a.js_value.as_ref().and_then(|v| match v {
+                            DecoratorMarshalledValue::String(s) => Some(s.clone()),
+                            _ => None,
+                        })
+                    });
+                    crate::libs::http::apply_path(&mut self.state_accessors, type_id, name.as_deref());
+                }
+                "body" => {
+                    crate::libs::http::apply_body(&mut self.state_accessors, type_id);
+                }
+                "bodyRoot" => {
+                    crate::libs::http::apply_body_root(&mut self.state_accessors, type_id);
+                }
+                "bodyIgnore" => {
+                    crate::libs::http::apply_body_ignore(&mut self.state_accessors, type_id);
+                }
+                "statusCode" => {
+                    crate::libs::http::apply_status_code(&mut self.state_accessors, type_id);
+                }
+                "cookie" => {
+                    let name = args.first().and_then(|a| {
+                        a.js_value.as_ref().and_then(|v| match v {
+                            DecoratorMarshalledValue::String(s) => Some(s.clone()),
+                            _ => None,
+                        })
+                    });
+                    crate::libs::http::apply_cookie(&mut self.state_accessors, type_id, name.as_deref());
+                }
+                "multipartBody" => {
+                    crate::libs::http::apply_multipart_body(&mut self.state_accessors, type_id);
+                }
+
+                // ---- HTTP visibility decorator ----
+                "visibility" => {
+                    // @visibility takes one or more enum member references
+                    // For now, store the argument TypeIds as a simple marker
+                    crate::libs::http::apply_visibility_decorator(
+                        &mut self.state_accessors,
+                        type_id,
+                    );
+                }
+
+                // ---- HTTP shared route decorator ----
+                "sharedRoute" => {
+                    crate::libs::http::apply_shared_route(&mut self.state_accessors, type_id);
+                }
+
+                // ---- HTTP server decorator ----
+                "server" => {
+                    if let Some(arg) = args.first()
+                        && let Some(DecoratorMarshalledValue::String(url)) = &arg.js_value
+                    {
+                        let description = args.get(1).and_then(|a| {
+                            a.js_value.as_ref().and_then(|v| match v {
+                                DecoratorMarshalledValue::String(s) => Some(s.clone()),
+                                _ => None,
+                            })
+                        });
+                        crate::libs::http::apply_server(
+                            &mut self.state_accessors,
+                            type_id,
+                            url,
+                            description.as_deref(),
+                        );
+                    }
+                }
+
+                // ---- HTTP useAuth decorator ----
+                "useAuth" => {
+                    crate::libs::http::apply_use_auth(&mut self.state_accessors, type_id);
+                }
+
+                // ---- HTTP service decorator ----
+                "service" => {
+                    crate::libs::http::apply_service(&mut self.state_accessors, type_id);
+                }
                 _ => {}
             }
         }

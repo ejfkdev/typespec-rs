@@ -78,6 +78,7 @@ pub fn get_type_kind(t: &Type) -> TypeKind {
         Type::Boolean(_) => TypeKind::Boolean,
         Type::Intrinsic(_) => TypeKind::Intrinsic,
         Type::TemplateParameter(_) => TypeKind::TemplateParameter,
+        Type::TemplateParameterAccess(_) => TypeKind::TemplateParameter,
         Type::ScalarConstructor(_) => TypeKind::Scalar,
         Type::Decorator(_) => TypeKind::Intrinsic,
         Type::FunctionType(_) => TypeKind::Intrinsic,

@@ -145,6 +145,7 @@ impl Checker {
         // Manually unpack parameters (same pattern as check_decorator_declaration)
         // because check_node_impl has no FunctionParameter arm
         let mut parameters = Vec::new();
+        let mut seen_param_names = std::collections::HashSet::new();
         for &param_id in &node.parameters {
             let param_node = match ast.id_to_node(param_id) {
                 Some(AstNode::FunctionParameter(fp)) => fp.clone(),
@@ -152,6 +153,18 @@ impl Checker {
             };
             let param_name = Self::get_identifier_name(&ast, param_node.name);
             let param_type = param_node.type_annotation.map(|t| self.check_node(ctx, t));
+
+            // Check for duplicate parameter names
+            if !param_name.is_empty() && seen_param_names.contains(&param_name) {
+                self.error(
+                    "duplicate-parameter",
+                    &format!(
+                        "Duplicate parameter name '{}' in function '{}'.",
+                        param_name, name
+                    ),
+                );
+            }
+            seen_param_names.insert(param_name.clone());
 
             if param_node.rest
                 && let Some(type_ann) = param_node.type_annotation
@@ -204,7 +217,7 @@ impl Checker {
             }));
             self.node_type_map.insert(node_id, new_id);
             if !name.is_empty() {
-                self.declared_types.insert(name, new_id);
+                self.declared_types.insert(name.clone(), new_id);
             }
             new_id
         };
@@ -214,12 +227,18 @@ impl Checker {
         if let Some(Type::FunctionType(ft)) = self.get_type(type_id).cloned() {
             for param in &ft.parameters {
                 let param_type_id = self.create_type(Type::FunctionParameter(param.clone()));
-                // Register in declared_types for lookup
-                if !param.name.is_empty() {
-                    self.declared_types
-                        .insert(param.name.clone(), param_type_id);
-                }
+                let _ = param_type_id;
             }
+        }
+
+        // Register function in its namespace
+        if !name.is_empty()
+            && let Some(ns_id) = current_ns
+            && let Some(Type::Namespace(ns)) = self.get_type_mut(ns_id)
+            && !ns.function_declarations.contains_key(&name)
+        {
+            ns.function_declarations.insert(name.clone(), type_id);
+            ns.function_declaration_names.push(name.clone());
         }
 
         type_id

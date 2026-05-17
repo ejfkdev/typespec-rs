@@ -622,7 +622,7 @@ fn navigate_type_internal<L: SemanticNodeListener>(
             }
         }
         // Leaf types with no child navigation
-        Type::FunctionType(_) | Type::FunctionParameter(_) => {}
+        Type::FunctionType(_) | Type::FunctionParameter(_) | Type::TemplateParameterAccess(_) => {}
     }
 }
 

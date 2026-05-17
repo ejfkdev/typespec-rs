@@ -129,6 +129,61 @@ impl LinterRule {
     pub fn get_message(&self, id: &str) -> Option<&str> {
         self.messages.get(id).map(|s| s.as_str())
     }
+
+    /// Validate options against this rule's option schema.
+    /// Performs simple structural validation (type checking of top-level keys).
+    /// Returns a list of validation error messages (empty if valid).
+    pub fn validate_options(&self, options: &LinterRuleOptionValue) -> Vec<String> {
+        let Some(ref schema) = self.option_schema else {
+            return Vec::new();
+        };
+
+        let mut errors = Vec::new();
+        let Some(schema_obj) = schema.as_object() else {
+            return errors;
+        };
+
+        // Check required properties
+        if let Some(required) = schema_obj.get("required").and_then(|r| r.as_array()) {
+            if let LinterRuleOptionValue::Object(opts) = options {
+                for req in required {
+                    if let Some(key) = req.as_str()
+                        && !opts.contains_key(key)
+                    {
+                        errors.push(format!("Missing required option '{}'", key));
+                    }
+                }
+            }
+        }
+
+        // Check property types
+        if let Some(properties) = schema_obj.get("properties").and_then(|p| p.as_object()) {
+            if let LinterRuleOptionValue::Object(opts) = options {
+                for (key, prop_schema) in properties {
+                    if let Some(value) = opts.get(key) {
+                        if let Some(expected_type) = prop_schema.get("type").and_then(|t| t.as_str()) {
+                            let actual_type = match value {
+                                LinterRuleOptionValue::Bool(_) => "boolean",
+                                LinterRuleOptionValue::Number(_) => "number",
+                                LinterRuleOptionValue::String(_) => "string",
+                                LinterRuleOptionValue::Object(_) => "object",
+                                LinterRuleOptionValue::Array(_) => "array",
+                                LinterRuleOptionValue::Null => "null",
+                            };
+                            if actual_type != expected_type {
+                                errors.push(format!(
+                                    "Option '{}' must be of type '{}', got '{}'",
+                                    key, expected_type, actual_type
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        errors
+    }
 }
 
 /// A resolved linter definition with rules and rule sets
@@ -159,7 +214,7 @@ pub struct LinterRuleSet {
 /// Ported from TS `resolveRuleOptions()`.
 ///
 /// Resolution order:
-/// 1. If the user provided options (`user_options`), use them
+/// 1. If the user provided options (`user_options`), merge with defaults (user overrides defaults)
 /// 2. If the rule has default options, use them
 /// 3. Otherwise, default to `LinterRuleOptionValue::Bool(true)` (enabled)
 pub fn resolve_rule_options(
@@ -167,12 +222,31 @@ pub fn resolve_rule_options(
     user_options: Option<&LinterRuleOptionValue>,
 ) -> LinterRuleOptionValue {
     if let Some(opts) = user_options {
+        // Merge: user options override defaults, defaults fill missing keys
+        if let Some(ref defaults) = rule.default_options {
+            return merge_options(defaults, opts);
+        }
         return opts.clone();
     }
     if let Some(ref defaults) = rule.default_options {
         return defaults.clone();
     }
     LinterRuleOptionValue::Bool(true)
+}
+
+/// Merge two option values: defaults are the base, user overrides take precedence.
+/// For Object values, keys in `user` override keys in `defaults`, missing keys are filled from `defaults`.
+fn merge_options(defaults: &LinterRuleOptionValue, user: &LinterRuleOptionValue) -> LinterRuleOptionValue {
+    match (defaults, user) {
+        (LinterRuleOptionValue::Object(default_map), LinterRuleOptionValue::Object(user_map)) => {
+            let mut merged = default_map.clone();
+            for (key, value) in user_map {
+                merged.insert(key.clone(), value.clone());
+            }
+            LinterRuleOptionValue::Object(merged)
+        }
+        _ => user.clone(),
+    }
 }
 
 /// Parse a rule reference into (library_name, rule_name).

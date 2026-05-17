@@ -276,8 +276,134 @@ pub fn set_status_codes(state: &mut StateAccessors, target: TypeId, codes: &[&st
     state.set_state(STATE_STATUS_CODE, target, codes.join(","));
 }
 
-/// Get status codes for a property.
-/// Ported from TS getStatusCodes().
+/// Get status codes for a property by resolving its type.
+/// Ported from TS getStatusCodesFromType().
+///
+/// Unlike the previous implementation that read from StateAccessors (which was broken
+/// because apply_status_code writes to state_sets but get_state reads from state_maps),
+/// this follows the upstream pattern: resolve status codes from the property's TYPE.
+///
+/// For `@statusCode code: 201` → resolves the Number literal 201
+/// For `@statusCode code: "2xx"` → resolves the String literal "2xx"
+/// For `@statusCode code: int32` with @minValue/@maxValue → resolves the range
+pub fn get_status_codes_from_type(
+    checker: &crate::checker::Checker,
+    type_id: TypeId,
+) -> Vec<HttpStatusCodesEntry> {
+    get_status_codes_from_type_inner(checker, type_id, 0)
+}
+
+const MAX_STATUS_CODE_DEPTH: usize = 5;
+
+fn get_status_codes_from_type_inner(
+    checker: &crate::checker::Checker,
+    type_id: TypeId,
+    depth: usize,
+) -> Vec<HttpStatusCodesEntry> {
+    if depth > MAX_STATUS_CODE_DEPTH {
+        return Vec::new();
+    }
+
+    let resolved = checker.resolve_alias_chain(type_id);
+
+    match checker.get_type(resolved) {
+        // Number literal: e.g., 201
+        Some(crate::checker::types::Type::Number(n)) => {
+            validate_status_code(n.value as i64)
+        }
+        // String literal: e.g., "201", "2xx", "*"
+        Some(crate::checker::types::Type::String(s)) => {
+            parse_status_code_string(&s.value)
+        }
+        // Union: collect from all variants
+        Some(crate::checker::types::Type::Union(u)) => {
+            let mut codes = Vec::new();
+            for name in &u.variant_names {
+                if let Some(&variant_id) = u.variants.get(name) {
+                    if let Some(crate::checker::types::Type::UnionVariant(v)) =
+                        checker.get_type(variant_id)
+                    {
+                        codes.extend(get_status_codes_from_type_inner(
+                            checker,
+                            v.r#type,
+                            depth + 1,
+                        ));
+                    }
+                }
+            }
+            codes
+        }
+        // ModelProperty: resolve from its type
+        Some(crate::checker::types::Type::ModelProperty(mp)) => {
+            get_status_codes_from_type_inner(checker, mp.r#type, depth + 1)
+        }
+        // Scalar with @minValue/@maxValue → range
+        Some(crate::checker::types::Type::Scalar(_)) => {
+            validate_status_code_range(checker, resolved)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Validate a numeric status code (100-599).
+fn validate_status_code(value: i64) -> Vec<HttpStatusCodesEntry> {
+    if value >= 100 && value <= 599 {
+        vec![HttpStatusCodesEntry::Code(value as u16)]
+    } else {
+        Vec::new()
+    }
+}
+
+/// Parse a status code string like "201", "2xx", or "*".
+fn parse_status_code_string(s: &str) -> Vec<HttpStatusCodesEntry> {
+    if s == "*" {
+        return vec![HttpStatusCodesEntry::Wildcard];
+    }
+    if s.ends_with("xx") {
+        let start = match s {
+            "1xx" => 100,
+            "2xx" => 200,
+            "3xx" => 300,
+            "4xx" => 400,
+            "5xx" => 500,
+            _ => return Vec::new(),
+        };
+        if let Some(range) = HttpStatusCodeRange::new(start, start + 99) {
+            return vec![HttpStatusCodesEntry::Range(range)];
+        }
+    }
+    // Try parsing as a numeric code
+    if let Ok(code) = s.parse::<u16>() {
+        if code >= 100 && code <= 599 {
+            return vec![HttpStatusCodesEntry::Code(code)];
+        }
+    }
+    Vec::new()
+}
+
+/// Validate a status code range from a scalar type using @minValue/@maxValue.
+fn validate_status_code_range(
+    checker: &crate::checker::Checker,
+    scalar_id: TypeId,
+) -> Vec<HttpStatusCodesEntry> {
+    // Check for @minValue and @maxValue decorators on the scalar
+    let min = checker.get_decorator_numeric_arg(scalar_id, "minValue", 0);
+    let max = checker.get_decorator_numeric_arg(scalar_id, "maxValue", 0);
+
+    match (min, max) {
+        (Some(start), Some(end)) => {
+            if let Some(range) = HttpStatusCodeRange::new(start as u16, end as u16) {
+                vec![HttpStatusCodesEntry::Range(range)]
+            } else {
+                Vec::new()
+            }
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Get status codes for a property (legacy API, reads from state).
+/// Prefer `get_status_codes_from_type` which resolves from the property's type.
 pub fn get_status_codes(state: &StateAccessors, target: TypeId) -> Vec<HttpStatusCodesEntry> {
     state
         .get_state(STATE_STATUS_CODE, target)
@@ -288,7 +414,6 @@ pub fn get_status_codes(state: &StateAccessors, target: TypeId) -> Vec<HttpStatu
                     if code == "*" {
                         Some(HttpStatusCodesEntry::Wildcard)
                     } else if code.ends_with("xx") {
-                        // Parse range like "2xx" -> HttpStatusCodeRange
                         let start = match code {
                             "1xx" => 100,
                             "2xx" => 200,

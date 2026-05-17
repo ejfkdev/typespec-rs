@@ -303,6 +303,14 @@ impl TypeGraphSerializer {
                     json.push_str(&format!(",\"constraint\":{}", c));
                 }
             }
+            Type::TemplateParameterAccess(tpa) => {
+                json.push_str(&format!(",\"name\":\"{}\"", escape_json(&tpa.name)));
+                json.push_str(&format!(",\"base\":{}", tpa.base));
+                json.push_str(&format!(",\"path\":\"{}\"", escape_json(&tpa.path)));
+                if let Some(c) = tpa.constraint {
+                    json.push_str(&format!(",\"constraint\":{}", c));
+                }
+            }
             Type::Decorator(d) => {
                 json.push_str(&format!(",\"name\":\"{}\"", escape_json(&d.name)));
             }

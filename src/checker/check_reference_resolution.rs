@@ -68,6 +68,60 @@ impl Checker {
 
         // Look up the property in the base type
         let result_type = match self.get_type(base_type) {
+            Some(Type::TemplateParameter(_)) | Some(Type::TemplateParameterAccess(_)) => {
+                // Template parameter member access (e.g., T.id, T::returnType)
+                if let Some(ref mapper) = ctx.mapper {
+                    // In template instantiation: map the template parameter to its
+                    // concrete type, then resolve the member on that concrete type.
+                    let mapped_base = if let Some(Type::TemplateParameter(tp)) =
+                        self.get_type(base_type)
+                        && let Some(tp_node_id) = tp.node
+                        && let Some(&mapped_id) = mapper.map.get(&tp_node_id)
+                    {
+                        mapped_id
+                    } else {
+                        base_type
+                    };
+                    if mapped_base != base_type {
+                        return self.lookup_member_on_type(mapped_base, &prop_name, node_id);
+                    }
+                }
+
+                // In template declaration: create a TemplateParameterAccess type
+                let base_name = self
+                    .get_type(base_type)
+                    .and_then(|t| t.name().map(|s| s.to_string()))
+                    .unwrap_or_default();
+                let access_path = format!("{}.{}", base_name, prop_name);
+
+                // Check cache first
+                if let Some(&cached_id) = self.template_access_symbol_cache.get(&access_path) {
+                    self.node_type_map.insert(node_id, cached_id);
+                    return cached_id;
+                }
+
+                // Get constraint from the template parameter
+                let constraint = match self.get_type(base_type) {
+                    Some(Type::TemplateParameter(tp)) => tp.constraint,
+                    Some(Type::TemplateParameterAccess(tpa)) => tpa.constraint,
+                    _ => None,
+                };
+
+                let tpa_id =
+                    self.create_type(Type::TemplateParameterAccess(TemplateParameterAccessType {
+                        id: self.next_type_id(),
+                        name: prop_name.clone(),
+                        node: Some(node_id),
+                        base: base_type,
+                        path: access_path.clone(),
+                        constraint,
+                        is_finished: true,
+                    }));
+                self.template_access_symbol_cache
+                    .insert(access_path, tpa_id);
+                self.node_type_map.insert(node_id, tpa_id);
+                return tpa_id;
+            }
             Some(Type::Namespace(ns)) => {
                 if let Some(member_id) = ns.lookup_member(&prop_name) {
                     self.check_internal_visibility(member_id);
@@ -80,7 +134,7 @@ impl Checker {
                 self.error_type
             }
             Some(Type::Model(m)) => {
-                // Model property access - look up by name
+                // Model property access - look up by name, including inherited properties
                 if let Some(&prop_id) = m.properties.get(&prop_name) {
                     // Check if this property is currently being resolved (circular-prop)
                     if let Some(Type::ModelProperty(prop)) = self.get_type(prop_id)
@@ -94,6 +148,18 @@ impl Checker {
                         return self.error_type;
                     }
                     return prop_id;
+                }
+                // Walk base model chain for inherited properties
+                let mut current = m.base_model;
+                while let Some(base_id) = current {
+                    if let Some(Type::Model(base)) = self.get_type(base_id) {
+                        if let Some(&prop_id) = base.properties.get(&prop_name) {
+                            return prop_id;
+                        }
+                        current = base.base_model;
+                    } else {
+                        break;
+                    }
                 }
                 self.error(
                     "invalid-ref",

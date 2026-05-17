@@ -529,7 +529,26 @@ pub struct TemplateParameterType {
     pub name: String,
     pub node: Option<NodeId>,
     pub constraint: Option<TypeId>,
+    /// Value constraint for mixed constraints (e.g., `T extends string | valueof int32`)
+    pub value_constraint: Option<TypeId>,
     pub default: Option<TypeId>,
+    pub is_finished: bool,
+}
+
+/// Template parameter access type (e.g., T.id, T::returnType).
+/// Represents member access on a template parameter within a template declaration.
+/// Ported from TS TemplateParameterAccess.
+#[derive(Debug, Clone)]
+pub struct TemplateParameterAccessType {
+    pub id: TypeId,
+    pub name: String,
+    pub node: Option<NodeId>,
+    /// The base type being accessed (TemplateParameter or another TemplateParameterAccess)
+    pub base: TypeId,
+    /// The member path in source form (e.g., "T.id")
+    pub path: String,
+    /// The constraint of the template parameter (used for member resolution)
+    pub constraint: Option<TypeId>,
     pub is_finished: bool,
 }
 
@@ -715,6 +734,7 @@ pub enum Type {
     Scalar(ScalarType),
     ScalarConstructor(ScalarConstructorType),
     TemplateParameter(TemplateParameterType),
+    TemplateParameterAccess(TemplateParameterAccessType),
     Tuple(TupleType),
     String(StringType),
     Number(NumericType),
@@ -789,6 +809,7 @@ macro_rules! type_dispatch {
             Type::Scalar($inner) => $body,
             Type::ScalarConstructor($inner) => $body,
             Type::TemplateParameter($inner) => $body,
+            Type::TemplateParameterAccess($inner) => $body,
             Type::Tuple($inner) => $body,
             Type::String($inner) => $body,
             Type::Number($inner) => $body,
@@ -861,6 +882,7 @@ impl Type {
             Type::Scalar(_) => "Scalar",
             Type::ScalarConstructor(_) => "ScalarConstructor",
             Type::TemplateParameter(_) => "TemplateParameter",
+            Type::TemplateParameterAccess(_) => "TemplateParameterAccess",
             Type::Tuple(_) => "Tuple",
             Type::String(_) => "String",
             Type::Number(_) => "Number",
@@ -894,6 +916,7 @@ impl Type {
             Type::UnionVariant(t) => Some(&t.name),
             Type::Scalar(t) => Some(&t.name),
             Type::TemplateParameter(t) => Some(&t.name),
+            Type::TemplateParameterAccess(t) => Some(&t.name),
             Type::Namespace(t) => Some(&t.name),
             Type::Decorator(t) => Some(&t.name),
             Type::FunctionType(t) => Some(&t.name),
@@ -1412,13 +1435,13 @@ pub struct DecoratorArgument {
     pub node: Option<NodeId>,
 }
 
-/// DecoratorMarshalledValue - JS-marshalled values
+/// DecoratorMarshalledValue - marshalled decorator argument values
 #[derive(Debug, Clone)]
 pub enum DecoratorMarshalledValue {
-    Type(NodeId),
-    Value(NodeId),
-    Record(HashMap<String, NodeId>),
-    Array(Vec<NodeId>),
+    Type(TypeId),
+    Value(TypeId),
+    Record(HashMap<String, TypeId>),
+    Array(Vec<TypeId>),
     String(String),
     Number(f64),
     Boolean(bool),

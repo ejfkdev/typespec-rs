@@ -422,15 +422,30 @@ impl Checker {
                     }
                 }
                 "patch" => {
+                    // Check if {implicitOptionality: false} was explicitly passed
+                    let mut explicit_opt_out = false;
+                    if let Some(arg) = args.first() {
+                        if let Some(DecoratorMarshalledValue::Record(ref map)) = arg.js_value {
+                            if let Some(_type_id) = map.get("implicitOptionality") {
+                                // User explicitly passed the option, treat as opt-out of warning
+                                explicit_opt_out = true;
+                            }
+                        } else if let Some(DecoratorMarshalledValue::Boolean(b)) = arg.js_value {
+                            // Edge case: @patch(false) — also opt out
+                            explicit_opt_out = !b;
+                        }
+                    }
                     crate::libs::http::operation::apply_patch(
                         &mut self.state_accessors,
                         type_id,
                         None,
                     );
-                    self.warning(
-                        "deprecated-implicit-optionality",
-                        "@patch with implicit optionality is deprecated. Pass {implicitOptionality: false} to opt out.",
-                    );
+                    if !explicit_opt_out {
+                        self.warning(
+                            "deprecated-implicit-optionality",
+                            "@patch with implicit optionality is deprecated. Pass {implicitOptionality: false} to opt out.",
+                        );
+                    }
                 }
 
                 // ---- HTTP verb decorators ----

@@ -315,16 +315,15 @@ fn get_status_codes_from_type_inner(
         Some(crate::checker::types::Type::Union(u)) => {
             let mut codes = Vec::new();
             for name in &u.variant_names {
-                if let Some(&variant_id) = u.variants.get(name) {
-                    if let Some(crate::checker::types::Type::UnionVariant(v)) =
+                if let Some(&variant_id) = u.variants.get(name)
+                    && let Some(crate::checker::types::Type::UnionVariant(v)) =
                         checker.get_type(variant_id)
-                    {
-                        codes.extend(get_status_codes_from_type_inner(
-                            checker,
-                            v.r#type,
-                            depth + 1,
-                        ));
-                    }
+                {
+                    codes.extend(get_status_codes_from_type_inner(
+                        checker,
+                        v.r#type,
+                        depth + 1,
+                    ));
                 }
             }
             codes
@@ -343,7 +342,7 @@ fn get_status_codes_from_type_inner(
 
 /// Validate a numeric status code (100-599).
 fn validate_status_code(value: i64) -> Vec<HttpStatusCodesEntry> {
-    if value >= 100 && value <= 599 {
+    if (100..=599).contains(&value) {
         vec![HttpStatusCodesEntry::Code(value as u16)]
     } else {
         Vec::new()
@@ -369,10 +368,10 @@ fn parse_status_code_string(s: &str) -> Vec<HttpStatusCodesEntry> {
         }
     }
     // Try parsing as a numeric code
-    if let Ok(code) = s.parse::<u16>() {
-        if code >= 100 && code <= 599 {
-            return vec![HttpStatusCodesEntry::Code(code)];
-        }
+    if let Ok(code) = s.parse::<u16>()
+        && (100..=599).contains(&code)
+    {
+        return vec![HttpStatusCodesEntry::Code(code)];
     }
     Vec::new()
 }

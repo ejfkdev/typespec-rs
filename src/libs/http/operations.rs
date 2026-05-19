@@ -33,12 +33,18 @@ const STATE_SHARED_ROUTES: &str = "TypeSpec.Http.sharedRoutes";
 const STATE_HEADER: &str = "TypeSpec.Http.header";
 const STATE_QUERY: &str = "TypeSpec.Http.query";
 const STATE_PATH: &str = "TypeSpec.Http.path";
+#[allow(dead_code)]
 const STATE_BODY: &str = "TypeSpec.Http.body";
+#[allow(dead_code)]
 const STATE_BODY_ROOT: &str = "TypeSpec.Http.bodyRoot";
+#[allow(dead_code)]
 const STATE_BODY_IGNORE: &str = "TypeSpec.Http.bodyIgnore";
+#[allow(dead_code)]
 const STATE_STATUS_CODE: &str = "TypeSpec.Http.statusCode";
+#[allow(dead_code)]
 const STATE_MULTIPART_BODY: &str = "TypeSpec.Http.multipartBody";
 const STATE_COOKIE: &str = "TypeSpec.Http.cookie";
+#[allow(dead_code)]
 const STATE_CONTENT_TYPE: &str = "TypeSpec.Http.contentType";
 #[allow(dead_code)]
 const STATE_VERBS: &str = "TypeSpec.Http.verbs";
@@ -87,10 +93,10 @@ pub fn resolve_path_and_parameters(
     segments.extend(parent_segments);
 
     // Add the operation's own route
-    if let Some(route) = state.get_state(STATE_ROUTE, operation_id) {
-        if !route.is_empty() {
-            segments.push(route.to_string());
-        }
+    if let Some(route) = state.get_state(STATE_ROUTE, operation_id)
+        && !route.is_empty()
+    {
+        segments.push(route.to_string());
     }
 
     // Check if shared route
@@ -141,10 +147,10 @@ fn collect_segments_and_options(
     let (mut parent_segments, _) = collect_segments_and_options(checker, state, parent);
 
     // Add this scope's route
-    if let Some(route) = state.get_state(STATE_ROUTE, source_id) {
-        if !route.is_empty() {
-            parent_segments.push(route.to_string());
-        }
+    if let Some(route) = state.get_state(STATE_ROUTE, source_id)
+        && !route.is_empty()
+    {
+        parent_segments.push(route.to_string());
     }
 
     (parent_segments, ())
@@ -177,11 +183,8 @@ fn normalize_fragment_for_join(fragment: &str, trim_last: bool) -> String {
     let mut frag = fragment.to_string();
 
     // Needs slash prefix if not starting with allowed separator
-    let needs_prefix = !frag.is_empty()
-        && !frag.starts_with('/')
-        && !frag.starts_with(':')
-        && !frag.starts_with('?')
-        && !(frag.starts_with('{') && frag.len() > 1 && frag.as_bytes()[1] == b'/');
+    let needs_prefix =
+        !frag.is_empty() && !frag.starts_with(['/', ':', '?']) && !frag.starts_with("{/");
 
     if needs_prefix {
         frag = format!("/{}", frag);
@@ -195,6 +198,7 @@ fn normalize_fragment_for_join(fragment: &str, trim_last: bool) -> String {
 }
 
 /// Build a path from segments, normalizing slashes.
+#[allow(dead_code)]
 fn build_path(segments: &[String]) -> String {
     if segments.is_empty() {
         return "/".to_string();
@@ -340,7 +344,7 @@ pub enum HttpPropertyKind {
 
 /// HTTP payload classification result.
 /// Ported from TS `interface HttpPayload`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HttpPayload {
     /// Header parameters
     pub headers: Vec<HttpOperationParameter>,
@@ -362,23 +366,6 @@ pub struct HttpPayload {
     pub content_type_props: Vec<TypeId>,
     /// Multipart body property TypeIds
     pub multipart_body_props: Vec<TypeId>,
-}
-
-impl Default for HttpPayload {
-    fn default() -> Self {
-        Self {
-            headers: Vec::new(),
-            cookies: Vec::new(),
-            queries: Vec::new(),
-            paths: Vec::new(),
-            status_codes: Vec::new(),
-            body_type: None,
-            body_is_explicit: false,
-            body_property_props: Vec::new(),
-            content_type_props: Vec::new(),
-            multipart_body_props: Vec::new(),
-        }
-    }
 }
 
 /// Classify a model's properties into HTTP parameter categories.
@@ -724,17 +711,17 @@ fn infer_body_type(
 
     // Special case: if model has derived models and a discriminator,
     // it technically always has a body with that implicit property
-    if !model.derived_models.is_empty() && has_discriminator(state, &model) {
+    if !model.derived_models.is_empty() && has_discriminator(state, model) {
         return Some(model_id);
     }
 
     // Check for unannotated properties (properties that aren't metadata)
     for prop_name in &model.property_names {
-        if let Some(&prop_id) = model.properties.get(prop_name) {
-            if !is_http_metadata_property(state, prop_id) {
-                // There's at least one non-metadata property, so the model is the body
-                return Some(model_id);
-            }
+        if let Some(&prop_id) = model.properties.get(prop_name)
+            && !is_http_metadata_property(state, prop_id)
+        {
+            // There's at least one non-metadata property, so the model is the body
+            return Some(model_id);
         }
     }
 
@@ -878,21 +865,21 @@ fn process_plain_response(
     let resolved = checker.resolve_alias_chain(type_id);
 
     // Check for void type → 204 No Content
-    if let Some(Type::Intrinsic(i)) = checker.get_type(resolved) {
-        if matches!(i.name, IntrinsicTypeName::Void) {
-            let response = HttpOperationResponse {
-                status_codes: super::operation::HttpStatusCodesEntry::Code(204),
-                response_type: type_id,
-                description: None,
-                responses: vec![HttpOperationResponseContent {
-                    properties: Vec::new(),
-                    headers: Vec::new(),
-                    body: None,
-                }],
-            };
-            response_index.set(super::operation::HttpStatusCodesEntry::Code(204), response);
-            return;
-        }
+    if let Some(Type::Intrinsic(i)) = checker.get_type(resolved)
+        && matches!(i.name, IntrinsicTypeName::Void)
+    {
+        let response = HttpOperationResponse {
+            status_codes: super::operation::HttpStatusCodesEntry::Code(204),
+            response_type: type_id,
+            description: None,
+            responses: vec![HttpOperationResponseContent {
+                properties: Vec::new(),
+                headers: Vec::new(),
+                body: None,
+            }],
+        };
+        response_index.set(super::operation::HttpStatusCodesEntry::Code(204), response);
+        return;
     }
 
     // Default: 200 with body
@@ -987,7 +974,7 @@ fn process_envelope_response(
     // Add response for each status code
     for status_code in status_codes {
         let response = HttpOperationResponse {
-            status_codes: status_code.clone(),
+            status_codes: status_code,
             response_type: type_id,
             description: description.clone(),
             responses: vec![HttpOperationResponseContent {
@@ -1033,7 +1020,7 @@ pub fn get_http_operation(
 
     // Resolve parameters with verb-aware visibility
     let (parameters, inferred_verb) =
-        resolve_operation_parameters(checker, state, &op, &route, explicit_verb);
+        resolve_operation_parameters(checker, state, op, &route, explicit_verb);
 
     let verb = explicit_verb.unwrap_or(inferred_verb);
 
@@ -1255,10 +1242,10 @@ fn collect_servers(
     }
 
     // Check parent namespaces
-    if let Some(Type::Namespace(ns)) = checker.get_type(namespace_id) {
-        if let Some(parent_id) = ns.namespace {
-            servers.extend(collect_servers(state, parent_id, checker));
-        }
+    if let Some(Type::Namespace(ns)) = checker.get_type(namespace_id)
+        && let Some(parent_id) = ns.namespace
+    {
+        servers.extend(collect_servers(state, parent_id, checker));
     }
 
     servers
@@ -1295,23 +1282,23 @@ fn collect_http_operations_recursive(
 
     // Operations in this namespace
     for op_name in &ns.operation_names.clone() {
-        if let Some(&op_id) = ns.operations.get(op_name) {
-            if let Some(http_op) = get_http_operation(checker, state, op_id) {
-                operations.push(http_op);
-            }
+        if let Some(&op_id) = ns.operations.get(op_name)
+            && let Some(http_op) = get_http_operation(checker, state, op_id)
+        {
+            operations.push(http_op);
         }
     }
 
     // Interface operations
     for iface_name in &ns.interface_names.clone() {
-        if let Some(&iface_id) = ns.interfaces.get(iface_name) {
-            if let Some(Type::Interface(iface)) = checker.get_type(iface_id) {
-                for op_name in &iface.operation_names.clone() {
-                    if let Some(&op_id) = iface.operations.get(op_name) {
-                        if let Some(http_op) = get_http_operation(checker, state, op_id) {
-                            operations.push(http_op);
-                        }
-                    }
+        if let Some(&iface_id) = ns.interfaces.get(iface_name)
+            && let Some(Type::Interface(iface)) = checker.get_type(iface_id)
+        {
+            for op_name in &iface.operation_names.clone() {
+                if let Some(&op_id) = iface.operations.get(op_name)
+                    && let Some(http_op) = get_http_operation(checker, state, op_id)
+                {
+                    operations.push(http_op);
                 }
             }
         }
@@ -1693,81 +1680,75 @@ mod tests {
     #[test]
     fn test_header_decorator_on_property() {
         let checker = compile_http("model Params { @header name: string; }");
-        if let Some(&model_id) = checker.declared_types.get("Params") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("name") {
-                    assert!(super::super::is_header(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("Params")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("name")
+        {
+            assert!(super::super::is_header(&checker.state_accessors, prop_id));
         }
     }
 
     #[test]
     fn test_query_decorator_on_property() {
         let checker = compile_http("model Params { @query select: string; }");
-        if let Some(&model_id) = checker.declared_types.get("Params") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("select") {
-                    assert!(super::super::is_query(&checker.state_accessors, prop_id));
-                    // @query without explicit name: get_query_name returns None,
-                    // callers should fall back to the property name
-                    // (matches upstream: defaultQueryName = propertyName)
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("Params")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("select")
+        {
+            assert!(super::super::is_query(&checker.state_accessors, prop_id));
+            // @query without explicit name: get_query_name returns None,
+            // callers should fall back to the property name
+            // (matches upstream: defaultQueryName = propertyName)
         }
     }
 
     #[test]
     fn test_path_decorator_on_property() {
         let checker = compile_http("model Params { @path id: string; }");
-        if let Some(&model_id) = checker.declared_types.get("Params") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("id") {
-                    assert!(super::super::is_path(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("Params")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("id")
+        {
+            assert!(super::super::is_path(&checker.state_accessors, prop_id));
         }
     }
 
     #[test]
     fn test_body_decorator_on_property() {
         let checker = compile_http("model Params { @body data: string; }");
-        if let Some(&model_id) = checker.declared_types.get("Params") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("data") {
-                    assert!(super::super::is_body(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("Params")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("data")
+        {
+            assert!(super::super::is_body(&checker.state_accessors, prop_id));
         }
     }
 
     #[test]
     fn test_status_code_decorator_on_property() {
         let checker = compile_http("model Resp { @statusCode code: 200; }");
-        if let Some(&model_id) = checker.declared_types.get("Resp") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("code") {
-                    assert!(super::super::is_status_code(
-                        &checker.state_accessors,
-                        prop_id
-                    ));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("Resp")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("code")
+        {
+            assert!(super::super::is_status_code(
+                &checker.state_accessors,
+                prop_id
+            ));
         }
     }
 
     #[test]
     fn test_body_ignore_decorator_on_property() {
         let checker = compile_http("model Params { @bodyIgnore key: string; }");
-        if let Some(&model_id) = checker.declared_types.get("Params") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("key") {
-                    assert!(super::super::is_body_ignore(
-                        &checker.state_accessors,
-                        prop_id
-                    ));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("Params")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("key")
+        {
+            assert!(super::super::is_body_ignore(
+                &checker.state_accessors,
+                prop_id
+            ));
         }
     }
 
@@ -1792,15 +1773,14 @@ mod tests {
         let mut status_applied = false;
         if let Some(Type::Model(m)) = checker.get_type(resp_id) {
             for name in &m.property_names {
-                if let Some(&prop_id) = m.properties.get(name) {
-                    if checker
+                if let Some(&prop_id) = m.properties.get(name)
+                    && checker
                         .state_accessors
                         .get_state("TypeSpec.Http.statusCode", prop_id)
                         .is_some()
-                    {
-                        status_applied = true;
-                        break;
-                    }
+                {
+                    status_applied = true;
+                    break;
                 }
             }
         }
@@ -1831,15 +1811,14 @@ mod tests {
         let mut body_applied = false;
         if let Some(Type::Model(m)) = checker.get_type(resp_id) {
             for name in &m.property_names {
-                if let Some(&prop_id) = m.properties.get(name) {
-                    if checker
+                if let Some(&prop_id) = m.properties.get(name)
+                    && checker
                         .state_accessors
                         .get_state("TypeSpec.Http.body", prop_id)
                         .is_some()
-                    {
-                        body_applied = true;
-                        break;
-                    }
+                {
+                    body_applied = true;
+                    break;
                 }
             }
         }
@@ -1916,17 +1895,15 @@ mod tests {
         "#,
         );
         // Find the operation through the namespace
-        if let Some(&ns_id) = checker.declared_types.get("Things") {
-            if let Some(Type::Namespace(ns)) = checker.get_type(ns_id) {
-                if let Some(&op_id) = ns.operations.get("GetThing") {
-                    let route =
-                        resolve_path_and_parameters(&checker, &checker.state_accessors, op_id);
-                    assert_eq!(
-                        route.path, "/things",
-                        "Route should combine namespace route"
-                    );
-                }
-            }
+        if let Some(&ns_id) = checker.declared_types.get("Things")
+            && let Some(Type::Namespace(ns)) = checker.get_type(ns_id)
+            && let Some(&op_id) = ns.operations.get("GetThing")
+        {
+            let route = resolve_path_and_parameters(&checker, &checker.state_accessors, op_id);
+            assert_eq!(
+                route.path, "/things",
+                "Route should combine namespace route"
+            );
         }
     }
 
@@ -2554,16 +2531,14 @@ mod tests {
                 .get_state("TypeSpec.Http.useAuth", ns_id)
                 .is_some();
             // Auth decorator may or may not be applied depending on decorator resolution
-            if has_auth {
-                if let Some(&op_id) = checker.declared_types.get("index") {
-                    let auth =
-                        get_authentication_for_operation(&checker.state_accessors, op_id, &checker);
-                    // Auth should walk up from operation to namespace
-                    assert!(
-                        auth.is_some(),
-                        "Operation should inherit auth from namespace"
-                    );
-                }
+            if has_auth && let Some(&op_id) = checker.declared_types.get("index") {
+                let auth =
+                    get_authentication_for_operation(&checker.state_accessors, op_id, &checker);
+                // Auth should walk up from operation to namespace
+                assert!(
+                    auth.is_some(),
+                    "Operation should inherit auth from namespace"
+                );
             }
         }
     }

@@ -1312,19 +1312,18 @@ mod tests {
     fn test_header_name_from_property() {
         // Ported from http-decorators.test.ts: "@header generate header name from property name"
         let checker = compile_http("model M { @header myHeader: string; }");
-        if let Some(&model_id) = checker.declared_types.get("M") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("myHeader") {
-                    assert!(is_header(&checker.state_accessors, prop_id));
-                    // Default header name should be kebab-cased property name
-                    let name = get_header_name(&checker.state_accessors, prop_id);
-                    // The default name is either the property name or kebab-case
-                    assert!(
-                        name.is_some() || is_header(&checker.state_accessors, prop_id),
-                        "Header should be applied with or without explicit name"
-                    );
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("M")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("myHeader")
+        {
+            assert!(is_header(&checker.state_accessors, prop_id));
+            // Default header name should be kebab-cased property name
+            let name = get_header_name(&checker.state_accessors, prop_id);
+            // The default name is either the property name or kebab-case
+            assert!(
+                name.is_some() || is_header(&checker.state_accessors, prop_id),
+                "Header should be applied with or without explicit name"
+            );
         }
     }
 
@@ -1332,12 +1331,11 @@ mod tests {
     fn test_query_name_from_property() {
         // Ported from http-decorators.test.ts: "@query generate query name from property name"
         let checker = compile_http("model M { @query select: string; }");
-        if let Some(&model_id) = checker.declared_types.get("M") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("select") {
-                    assert!(is_query(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("M")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("select")
+        {
+            assert!(is_query(&checker.state_accessors, prop_id));
         }
     }
 
@@ -1345,12 +1343,11 @@ mod tests {
     fn test_path_name_from_property() {
         // Ported from http-decorators.test.ts: "@path generate path name from property name"
         let checker = compile_http("model M { @path id: string; }");
-        if let Some(&model_id) = checker.declared_types.get("M") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("id") {
-                    assert!(is_path(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("M")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("id")
+        {
+            assert!(is_path(&checker.state_accessors, prop_id));
         }
     }
 
@@ -1358,12 +1355,11 @@ mod tests {
     fn test_body_decorator_sets_body() {
         // Ported from http-decorators.test.ts: "@body set the body with @body"
         let checker = compile_http("model M { @body data: string; }");
-        if let Some(&model_id) = checker.declared_types.get("M") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("data") {
-                    assert!(is_body(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("M")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("data")
+        {
+            assert!(is_body(&checker.state_accessors, prop_id));
         }
     }
 
@@ -1371,12 +1367,11 @@ mod tests {
     fn test_body_root_decorator() {
         // Ported from http-decorators.test.ts: "@bodyRoot set the body root with @bodyRoot"
         let checker = compile_http("model M { @bodyRoot data: string; }");
-        if let Some(&model_id) = checker.declared_types.get("M") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("data") {
-                    assert!(is_body_root(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("M")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("data")
+        {
+            assert!(is_body_root(&checker.state_accessors, prop_id));
         }
     }
 
@@ -1384,12 +1379,11 @@ mod tests {
     fn test_body_ignore_decorator() {
         // Ported from http-decorators.test.ts: "@bodyIgnore"
         let checker = compile_http("model M { @bodyIgnore key: string; }");
-        if let Some(&model_id) = checker.declared_types.get("M") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("key") {
-                    assert!(is_body_ignore(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("M")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("key")
+        {
+            assert!(is_body_ignore(&checker.state_accessors, prop_id));
         }
     }
 
@@ -1397,12 +1391,11 @@ mod tests {
     fn test_status_code_decorator() {
         // Ported from http-decorators.test.ts: "@statusCode set numeric statusCode"
         let checker = compile_http("model M { @statusCode code: 201; }");
-        if let Some(&model_id) = checker.declared_types.get("M") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("code") {
-                    assert!(is_status_code(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("M")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("code")
+        {
+            assert!(is_status_code(&checker.state_accessors, prop_id));
         }
     }
 
@@ -1410,12 +1403,11 @@ mod tests {
     fn test_cookie_decorator() {
         // Ported from http-decorators.test.ts: "@cookie"
         let checker = compile_http("model M { @cookie token: string; }");
-        if let Some(&model_id) = checker.declared_types.get("M") {
-            if let Some(Type::Model(m)) = checker.get_type(model_id) {
-                if let Some(&prop_id) = m.properties.get("token") {
-                    assert!(is_cookie(&checker.state_accessors, prop_id));
-                }
-            }
+        if let Some(&model_id) = checker.declared_types.get("M")
+            && let Some(Type::Model(m)) = checker.get_type(model_id)
+            && let Some(&prop_id) = m.properties.get("token")
+        {
+            assert!(is_cookie(&checker.state_accessors, prop_id));
         }
     }
 

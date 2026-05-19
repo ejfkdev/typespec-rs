@@ -792,8 +792,10 @@ pub struct AssetEmitter<T: Default + Debug + Clone> {
     /// The type emitter delegate
     type_emitter: Box<dyn TypeEmitter<T>>,
     /// Cache of already-emitted types, keyed by (method, type_id, context_key)
+    #[allow(dead_code)]
     emit_cache: HashMap<String, EmitEntity<T>>,
     /// Currently-emitting types (for cycle detection)
+    #[allow(dead_code)]
     emitting_stack: Vec<TypeId>,
     /// Source files produced
     source_files: Vec<EmittedSourceFile<T>>,
@@ -805,6 +807,7 @@ pub struct AssetEmitter<T: Default + Debug + Clone> {
     program_context_initialized: bool,
     /// Waiting circular reference callbacks
     /// Key: cache key of the circular entity, Value: list of waiting callbacks
+    #[allow(dead_code, clippy::type_complexity)]
     waiting_circular_refs: HashMap<String, Vec<Box<dyn FnOnce(EmitEntity<T>) -> EmitEntity<T>>>>,
     /// Current scope name (for declarations)
     current_scope_name: Option<String>,
@@ -878,18 +881,18 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                     (
                         "modelInstantiation",
                         self.type_emitter
-                            .model_instantiation(checker, type_id, &name, &m, self),
+                            .model_instantiation(checker, type_id, &name, m, self),
                     )
                 } else if has_name {
                     (
                         "modelDeclaration",
                         self.type_emitter
-                            .model_declaration(checker, type_id, &name, &m, self),
+                            .model_declaration(checker, type_id, &name, m, self),
                     )
                 } else {
                     (
                         "modelLiteral",
-                        self.type_emitter.model_literal(checker, type_id, &m, self),
+                        self.type_emitter.model_literal(checker, type_id, m, self),
                     )
                 }
             }
@@ -900,13 +903,13 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                     (
                         "scalarInstantiation",
                         self.type_emitter
-                            .scalar_instantiation(checker, type_id, &name, &s, self),
+                            .scalar_instantiation(checker, type_id, &name, s, self),
                     )
                 } else {
                     (
                         "scalarDeclaration",
                         self.type_emitter
-                            .scalar_declaration(checker, type_id, &name, &s, self),
+                            .scalar_declaration(checker, type_id, &name, s, self),
                     )
                 }
             }
@@ -915,7 +918,7 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 (
                     "enumDeclaration",
                     self.type_emitter
-                        .enum_declaration(checker, type_id, &name, &e, self),
+                        .enum_declaration(checker, type_id, &name, e, self),
                 )
             }
             Some(Type::Union(u)) => {
@@ -925,18 +928,18 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                     (
                         "unionInstantiation",
                         self.type_emitter
-                            .union_instantiation(checker, type_id, &name, &u, self),
+                            .union_instantiation(checker, type_id, &name, u, self),
                     )
                 } else if name.is_empty() {
                     (
                         "unionLiteral",
-                        self.type_emitter.union_literal(checker, type_id, &u, self),
+                        self.type_emitter.union_literal(checker, type_id, u, self),
                     )
                 } else {
                     (
                         "unionDeclaration",
                         self.type_emitter
-                            .union_declaration(checker, type_id, &name, &u, self),
+                            .union_declaration(checker, type_id, &name, u, self),
                     )
                 }
             }
@@ -945,7 +948,7 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 (
                     "interfaceDeclaration",
                     self.type_emitter
-                        .interface_declaration(checker, type_id, &name, &i, self),
+                        .interface_declaration(checker, type_id, &name, i, self),
                 )
             }
             Some(Type::Operation(o)) => {
@@ -956,13 +959,13 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                     (
                         "interfaceOperationDeclaration",
                         self.type_emitter
-                            .interface_operation_declaration(checker, type_id, &name, &o, self),
+                            .interface_operation_declaration(checker, type_id, &name, o, self),
                     )
                 } else {
                     (
                         "operationDeclaration",
                         self.type_emitter
-                            .operation_declaration(checker, type_id, &name, &o, self),
+                            .operation_declaration(checker, type_id, &name, o, self),
                     )
                 }
             }
@@ -971,7 +974,7 @@ impl<T: Default + Debug + Clone + 'static> AssetEmitter<T> {
                 (
                     "namespace",
                     self.type_emitter
-                        .emit_namespace(checker, type_id, &name, &ns, self),
+                        .emit_namespace(checker, type_id, &name, ns, self),
                 )
             }
             Some(Type::Intrinsic(i)) => {

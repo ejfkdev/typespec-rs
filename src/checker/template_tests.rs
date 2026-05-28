@@ -527,7 +527,7 @@ mod template_tests {
     fn test_template_model_is_declared() {
         let checker = check("model Pair<K, V> { key: K; value: V; }");
         assert!(
-            checker.declared_types.contains_key("Pair"),
+            checker.get_type_by_name("Pair").is_some(),
             "Pair should be in declared_types"
         );
     }
@@ -537,14 +537,14 @@ mod template_tests {
         let checker = check(
             "model Pair<K, V> { key: K; value: V; } model StringPair extends Pair<string, int32> {}",
         );
-        assert!(checker.declared_types.contains_key("Pair"));
-        assert!(checker.declared_types.contains_key("StringPair"));
+        assert!(checker.get_type_by_name("Pair").is_some());
+        assert!(checker.get_type_by_name("StringPair").is_some());
     }
 
     #[test]
     fn test_template_model_instantiation_via_is() {
         let checker = check("model Box<T> { content: T; } model MyBox is Box<string> {}");
-        let my_box_type = checker.declared_types.get("MyBox").copied().unwrap();
+        let my_box_type = checker.get_type_by_name("MyBox").unwrap();
         let t = checker.get_type(my_box_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -561,7 +561,7 @@ mod template_tests {
     fn test_template_interface_is_declared() {
         let checker = check("interface Container<T> { get(): T; }");
         assert!(
-            checker.declared_types.contains_key("Container"),
+            checker.get_type_by_name("Container").is_some(),
             "Container should be in declared_types"
         );
     }
@@ -570,7 +570,7 @@ mod template_tests {
     fn test_template_union_is_declared() {
         let checker = check("union Result<T, E> { ok: T; err: E; }");
         assert!(
-            checker.declared_types.contains_key("Result"),
+            checker.get_type_by_name("Result").is_some(),
             "Result should be in declared_types"
         );
     }
@@ -579,7 +579,7 @@ mod template_tests {
     fn test_template_alias_is_declared() {
         let checker = check("alias Optional<T> = T | null;");
         assert!(
-            checker.declared_types.contains_key("Optional"),
+            checker.get_type_by_name("Optional").is_some(),
             "Optional should be in declared_types"
         );
     }
@@ -588,7 +588,7 @@ mod template_tests {
     fn test_template_scalar_is_declared() {
         let checker = check("scalar Id<T extends valueof string> extends string;");
         assert!(
-            checker.declared_types.contains_key("Id"),
+            checker.get_type_by_name("Id").is_some(),
             "Id should be in declared_types"
         );
     }
@@ -598,7 +598,7 @@ mod template_tests {
         let checker = check("op create<T>(value: T): T;");
         // Operations with templates should still be declared
         assert!(
-            checker.declared_types.contains_key("create"),
+            checker.get_type_by_name("create").is_some(),
             "create operation should be in declared_types"
         );
     }
@@ -606,7 +606,7 @@ mod template_tests {
     #[test]
     fn test_template_model_with_decorator() {
         let checker = check("@doc model Foo<T> { x: T; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -619,7 +619,7 @@ mod template_tests {
     #[test]
     fn test_template_model_in_namespace() {
         let checker = check("namespace N { model Foo<T> { x: T; } }");
-        let ns_type = checker.declared_types.get("N").copied().unwrap();
+        let ns_type = checker.get_type_by_name("N").unwrap();
         let t = checker.get_type(ns_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -963,7 +963,7 @@ mod template_tests {
             };
         ",
         );
-        let b_type = checker.declared_types.get("B").copied().unwrap();
+        let b_type = checker.get_type_by_name("B").unwrap();
         let t = checker.get_type(b_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -1001,7 +1001,7 @@ mod template_tests {
             };
         ",
         );
-        let b_type = checker.declared_types.get("B").copied().unwrap();
+        let b_type = checker.get_type_by_name("B").unwrap();
         let t = checker.get_type(b_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -1027,7 +1027,7 @@ mod template_tests {
             }
         ",
         );
-        let test_type = checker.declared_types.get("Test").copied().unwrap();
+        let test_type = checker.get_type_by_name("Test").unwrap();
         let t = checker.get_type(test_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -1062,7 +1062,7 @@ mod template_tests {
             };
         ",
         );
-        let test_type = checker.declared_types.get("Test").copied().unwrap();
+        let test_type = checker.get_type_by_name("Test").unwrap();
         let t = checker.get_type(test_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -1118,7 +1118,7 @@ mod template_tests {
         );
         // Check that Test has property x
         assert!(
-            checker.declared_types.contains_key("Test"),
+            checker.get_type_by_name("Test").is_some(),
             "Test should be in declared_types"
         );
     }

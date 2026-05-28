@@ -19,7 +19,7 @@ use crate::checker::test_utils::check;
 fn test_typeof_const_without_explicit_type() {
     // Ported from TS: "const without an explicit type return the precise type of the value"
     let checker = check("const a = 123; model Foo { x: typeof a; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -54,7 +54,7 @@ fn test_typeof_const_without_explicit_type() {
 fn test_typeof_const_string() {
     // typeof a where a = "hello" should give String type
     let checker = check("const a = \"hello\"; model Foo { x: typeof a; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -84,7 +84,7 @@ fn test_typeof_const_string() {
 fn test_typeof_const_boolean() {
     // typeof a where a = true should give Boolean type
     let checker = check("const a = true; model Foo { x: typeof a; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -111,7 +111,7 @@ fn test_typeof_const_boolean() {
 fn test_typeof_expression_produces_type() {
     // typeof expression should at least produce a type (even if simplified)
     let checker = check("const a = 123; model Foo { x: typeof a; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -128,7 +128,7 @@ fn test_typeof_expression_produces_type() {
 fn test_typeof_in_alias() {
     let checker = check("const a = 123; alias X = typeof a;");
     assert!(
-        checker.declared_types.contains_key("X"),
+        checker.get_type_by_name("X").is_some(),
         "typeof alias should be declared"
     );
 }
@@ -196,7 +196,7 @@ fn test_typeof_const_with_explicit_type() {
     // Ported from TS: "const with an explicit type return const type"
     // const a: int32 = 123; typeof a should give Scalar(int32), not Number(123)
     let checker = check("const a: int32 = 123; model Foo { x: typeof a; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {

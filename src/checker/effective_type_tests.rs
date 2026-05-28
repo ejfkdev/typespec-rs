@@ -23,7 +23,7 @@ use crate::checker::test_utils::check;
 fn test_effective_type_named_model_returns_self() {
     // Named models are their own effective type
     let checker = check("model Foo { x: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let effective = checker.get_effective_model_type(foo_type);
     assert_eq!(effective, foo_type);
 }
@@ -32,8 +32,8 @@ fn test_effective_type_named_model_returns_self() {
 fn test_effective_type_model_is_returns_source() {
     // Model 'is' sets source_model, effective type for anonymous models returns source
     let checker = check("model A { x: string; } model B is A { y: int32; }");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
 
     // B is named, so its effective type is itself
     assert_eq!(checker.get_effective_model_type(b_type), b_type);
@@ -52,7 +52,7 @@ fn test_effective_type_model_is_returns_source() {
 fn test_effective_type_empty_anonymous_model() {
     // Ported from: "empty model"
     let checker = check("model Foo { test: {}; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -78,7 +78,7 @@ fn test_effective_type_empty_anonymous_model() {
 fn test_effective_type_model_extends_is_self() {
     // Named model with extends: effective type is itself
     let checker = check("model Base { x: string; } model Derived extends Base { y: int32; }");
-    let derived_type = checker.declared_types.get("Derived").copied().unwrap();
+    let derived_type = checker.get_type_by_name("Derived").unwrap();
     let effective = checker.get_effective_model_type(derived_type);
     assert_eq!(
         effective, derived_type,
@@ -90,8 +90,8 @@ fn test_effective_type_model_extends_is_self() {
 fn test_effective_type_model_is_chain() {
     // Model is chain: effective type of each named model is itself
     let checker = check("model A { x: string; } model B is A { y: int32; }");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     assert_eq!(checker.get_effective_model_type(a_type), a_type);
     assert_eq!(checker.get_effective_model_type(b_type), b_type);
 }
@@ -114,7 +114,7 @@ fn test_effective_type_spread_model_properties() {
         model Test { test: { ...Source }; }
     ",
     );
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
 
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
@@ -158,7 +158,7 @@ fn test_effective_type_extends_with_spread() {
         model Test { test: { ...Derived }; }
     ",
     );
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
 
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
@@ -198,7 +198,7 @@ fn test_effective_type_unsourced_property() {
         model Test { test: { notRemoved: string, ...Source }; }
     ",
     );
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
 
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
@@ -236,8 +236,8 @@ fn test_effective_type_intersect() {
         model Test { test: Source & {}; }
     ",
     );
-    let source_type = checker.declared_types.get("Source").copied().unwrap();
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let source_type = checker.get_type_by_name("Source").unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
 
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
@@ -273,8 +273,8 @@ fn test_effective_type_different_sources() {
         model Test { test: SourceOne & SourceTwo; }
     ",
     );
-    let source_one_type = checker.declared_types.get("SourceOne").copied().unwrap();
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let source_one_type = checker.get_type_by_name("SourceOne").unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
 
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
@@ -330,7 +330,7 @@ fn test_effective_type_indirect_spread() {
         model Test { test: { ...Spread } }
     ",
     );
-    let test_id = checker.declared_types.get("Test").copied().unwrap();
+    let test_id = checker.get_type_by_name("Test").unwrap();
     let test_type = checker.get_type(test_id).cloned().unwrap();
     match test_type {
         Type::Model(m) => {
@@ -339,7 +339,7 @@ fn test_effective_type_indirect_spread() {
             match test_prop {
                 Type::ModelProperty(p) => {
                     let effective = checker.get_effective_model_type(p.r#type);
-                    let source_id = checker.declared_types.get("Source").copied().unwrap();
+                    let source_id = checker.get_type_by_name("Source").unwrap();
                     // Effective type should be Source (resolved through alias)
                     assert_eq!(
                         effective, source_id,
@@ -363,8 +363,8 @@ fn test_effective_type_intersect_empty() {
         model Test { test: Source & {} }
     ",
     );
-    let source_id = checker.declared_types.get("Source").copied().unwrap();
-    let test_id = checker.declared_types.get("Test").copied().unwrap();
+    let source_id = checker.get_type_by_name("Source").unwrap();
+    let test_id = checker.get_type_by_name("Test").unwrap();
     let test_type = checker.get_type(test_id).cloned().unwrap();
     match test_type {
         Type::Model(m) => {
@@ -397,8 +397,8 @@ fn test_effective_type_extends_spread() {
         model Test { test: { ...Derived } }
     ",
     );
-    let derived_id = checker.declared_types.get("Derived").copied().unwrap();
-    let test_id = checker.declared_types.get("Test").copied().unwrap();
+    let derived_id = checker.get_type_by_name("Derived").unwrap();
+    let test_id = checker.get_type_by_name("Test").unwrap();
     let test_type = checker.get_type(test_id).cloned().unwrap();
     match test_type {
         Type::Model(m) => {
@@ -429,7 +429,7 @@ fn test_effective_type_empty_model() {
         model Test { test: {} }
     ",
     );
-    let test_id = checker.declared_types.get("Test").copied().unwrap();
+    let test_id = checker.get_type_by_name("Test").unwrap();
     let test_type = checker.get_type(test_id).cloned().unwrap();
     match test_type {
         Type::Model(m) => {
@@ -459,7 +459,7 @@ fn test_effective_type_empty_model() {
 fn test_filter_model_properties_no_filter() {
     // No properties filtered out — should return same TypeId
     let mut checker = check("model Pet { name: string; age: int32; }");
-    let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+    let pet_id = checker.get_type_by_name("Pet").unwrap();
     let filtered = crate::checker::filter_model_properties(&mut checker, pet_id, &|_| true);
     assert_eq!(
         filtered, pet_id,
@@ -471,7 +471,7 @@ fn test_filter_model_properties_no_filter() {
 fn test_filter_model_properties_with_filter() {
     // Filter out non-string properties — should create new anonymous model
     let mut checker = check("model Pet { name: string; age: int32; }");
-    let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+    let pet_id = checker.get_type_by_name("Pet").unwrap();
 
     // Collect property name-to-isString mapping before filtering
     let mut prop_is_string = std::collections::HashMap::new();
@@ -511,7 +511,7 @@ fn test_filter_model_properties_with_filter() {
 fn test_filter_model_properties_all_filtered() {
     // All properties filtered out — should create empty anonymous model
     let mut checker = check("model Pet { name: string; age: int32; }");
-    let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+    let pet_id = checker.get_type_by_name("Pet").unwrap();
 
     let filtered = crate::checker::filter_model_properties(&mut checker, pet_id, &|_| false);
     assert_ne!(
@@ -537,7 +537,7 @@ fn test_filter_model_properties_all_filtered() {
 fn test_effective_type_record() {
     // Record<string> is a model with string indexer, effective type is itself
     let checker = check("alias R = Record<string>;");
-    let r_id = checker.declared_types.get("R").copied().unwrap();
+    let r_id = checker.get_type_by_name("R").unwrap();
     let resolved = checker.resolve_alias_chain(r_id);
     let effective = checker.get_effective_model_type(resolved);
     assert_eq!(
@@ -550,7 +550,7 @@ fn test_effective_type_record() {
 fn test_effective_type_array() {
     // string[] is an array model (has integer indexer), effective type is itself
     let checker = check("alias A = string[];");
-    let a_id = checker.declared_types.get("A").copied().unwrap();
+    let a_id = checker.get_type_by_name("A").unwrap();
     let resolved = checker.resolve_alias_chain(a_id);
     let effective = checker.get_effective_model_type(resolved);
     assert_eq!(effective, resolved, "Array effective type should be itself");
@@ -564,7 +564,7 @@ fn test_effective_type_array() {
 fn test_effective_type_with_filter_named_model() {
     // Named model with filter still returns self
     let checker = check("model Foo { x: string; y: int32; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let effective = checker.get_effective_model_type_with_filter(foo_type, Some(&|_| true));
     assert_eq!(
         effective, foo_type,
@@ -576,7 +576,7 @@ fn test_effective_type_with_filter_named_model() {
 fn test_effective_type_with_filter_no_filter_same_as_base() {
     // With no filter, get_effective_model_type_with_filter behaves like get_effective_model_type
     let checker = check("model Foo { x: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let base = checker.get_effective_model_type(foo_type);
     let with_filter = checker.get_effective_model_type_with_filter(foo_type, None);
     assert_eq!(base, with_filter, "No filter should match base behavior");

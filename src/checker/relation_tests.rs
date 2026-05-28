@@ -18,9 +18,7 @@ use crate::checker::{Checker, Type};
 /// Get TypeId by name, checking declared_types, std_types, and intrinsic fields
 fn get_type_id(checker: &Checker, name: &str) -> Option<crate::checker::types::TypeId> {
     checker
-        .declared_types
-        .get(name)
-        .copied()
+        .get_type_by_name(name)
         .or_else(|| checker.std_types.get(name).copied())
         .or(match name {
             "void" => Some(checker.void_type),
@@ -710,7 +708,7 @@ fn test_enum_member_not_assignable_to_different_enum() {
 #[test]
 fn test_filter_model_properties_no_filter() {
     let mut checker = check("model Pet { name: string; age: int32; }");
-    let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+    let pet_id = checker.get_type_by_name("Pet").unwrap();
     let filtered = crate::checker::filter_model_properties(&mut checker, pet_id, &|_| true);
     // No properties filtered out, should return same TypeId
     assert_eq!(
@@ -722,7 +720,7 @@ fn test_filter_model_properties_no_filter() {
 #[test]
 fn test_filter_model_properties_with_filter() {
     let mut checker = check("model Pet { name: string; age: int32; }");
-    let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+    let pet_id = checker.get_type_by_name("Pet").unwrap();
 
     // Collect property name-to-isString mapping before filtering
     let mut prop_is_string = std::collections::HashMap::new();
@@ -768,7 +766,7 @@ fn test_filter_model_properties_with_filter() {
 #[test]
 fn test_deprecation_tracking() {
     let mut checker = check("model Foo { name: string; }");
-    let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
     assert!(
         !checker.is_deprecated(foo_id),
         "Type should not be deprecated initially"
@@ -792,7 +790,7 @@ fn test_deprecation_tracking() {
 #[test]
 fn test_find_indexer_on_model_without_indexer() {
     let checker = check("model Foo { name: string; }");
-    let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
     assert!(
         checker.find_indexer(foo_id).is_none(),
         "Model without indexer should return None"
@@ -802,7 +800,7 @@ fn test_find_indexer_on_model_without_indexer() {
 #[test]
 fn test_find_indexer_on_record_model() {
     let checker = check("alias R = Record<string>;");
-    let r_id = checker.declared_types.get("R").copied().unwrap();
+    let r_id = checker.get_type_by_name("R").unwrap();
     // Record<string> resolves to a model with a string-keyed indexer
     // The alias resolves to a Scalar pointing at the underlying model
     let resolved_id = checker.resolve_alias_chain(r_id);
@@ -1458,7 +1456,7 @@ fn test_record_with_model_property_same_type() {
     // if the model has a compatible indexer
     // Note: This depends on the model-to-record compatibility logic
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "Model A should be declared"
     );
 }
@@ -1468,7 +1466,7 @@ fn test_intersect_records_assignable() {
     // Ported from TS: "can intersect 2 record"
     let checker = check("alias A = Record<string> & Record<string>;");
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "Intersection of same Record types should be valid"
     );
 }
@@ -1640,7 +1638,7 @@ fn test_record_add_property_same_type_as_indexer() {
     // Ported from TS: "can add property of subtype of indexer"
     let checker = check("model A { ...Record<string> }");
     // Model with Record<string> spread should be valid
-    assert!(checker.declared_types.contains_key("A"));
+    assert!(checker.get_type_by_name("A").is_some());
 }
 
 #[test]
@@ -1649,7 +1647,7 @@ fn test_record_intersect_record_has_indexer() {
     // Record<{foo: string}> & Record<{bar: string}> should have an indexer
     // and merged properties (foo, bar)
     let checker = check("alias Foo = Record<{foo: string}> & Record<{bar: string}>;");
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     if let Some(fid) = foo_id {
         let resolved = checker.resolve_alias_chain(fid);
         if let Some(Type::Model(m)) = checker.get_type(resolved) {
@@ -1670,7 +1668,7 @@ fn test_template_constraint_assignable() {
     // Ported from TS: "pass if the argument is assignable to the constraint"
     let checker = check("model A<T extends string> { a: T } model B { foo: A<\"hello\"> }");
     assert!(
-        checker.declared_types.contains_key("B"),
+        checker.get_type_by_name("B").is_some(),
         "Template with string constraint should accept string literal"
     );
 }
@@ -1682,7 +1680,7 @@ fn test_template_constraint_multiple() {
         "model A<T extends string, U extends numeric> { a: T, b: U } model B { foo: A<\"hello\", 42> }",
     );
     assert!(
-        checker.declared_types.contains_key("B"),
+        checker.get_type_by_name("B").is_some(),
         "Template with multiple constraints should accept matching args"
     );
 }
@@ -1700,11 +1698,11 @@ fn test_recursive_anonymous_models_assignable() {
     // Verify parsing recursive models doesn't crash
     let checker = check("model A { a: A } model B { b: B }");
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "Recursive model A should be declared"
     );
     assert!(
-        checker.declared_types.contains_key("B"),
+        checker.get_type_by_name("B").is_some(),
         "Recursive model B should be declared"
     );
 }
@@ -1718,7 +1716,7 @@ fn test_spread_record_allows_other_properties() {
     // Ported from TS: "spread Record<string> lets other property be non string"
     // This is about model validation, not assignability per se
     let checker = check("model A { ...Record<string>, name: string }");
-    assert!(checker.declared_types.contains_key("A"));
+    assert!(checker.get_type_by_name("A").is_some());
 }
 
 #[test]
@@ -1735,7 +1733,7 @@ fn test_spread_record_model_must_respect_indexer() {
             || d.message.contains("Index")
     });
     // If we don't report this yet, at least the model should be created
-    assert!(checker.declared_types.contains_key("A"));
+    assert!(checker.get_type_by_name("A").is_some());
 }
 
 // ============================================================================
@@ -1864,7 +1862,7 @@ fn test_intersection_model_with_record_incompatible() {
     // TS: "cannot intersect model with property incompatible with record"
     let checker = check("alias A = Record<int32> & {prop1: string};");
     // This should still create the type (even if it might have diagnostics)
-    assert!(checker.declared_types.contains_key("A"));
+    assert!(checker.get_type_by_name("A").is_some());
 }
 
 #[test]
@@ -1872,21 +1870,21 @@ fn test_intersection_model_with_scalar_not_allowed() {
     // TS: "cannot intersect model with a scalar"
     let checker = check("alias A = string & {prop1: string};");
     // Intersection of scalar and model should produce diagnostics
-    assert!(checker.declared_types.contains_key("A"));
+    assert!(checker.get_type_by_name("A").is_some());
 }
 
 #[test]
 fn test_intersection_array_and_record_not_allowed() {
     // TS: "cannot intersect array and Record"
     let checker = check("alias A = string[] & Record<string>;");
-    assert!(checker.declared_types.contains_key("A"));
+    assert!(checker.get_type_by_name("A").is_some());
 }
 
 #[test]
 fn test_intersection_array_and_model_not_allowed() {
     // TS: "cannot intersect array and model"
     let checker = check("alias A = string[] & {foo: string};");
-    assert!(checker.declared_types.contains_key("A"));
+    assert!(checker.get_type_by_name("A").is_some());
 }
 
 // ============================================================================
@@ -1985,7 +1983,7 @@ fn test_template_constraint_pass_with_assignable_arg() {
     ",
     );
     assert!(
-        checker.declared_types.contains_key("Test"),
+        checker.get_type_by_name("Test").is_some(),
         "Template with assignable constraint arg should be valid"
     );
 }
@@ -2006,7 +2004,7 @@ fn test_template_constraint_pass_with_multiple_constraints() {
     ",
     );
     assert!(
-        checker.declared_types.contains_key("Test"),
+        checker.get_type_by_name("Test").is_some(),
         "Template with multiple constraint args should be valid"
     );
 }

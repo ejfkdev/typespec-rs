@@ -24,7 +24,7 @@ fn test_spread_copies_properties() {
     // Ported from TS: "can extend one other interfaces" (spread variant)
     // model A { x: string } model B { ...A }
     let checker = check("model A { x: string; } model B { ...A; }");
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -47,7 +47,7 @@ fn test_spread_multiple_models() {
         model C { ...A, ...B; }
     ",
     );
-    let c_type = checker.declared_types.get("C").copied().unwrap();
+    let c_type = checker.get_type_by_name("C").unwrap();
     let t = checker.get_type(c_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -63,7 +63,7 @@ fn test_spread_multiple_models() {
 fn test_spread_with_own_properties() {
     // model A { x: string } model B { ...A, y: int32 }
     let checker = check("model A { x: string; } model B { ...A; y: int32; }");
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -92,7 +92,7 @@ fn test_spread_merges_namespaces() {
         }
     ",
     );
-    let z_type = checker.declared_types.get("Z").copied().unwrap();
+    let z_type = checker.get_type_by_name("Z").unwrap();
     let t = checker.get_type(z_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -248,7 +248,7 @@ fn test_spread_duplicate_property_detected() {
 fn test_spread_record_type() {
     // Ported from TS: "can spread a Record<T>"
     let checker = check("model Test { ...Record<int32>; }");
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -286,7 +286,7 @@ fn test_spread_array_model_detected() {
 fn test_spread_empty_model() {
     // Spreading an empty model should work without errors
     let checker = check("model Empty {} model Foo { ...Empty; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -305,7 +305,7 @@ fn test_spread_empty_model() {
 fn test_spread_model_with_optional_properties() {
     // Spreading a model with optional properties
     let checker = check("model A { x?: string; } model B { ...A; }");
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -329,7 +329,7 @@ fn test_spread_in_namespace_model() {
         }
     ",
     );
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -347,7 +347,7 @@ fn test_spread_in_namespace_model() {
 fn test_spread_with_decorator_on_source() {
     // Properties from spread should be present (decorators may not be cloned independently)
     let checker = check("model A { @doc x: string; } model B { ...A; }");
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -462,7 +462,7 @@ fn test_spread_template_model() {
         model Foo { ...Template<string>; }
     ",
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -493,7 +493,7 @@ fn test_spread_resolved_before_declared_before() {
         }
     ",
     );
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -523,7 +523,7 @@ fn test_spread_resolved_before_declared_after() {
         model B { ...A }
     ",
     );
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -554,7 +554,7 @@ fn test_spread_via_alias_declared_before() {
         }
     ",
     );
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -585,7 +585,7 @@ fn test_spread_via_alias_declared_after() {
         model B { ...Alias }
     ",
     );
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -616,7 +616,7 @@ fn test_spread_chain_resolved() {
         }
     ",
     );
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {

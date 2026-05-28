@@ -24,9 +24,7 @@ fn test_registered_decorator_definition_resolved() {
 
     // Find the operation type
     let op_type = checker
-        .declared_types
-        .get("listPets")
-        .copied()
+        .get_type_by_name("listPets")
         .expect("operation should exist");
 
     let decs = match checker.get_type(op_type) {
@@ -65,9 +63,7 @@ fn test_registered_decorator_args_populated() {
     );
 
     let op_type = checker
-        .declared_types
-        .get("listPets")
-        .copied()
+        .get_type_by_name("listPets")
         .expect("operation should exist");
 
     let decs = match checker.get_type(op_type) {
@@ -105,9 +101,7 @@ fn test_decorator_arg_numeric_marshall() {
     );
 
     let op_type = checker
-        .declared_types
-        .get("doWork")
-        .copied()
+        .get_type_by_name("doWork")
         .expect("operation should exist");
 
     let decs = match checker.get_type(op_type) {
@@ -135,9 +129,7 @@ fn test_decorator_arg_boolean_marshall() {
     );
 
     let op_type = checker
-        .declared_types
-        .get("doWork")
-        .copied()
+        .get_type_by_name("doWork")
         .expect("operation should exist");
 
     let decs = match checker.get_type(op_type) {
@@ -164,11 +156,7 @@ fn test_decorator_on_model_with_definition() {
         vec![("tag", "API", "Model")],
     );
 
-    let model_type = checker
-        .declared_types
-        .get("Pet")
-        .copied()
-        .expect("model should exist");
+    let model_type = checker.get_type_by_name("Pet").expect("model should exist");
 
     let decs = match checker.get_type(model_type) {
         Some(Type::Model(m)) => &m.decorators,
@@ -200,9 +188,7 @@ fn test_multiple_decorator_args() {
     );
 
     let op_type = checker
-        .declared_types
-        .get("listPets")
-        .copied()
+        .get_type_by_name("listPets")
         .expect("operation should exist");
 
     let decs = match checker.get_type(op_type) {
@@ -225,9 +211,7 @@ fn test_unregistered_decorator_definition_is_none() {
     );
 
     let op_type = checker
-        .declared_types
-        .get("doWork")
-        .copied()
+        .get_type_by_name("doWork")
         .expect("operation should exist");
 
     let decs = match checker.get_type(op_type) {
@@ -278,9 +262,7 @@ fn test_using_custom_namespace_decorator_resolved() {
     );
 
     let op_type = checker
-        .declared_types
-        .get("listPets")
-        .copied()
+        .get_type_by_name("listPets")
         .expect("operation should exist");
 
     let decs = match checker.get_type(op_type) {
@@ -307,9 +289,7 @@ fn test_dotted_decorator_name_resolved() {
     );
 
     let op_type = checker
-        .declared_types
-        .get("listPets")
-        .copied()
+        .get_type_by_name("listPets")
         .expect("operation should exist");
 
     let decs = match checker.get_type(op_type) {
@@ -357,9 +337,7 @@ fn test_multiple_namespaces_using() {
     );
 
     let op_type = checker
-        .declared_types
-        .get("listPets")
-        .copied()
+        .get_type_by_name("listPets")
         .expect("operation should exist");
 
     let decs = match checker.get_type(op_type) {
@@ -390,9 +368,7 @@ fn test_custom_namespace_has_decorator_declarations() {
     let checker = check_with_decorators("", vec![("route", "HTTP", "Operation")]);
 
     let http_id = checker
-        .declared_types
-        .get("HTTP")
-        .copied()
+        .get_type_by_name("HTTP")
         .expect("HTTP namespace should exist");
 
     match checker.get_type(http_id) {
@@ -425,9 +401,7 @@ fn test_user_namespace_has_model_and_operation_names() {
     );
 
     let myapp_id = checker
-        .declared_types
-        .get("MyApp")
-        .copied()
+        .get_type_by_name("MyApp")
         .expect("MyApp namespace should exist");
 
     match checker.get_type(myapp_id) {
@@ -506,11 +480,7 @@ fn test_fully_qualified_name_for_namespace_member() {
         vec![],
     );
 
-    let pet_id = checker
-        .declared_types
-        .get("Pet")
-        .copied()
-        .expect("Pet should exist");
+    let pet_id = checker.get_type_by_name("Pet").expect("Pet should exist");
 
     let fqn = get_fully_qualified_name(&checker.type_store, pet_id);
     assert_eq!(
@@ -531,11 +501,7 @@ fn test_fully_qualified_name_for_global_type() {
         vec![],
     );
 
-    let pet_id = checker
-        .declared_types
-        .get("Pet")
-        .copied()
-        .expect("Pet should exist");
+    let pet_id = checker.get_type_by_name("Pet").expect("Pet should exist");
 
     let fqn = get_fully_qualified_name(&checker.type_store, pet_id);
     assert_eq!(fqn, "Pet", "FQN for global model should just be 'Pet'");
@@ -558,9 +524,7 @@ fn test_fully_qualified_name_for_nested_namespace() {
     );
 
     let inner_id = checker
-        .declared_types
-        .get("Inner")
-        .copied()
+        .get_type_by_name("Inner")
         .expect("Inner should exist");
 
     let fqn = get_fully_qualified_name(&checker.type_store, inner_id);
@@ -588,9 +552,7 @@ fn test_decorator_resolved_without_using_in_sub_namespace() {
     );
 
     let op_id = checker
-        .declared_types
-        .get("gitStatus")
-        .copied()
+        .get_type_by_name("gitStatus")
         .expect("gitStatus should exist");
 
     let op = match checker.get_type(op_id) {
@@ -641,17 +603,9 @@ fn test_interface_namespace_correct_in_user_namespace() {
         vec![],
     );
 
-    let llm_id = checker
-        .declared_types
-        .get("Llm")
-        .copied()
-        .expect("Llm should exist");
+    let llm_id = checker.get_type_by_name("Llm").expect("Llm should exist");
 
-    let chat_id = checker
-        .declared_types
-        .get("Chat")
-        .copied()
-        .expect("Chat should exist");
+    let chat_id = checker.get_type_by_name("Chat").expect("Chat should exist");
 
     let chat_iface = match checker.get_type(chat_id) {
         Some(Type::Interface(i)) => i,
@@ -677,16 +631,10 @@ fn test_model_namespace_correct_in_user_namespace() {
         vec![],
     );
 
-    let llm_id = checker
-        .declared_types
-        .get("Llm")
-        .copied()
-        .expect("Llm should exist");
+    let llm_id = checker.get_type_by_name("Llm").expect("Llm should exist");
 
     let req_id = checker
-        .declared_types
-        .get("Request")
-        .copied()
+        .get_type_by_name("Request")
         .expect("Request should exist");
 
     let model = match checker.get_type(req_id) {
@@ -713,16 +661,10 @@ fn test_enum_namespace_correct_in_user_namespace() {
         vec![],
     );
 
-    let llm_id = checker
-        .declared_types
-        .get("Llm")
-        .copied()
-        .expect("Llm should exist");
+    let llm_id = checker.get_type_by_name("Llm").expect("Llm should exist");
 
     let status_id = checker
-        .declared_types
-        .get("Status")
-        .copied()
+        .get_type_by_name("Status")
         .expect("Status should exist");
 
     let enum_type = match checker.get_type(status_id) {
@@ -753,17 +695,11 @@ fn test_interface_namespace_correct_with_decorator_overlap() {
         vec![("command", "Llm", "Operation")],
     );
 
-    let llm_id = checker
-        .declared_types
-        .get("Llm")
-        .copied()
-        .expect("Llm should exist");
+    let llm_id = checker.get_type_by_name("Llm").expect("Llm should exist");
 
     // Operation should be in Llm namespace
     let op_id = checker
-        .declared_types
-        .get("gitStatus")
-        .copied()
+        .get_type_by_name("gitStatus")
         .expect("gitStatus should exist");
 
     let op = match checker.get_type(op_id) {
@@ -778,11 +714,7 @@ fn test_interface_namespace_correct_with_decorator_overlap() {
     );
 
     // Interface should be in Llm namespace
-    let chat_id = checker
-        .declared_types
-        .get("Chat")
-        .copied()
-        .expect("Chat should exist");
+    let chat_id = checker.get_type_by_name("Chat").expect("Chat should exist");
 
     let chat = match checker.get_type(chat_id) {
         Some(Type::Interface(i)) => i,
@@ -814,11 +746,7 @@ fn test_fqn_for_interface_in_namespace() {
         vec![],
     );
 
-    let chat_id = checker
-        .declared_types
-        .get("Chat")
-        .copied()
-        .expect("Chat should exist");
+    let chat_id = checker.get_type_by_name("Chat").expect("Chat should exist");
 
     let fqn = get_fully_qualified_name(&checker.type_store, chat_id);
     assert_eq!(
@@ -842,9 +770,7 @@ fn test_fqn_for_operation_in_namespace() {
     );
 
     let op_id = checker
-        .declared_types
-        .get("create")
-        .copied()
+        .get_type_by_name("create")
         .expect("create should exist");
 
     let fqn = get_fully_qualified_name(&checker.type_store, op_id);
@@ -869,9 +795,7 @@ fn test_fqn_for_enum_in_namespace() {
     );
 
     let status_id = checker
-        .declared_types
-        .get("Status")
-        .copied()
+        .get_type_by_name("Status")
         .expect("Status should exist");
 
     let fqn = get_fully_qualified_name(&checker.type_store, status_id);
@@ -897,11 +821,7 @@ fn test_fqn_for_interface_with_decorator_overlap() {
         vec![("command", "Llm", "Operation")],
     );
 
-    let chat_id = checker
-        .declared_types
-        .get("Chat")
-        .copied()
-        .expect("Chat should exist");
+    let chat_id = checker.get_type_by_name("Chat").expect("Chat should exist");
 
     let fqn = get_fully_qualified_name(&checker.type_store, chat_id);
     assert_eq!(

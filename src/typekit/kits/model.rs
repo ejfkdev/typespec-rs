@@ -105,14 +105,14 @@ mod tests {
     #[test]
     fn test_is_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(is_model(&checker, foo_id));
     }
 
     #[test]
     fn test_is_model_not_scalar() {
         let checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         assert!(!is_model(&checker, s_id));
     }
 
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn test_get_properties() {
         let checker = check("model Foo { name: string; age: int32; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let props = get_properties(&checker, foo_id);
         assert_eq!(props.len(), 2);
     }
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn test_get_properties_empty() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let props = get_properties(&checker, foo_id);
         assert!(props.is_empty());
     }
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn test_has_property() {
         let checker = check("model Foo { name: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(has_property(&checker, foo_id, "name"));
         assert!(!has_property(&checker, foo_id, "age"));
     }
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn test_get_base_model() {
         let checker = check("model Base {} model Derived extends Base {}");
-        let derived_id = checker.declared_types.get("Derived").copied().unwrap();
+        let derived_id = checker.get_type_by_name("Derived").unwrap();
         let base = get_base_model(&checker, derived_id);
         assert!(base.is_some());
     }
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn test_get_base_model_none() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let base = get_base_model(&checker, foo_id);
         assert!(base.is_none());
     }
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_get_derived_models() {
         let checker = check("model Base {} model D1 extends Base {} model D2 extends Base {}");
-        let base_id = checker.declared_types.get("Base").copied().unwrap();
+        let base_id = checker.get_type_by_name("Base").unwrap();
         let derived = get_derived_models(&checker, base_id);
         assert_eq!(derived.len(), 2);
     }
@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn test_get_derived_models_none() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let derived = get_derived_models(&checker, foo_id);
         assert!(derived.is_empty());
     }
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn test_is_anonymous() {
         let checker = check("model Test { x: {}; }");
-        let test_id = checker.declared_types.get("Test").copied().unwrap();
+        let test_id = checker.get_type_by_name("Test").unwrap();
         // The Test model is named
         assert!(!is_anonymous(&checker, test_id));
     }
@@ -191,14 +191,14 @@ mod tests {
     #[test]
     fn test_has_indexer_no() {
         let checker = check("model Foo { name: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!has_indexer(&checker, foo_id));
     }
 
     #[test]
     fn test_has_indexer_record() {
         let checker = check("model Foo is Record<string, string> {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         // Indexer may or may not be set depending on checker implementation
         let _ = has_indexer(&checker, foo_id);
     }
@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn test_is_model_interface_is_not() {
         let checker = check("interface Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_model(&checker, foo_id));
     }
 
@@ -216,7 +216,7 @@ mod tests {
     fn test_model_with_inherited_properties() {
         let checker =
             check("model Base { id: string; } model Derived extends Base { name: string; }");
-        let derived_id = checker.declared_types.get("Derived").copied().unwrap();
+        let derived_id = checker.get_type_by_name("Derived").unwrap();
         let props = get_properties(&checker, derived_id);
         assert!(!props.is_empty()); // At least name property
     }

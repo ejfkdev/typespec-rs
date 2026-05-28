@@ -21,7 +21,7 @@ use crate::checker::test_utils::has_diagnostic;
 fn test_union_declaration_with_variants() {
     // Basic union declaration with named variants
     let checker = check("union Foo { x: int32; y: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -47,7 +47,7 @@ fn test_union_declaration_with_variants() {
 fn test_union_variant_types() {
     // Check that variant types resolve correctly
     let checker = check("union Foo { x: int32; y: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -89,7 +89,7 @@ fn test_union_variant_types() {
 fn test_union_expression() {
     // Union expression (anonymous union) via pipe syntax
     let checker = check(r#"alias Foo = "a" | "b";"#);
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     // Alias is currently represented as Scalar; check the aliased type
     match t {
@@ -112,7 +112,7 @@ fn test_union_expression() {
 #[test]
 fn test_union_with_decorator() {
     let checker = check("@doc union Foo { x: int32; y: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -125,7 +125,7 @@ fn test_union_with_decorator() {
 #[test]
 fn test_union_variant_with_decorator() {
     let checker = check("union Foo { @doc x: int32; y: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -145,7 +145,7 @@ fn test_union_variant_with_decorator() {
 #[test]
 fn test_union_is_finished() {
     let checker = check("union Foo { x: int32; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     assert!(t.is_finished(), "Union type should be finished");
 }
@@ -153,7 +153,7 @@ fn test_union_is_finished() {
 #[test]
 fn test_union_in_namespace() {
     let checker = check("namespace MyNs { union Foo { x: int32; } }");
-    let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+    let ns_type = checker.get_type_by_name("MyNs").unwrap();
     let t = checker.get_type(ns_type).cloned().unwrap();
     match t {
         Type::Namespace(ns) => {
@@ -219,7 +219,7 @@ fn test_union_duplicate_variant_message() {
 fn test_union_three_variants() {
     // Union with three variants
     let checker = check("union Status { active: string; pending: int32; done: boolean; }");
-    let foo_type = checker.declared_types.get("Status").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Status").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -237,7 +237,7 @@ fn test_union_template_declaration() {
     // Template union declaration
     let checker = check("union Container<T> { x: T; }");
     assert!(
-        checker.declared_types.contains_key("Container"),
+        checker.get_type_by_name("Container").is_some(),
         "Template union should be declared"
     );
 }
@@ -246,7 +246,7 @@ fn test_union_template_declaration() {
 fn test_union_not_finished_template_declaration() {
     // Template union declarations should NOT be finished (they need instantiation)
     let checker = check("union Container<T> { x: T; }");
-    let foo_type = checker.declared_types.get("Container").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Container").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     // Template declarations are not finished - they need to be instantiated
     match t {
@@ -268,7 +268,7 @@ fn test_union_not_finished_template_declaration() {
 fn test_union_with_string_literals() {
     // Ported from: union expressions with string literals
     let checker = check(r#"alias Status = "active" | "inactive" | "pending";"#);
-    let status_type = checker.declared_types.get("Status").copied().unwrap();
+    let status_type = checker.get_type_by_name("Status").unwrap();
     let t = checker.get_type(status_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -281,7 +281,7 @@ fn test_union_with_string_literals() {
 #[test]
 fn test_union_with_numeric_literals() {
     let checker = check("alias Numbers = 1 | 2 | 3;");
-    let nums_type = checker.declared_types.get("Numbers").copied().unwrap();
+    let nums_type = checker.get_type_by_name("Numbers").unwrap();
     let t = checker.get_type(nums_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -299,7 +299,7 @@ fn test_union_with_numeric_literals() {
 fn test_union_variant_scalar_type() {
     // Union variant referencing a scalar type
     let checker = check("union Result { ok: string; err: int32; }");
-    let result_type = checker.declared_types.get("Result").copied().unwrap();
+    let result_type = checker.get_type_by_name("Result").unwrap();
     let t = checker.get_type(result_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -330,7 +330,7 @@ fn test_union_variant_model_type() {
         union Result { ok: string; err: Error; }
     ",
     );
-    let result_type = checker.declared_types.get("Result").copied().unwrap();
+    let result_type = checker.get_type_by_name("Result").unwrap();
     let t = checker.get_type(result_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -359,7 +359,7 @@ fn test_union_variant_model_type() {
 #[test]
 fn test_union_multiple_decorators() {
     let checker = check("@doc @tag union Foo { x: int32; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -376,7 +376,7 @@ fn test_union_multiple_decorators() {
 #[test]
 fn test_union_variant_multiple_decorators() {
     let checker = check("union Foo { @doc @tag x: int32; y: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -400,7 +400,7 @@ fn test_union_variant_multiple_decorators() {
 #[test]
 fn test_union_empty() {
     let checker = check("union Empty { }");
-    let empty_type = checker.declared_types.get("Empty").copied().unwrap();
+    let empty_type = checker.get_type_by_name("Empty").unwrap();
     let t = checker.get_type(empty_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -417,7 +417,7 @@ fn test_union_empty() {
 #[test]
 fn test_union_variant_boolean_type() {
     let checker = check("union Flag { yes: boolean; }");
-    let flag_type = checker.declared_types.get("Flag").copied().unwrap();
+    let flag_type = checker.get_type_by_name("Flag").unwrap();
     let t = checker.get_type(flag_type).cloned().unwrap();
     match t {
         Type::Union(u) => {
@@ -555,7 +555,7 @@ fn test_union_template_instantiation() {
         alias Foo = Template<int32>;
     "#,
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     // Resolve through alias
     let resolved = checker.resolve_alias_chain(foo_type);
     let resolved_t = checker.get_type(resolved).cloned().unwrap();
@@ -590,7 +590,7 @@ fn test_union_expression_reduces() {
         alias Foo = Temp<int16 | int32, string | int8>;
     "#,
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let resolved = checker.resolve_alias_chain(foo_type);
     let t = checker.get_type(resolved).cloned().unwrap();
     match t {
@@ -616,7 +616,7 @@ fn test_union_statement_not_reduced() {
         alias Foo = Temp<Bar, string | int8>;
     "#,
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let resolved = checker.resolve_alias_chain(foo_type);
     let t = checker.get_type(resolved).cloned().unwrap();
     match t {
@@ -642,7 +642,7 @@ fn test_union_reduces_never() {
         alias Foo = string | never;
     "#,
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let resolved = checker.resolve_alias_chain(foo_type);
     let t = checker.get_type(resolved).cloned().unwrap();
     match t {
@@ -670,7 +670,7 @@ fn test_union_expression_namespace() {
     "#,
     );
     // Verify the namespace exists and the alias is inside it
-    let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+    let ns_type = checker.get_type_by_name("MyNs").unwrap();
     let ns = checker.get_type(ns_type).cloned().unwrap();
     match ns {
         Type::Namespace(n) => {

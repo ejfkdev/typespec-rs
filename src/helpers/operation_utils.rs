@@ -149,7 +149,7 @@ mod tests {
             }
         ",
         );
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let ops = list_operations_in(&checker, foo_id, ListOperationOptions::default());
         let names: Vec<String> = ops
             .iter()
@@ -180,7 +180,7 @@ mod tests {
             }
         ",
         );
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let ops = list_operations_in(&checker, foo_id, ListOperationOptions { recursive: false });
         let names: Vec<String> = ops
             .iter()
@@ -220,7 +220,7 @@ mod tests {
             }
         ",
         );
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let ops = list_operations_in(&checker, foo_id, ListOperationOptions { recursive: true });
         let names: Vec<String> = ops
             .iter()
@@ -250,7 +250,7 @@ mod tests {
             }
         ",
         );
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let ops = list_operations_in(&checker, foo_id, ListOperationOptions { recursive: false });
         let names: Vec<String> = ops
             .iter()

@@ -17,7 +17,7 @@ use crate::checker::type_utils::{
 fn test_model_is_template_declaration() {
     // Ported from TS: "check model is a template declaration"
     let checker = check("model Foo<T> { t: T }; model Bar { foo: Foo<string> }");
-    let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
     let foo_type = checker.get_type(foo_id).cloned().unwrap();
 
     assert!(
@@ -39,7 +39,7 @@ fn test_model_reference_is_template_instance() {
     // Ported from TS: "check model reference is a template instance"
     // Foo<string> should be a template instance, not a template declaration
     let checker = check("model Foo<T> { t: T }; model Bar { foo: Foo<string> }");
-    let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+    let bar_id = checker.get_type_by_name("Bar").unwrap();
     let bar_type = checker.get_type(bar_id).cloned().unwrap();
 
     match bar_type {
@@ -76,7 +76,7 @@ fn test_model_expression_in_template_instance_is_instance() {
     // Ported from TS: "check model expression inside a template instance is also a template instance"
     // model Foo<T> { a: { b: T } } — the inner { b: T } should be a template instance
     let checker = check("model Foo<T> { a: { b: T } }; model Bar { foo: Foo<string> }");
-    let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+    let bar_id = checker.get_type_by_name("Bar").unwrap();
     let bar_type = checker.get_type(bar_id).cloned().unwrap();
 
     match bar_type {
@@ -122,7 +122,7 @@ fn test_union_expression_in_template_instance_is_instance() {
     // Ported from TS: "check union expression inside a template instance is also a template instance"
     // model Foo<T> { a: int32 | T } — the inner int32 | T should be a template instance
     let checker = check("model Foo<T> { a: int32 | T }; model Bar { foo: Foo<string> }");
-    let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+    let bar_id = checker.get_type_by_name("Bar").unwrap();
     let bar_type = checker.get_type(bar_id).cloned().unwrap();
 
     match bar_type {
@@ -188,12 +188,12 @@ fn test_is_declared_in_namespace_recursive() {
     "#,
     );
 
-    let alpha_id = checker.declared_types.get("Alpha").copied().unwrap();
-    let sub_alpha_id = checker.declared_types.get("SubAlpha").copied().unwrap();
-    let beta_id = checker.declared_types.get("Beta").copied().unwrap();
-    let foo_model_id = checker.declared_types.get("FooModel").copied().unwrap();
-    let foo_enum_id = checker.declared_types.get("FooEnum").copied().unwrap();
-    let foo_namespace_id = checker.declared_types.get("FooNamespace").copied().unwrap();
+    let alpha_id = checker.get_type_by_name("Alpha").unwrap();
+    let sub_alpha_id = checker.get_type_by_name("SubAlpha").unwrap();
+    let beta_id = checker.get_type_by_name("Beta").unwrap();
+    let foo_model_id = checker.get_type_by_name("FooModel").unwrap();
+    let foo_enum_id = checker.get_type_by_name("FooEnum").unwrap();
+    let foo_namespace_id = checker.get_type_by_name("FooNamespace").unwrap();
 
     // All types in SubAlpha should be found under Alpha (recursive) and SubAlpha
     let candidates = [

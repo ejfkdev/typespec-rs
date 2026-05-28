@@ -69,21 +69,21 @@ mod tests {
     #[test]
     fn test_named_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_plausible_name(&checker, foo_id), "Foo");
     }
 
     #[test]
     fn test_scalar() {
         let checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         assert_eq!(get_plausible_name(&checker, s_id), "MyS");
     }
 
     #[test]
     fn test_enum() {
         let checker = check("enum Color { red }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         assert_eq!(get_plausible_name(&checker, e_id), "Color");
     }
 }

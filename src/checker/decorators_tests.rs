@@ -23,14 +23,14 @@ use crate::checker::test_utils::{check, has_diagnostic};
 #[test]
 fn test_decorator_on_model() {
     let checker = check("@doc(\"test\") model Foo {}");
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some(), "Should resolve model Foo with decorator");
 }
 
 #[test]
 fn test_decorator_on_model_property() {
     let checker = check(r#"model Foo { @doc("test") name: string }"#);
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(
         foo_id.is_some(),
         "Should resolve model Foo with decorated property"
@@ -40,14 +40,14 @@ fn test_decorator_on_model_property() {
 #[test]
 fn test_decorator_on_enum() {
     let checker = check(r#"@doc("test") enum Foo { a }"#);
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some(), "Should resolve enum Foo with decorator");
 }
 
 #[test]
 fn test_decorator_on_interface() {
     let checker = check(r#"@doc("test") interface Foo { op(): void; }"#);
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(
         foo_id.is_some(),
         "Should resolve interface Foo with decorator"
@@ -57,21 +57,21 @@ fn test_decorator_on_interface() {
 #[test]
 fn test_decorator_on_operation() {
     let checker = check(r#"@doc("test") op foo(): void;"#);
-    let foo_id = checker.declared_types.get("foo").copied();
+    let foo_id = checker.get_type_by_name("foo");
     assert!(foo_id.is_some(), "Should resolve op foo with decorator");
 }
 
 #[test]
 fn test_decorator_on_union() {
     let checker = check(r#"@doc("test") union Foo { x: string }"#);
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some(), "Should resolve union Foo with decorator");
 }
 
 #[test]
 fn test_decorator_on_scalar() {
     let checker = check(r#"@doc("test") scalar Foo extends string;"#);
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some(), "Should resolve scalar Foo with decorator");
 }
 
@@ -247,7 +247,7 @@ fn test_duplicate_decorator_application() {
     "#,
     );
     // Should either warn or allow (TS allows it)
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(
         foo_id.is_some(),
         "Model Foo should exist with duplicate decorators"
@@ -275,7 +275,7 @@ fn test_duplicate_decorator_application() {
 fn test_decorator_on_namespace() {
     let checker = check(r#"@doc("test") namespace Foo {}"#);
     // Namespace with decorator should parse and the namespace should have the decorator
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(
         foo_id.is_some(),
         "Namespace Foo should exist with decorator"
@@ -304,7 +304,7 @@ fn test_decorator_no_arguments() {
         @myDec model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(
         foo_id.is_some(),
         "Should resolve model Foo with no-arg decorator"
@@ -324,7 +324,7 @@ fn test_decorator_with_type_parameter() {
         @myDec("hello") model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(
         foo_id.is_some(),
         "Should resolve model with type-param decorator"
@@ -345,7 +345,7 @@ fn test_multiple_decorators_on_model() {
         model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(
         foo_id.is_some(),
         "Should resolve model with multiple decorators"
@@ -364,7 +364,7 @@ fn test_augment_decorator_on_model_property() {
         @@doc(Foo.name, "test")
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(
         foo_id.is_some(),
         "Should resolve model with augmented property decorator"
@@ -383,7 +383,7 @@ fn test_decorator_valueof_string_param() {
         @myDec("hello") model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some());
 }
 
@@ -395,7 +395,7 @@ fn test_decorator_valueof_int_param() {
         @myDec(42) model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some());
 }
 
@@ -411,7 +411,7 @@ fn test_decorator_optional_param_provided() {
         @myDec("hello") model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some());
 }
 
@@ -423,7 +423,7 @@ fn test_decorator_optional_param_omitted() {
         @myDec model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some());
 }
 
@@ -439,7 +439,7 @@ fn test_decorator_rest_param_valid() {
         @myDec("a", "b", "c") model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some());
 }
 
@@ -503,7 +503,7 @@ fn test_decorator_can_have_same_name_as_type() {
     );
     // Both should coexist without errors
     assert!(
-        checker.declared_types.contains_key("Foo"),
+        checker.get_type_by_name("Foo").is_some(),
         "Model Foo should exist"
     );
     // No duplicate-id diagnostic expected since dec and model are different kinds
@@ -523,7 +523,7 @@ fn test_decorator_doesnt_conflict_with_global_type_binding() {
         @myDec model Foo {}
     "#,
     );
-    assert!(checker.declared_types.contains_key("Foo"));
+    assert!(checker.get_type_by_name("Foo").is_some());
     assert!(
         !has_diagnostic(&checker, "invalid-ref"),
         "Should not report invalid-ref: {:?}",
@@ -547,7 +547,7 @@ fn test_decorator_evaluates_outside_in() {
         @first @second model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some());
     // Verify both decorators are attached
     if let Some(t) = foo_id.and_then(|id| checker.get_type(id).cloned()) {
@@ -573,7 +573,7 @@ fn test_decorator_valueof_boolean_param() {
         @myDec(true) model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some());
 }
 
@@ -590,7 +590,7 @@ fn test_decorator_valueof_null_param() {
         @myDec(null) model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(foo_id.is_some());
 }
 

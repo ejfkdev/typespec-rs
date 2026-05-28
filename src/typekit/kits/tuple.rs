@@ -23,7 +23,7 @@ mod tests {
     #[test]
     fn test_is_tuple() {
         let checker = check("alias Foo = [string, int32];");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_tuple(&checker, resolved));
     }
@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn test_tuple_values() {
         let checker = check("alias Foo = [string, int32];");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         let values = get_values(&checker, resolved);
         assert_eq!(values.len(), 2);
@@ -40,14 +40,14 @@ mod tests {
     #[test]
     fn test_is_tuple_not_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_tuple(&checker, foo_id));
     }
 
     #[test]
     fn test_tuple_three_values() {
         let checker = check("alias Foo = [string, int32, boolean];");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         let values = get_values(&checker, resolved);
         assert_eq!(values.len(), 3);
@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn test_tuple_single_value() {
         let checker = check("alias Foo = [string];");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_tuple(&checker, resolved));
         let values = get_values(&checker, resolved);
@@ -66,7 +66,7 @@ mod tests {
     #[test]
     fn test_get_values_non_tuple() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let values = get_values(&checker, foo_id);
         assert!(values.is_empty());
     }

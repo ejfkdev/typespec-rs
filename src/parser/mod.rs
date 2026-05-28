@@ -265,6 +265,8 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            let prev_pos = self.token_start_position();
+
             let directives = self.parse_directive_list();
             let decorators = self.parse_decorator_list();
             let pos = self.token_start_position();
@@ -277,6 +279,13 @@ impl<'a> Parser<'a> {
                 /* top_level */ true,
             );
             statements.push(stmt_id);
+
+            // Prevent infinite loop: if no progress was made, skip a token
+            if self.token_start_position() == prev_pos
+                && self.current_token() != TokenKind::EndOfFile
+            {
+                self.next_token();
+            }
         }
 
         statements
@@ -420,6 +429,8 @@ impl<'a> Parser<'a> {
         while self.current_token() != TokenKind::CloseBrace
             && self.current_token() != TokenKind::EndOfFile
         {
+            let prev_pos = self.token_start_position();
+
             let directives = self.parse_directive_list();
             let decorators = self.parse_decorator_list();
             let modifiers = self.parse_modifiers();
@@ -433,6 +444,13 @@ impl<'a> Parser<'a> {
                 /* top_level */ false,
             );
             statements.push(stmt_id);
+
+            // Prevent infinite loop: if no progress was made, skip a token
+            if self.token_start_position() == prev_pos
+                && self.current_token() != TokenKind::EndOfFile
+            {
+                self.next_token();
+            }
         }
 
         statements
@@ -659,6 +677,8 @@ impl<'a> Parser<'a> {
         while self.current_token() != TokenKind::CloseBrace
             && self.current_token() != TokenKind::EndOfFile
         {
+            let prev_pos = self.token_start_position();
+
             let directives = self.parse_directive_list();
             let decorators = self.parse_decorator_list();
             let pos = self.token_start_position();
@@ -689,6 +709,13 @@ impl<'a> Parser<'a> {
                 self.builder.attach_directives(op_id, directives);
             }
             operations.push(op_id);
+
+            // Prevent infinite loop: if no progress was made, skip a token
+            if self.token_start_position() == prev_pos
+                && self.current_token() != TokenKind::EndOfFile
+            {
+                self.next_token();
+            }
         }
 
         operations

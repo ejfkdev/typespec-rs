@@ -201,14 +201,14 @@ mod tests {
     #[test]
     fn test_is_scalar() {
         let checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         assert!(is_scalar(&checker, s_id));
     }
 
     #[test]
     fn test_is_scalar_not_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_scalar(&checker, foo_id));
     }
 
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn test_get_base_scalar() {
         let checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         let base = get_base_scalar(&checker, s_id);
         assert!(base.is_some());
     }
@@ -238,8 +238,8 @@ mod tests {
     #[test]
     fn test_extends_scalar() {
         let checker = check("scalar Base extends string; scalar Derived extends Base;");
-        let derived_id = checker.declared_types.get("Derived").copied().unwrap();
-        let base_id = checker.declared_types.get("Base").copied().unwrap();
+        let derived_id = checker.get_type_by_name("Derived").unwrap();
+        let base_id = checker.get_type_by_name("Base").unwrap();
 
         assert!(extends_scalar(&checker, derived_id, base_id));
         assert!(!extends_scalar(&checker, base_id, derived_id));
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn test_extends_scalar_chain() {
         let checker = check("scalar A extends int32; scalar B extends A;");
-        let b_id = checker.declared_types.get("B").copied().unwrap();
+        let b_id = checker.get_type_by_name("B").unwrap();
         let int32_id = builtin::int32(&checker).unwrap();
         // B → A → int32, so B extends int32
         assert!(extends_scalar(&checker, b_id, int32_id));
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn test_get_ancestor_chain() {
         let checker = check("scalar Base extends string; scalar Derived extends Base;");
-        let derived_id = checker.declared_types.get("Derived").copied().unwrap();
+        let derived_id = checker.get_type_by_name("Derived").unwrap();
         let chain = get_ancestor_chain(&checker, derived_id);
         assert!(chain.len() >= 2); // Base → string
     }
@@ -299,8 +299,8 @@ mod tests {
     #[test]
     fn test_is_string_scalar() {
         let checker = check("alias Foo = string; alias Bar = boolean;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         let foo_resolved = checker.resolve_alias_chain(foo_id);
         let bar_resolved = checker.resolve_alias_chain(bar_id);
         assert!(is_string_scalar(&checker, foo_resolved));
@@ -310,15 +310,15 @@ mod tests {
     #[test]
     fn test_is_string_scalar_custom() {
         let checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         assert!(is_string_scalar(&checker, s_id));
     }
 
     #[test]
     fn test_is_numeric_scalar() {
         let checker = check("alias Foo = numeric; alias Bar = int32;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         let foo_resolved = checker.resolve_alias_chain(foo_id);
         let bar_resolved = checker.resolve_alias_chain(bar_id);
         assert!(is_numeric_scalar(&checker, foo_resolved));
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn test_get_std_base_custom_scalar() {
         let checker = check("scalar foo extends string;");
-        let foo_id = checker.declared_types.get("foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("foo").unwrap();
         let std_base = get_std_base(&checker, foo_id);
         assert!(std_base.is_some());
         let base = std_base.unwrap();
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn test_get_std_base_root_scalar() {
         let checker = check("scalar bar;");
-        let bar_id = checker.declared_types.get("bar").copied().unwrap();
+        let bar_id = checker.get_type_by_name("bar").unwrap();
         // bar doesn't extend any built-in
         let std_base = get_std_base(&checker, bar_id);
         assert!(std_base.is_none());
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn test_is_boolean_scalar() {
         let checker = check("alias Foo = boolean;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_boolean_scalar(&checker, resolved));
     }
@@ -367,7 +367,7 @@ mod tests {
     #[test]
     fn test_is_int32_scalar() {
         let checker = check("alias Foo = int32;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_int32_scalar(&checker, resolved));
     }
@@ -375,7 +375,7 @@ mod tests {
     #[test]
     fn test_is_integer_scalar() {
         let checker = check("alias Foo = int32;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         // int32 extends integer
         assert!(is_integer_scalar(&checker, resolved));
@@ -384,14 +384,14 @@ mod tests {
     #[test]
     fn test_extends_string_scalar_custom() {
         let checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         assert!(extends_string_scalar(&checker, s_id));
     }
 
     #[test]
     fn test_extends_int32_scalar_custom() {
         let checker = check("scalar MyInt extends int32;");
-        let s_id = checker.declared_types.get("MyInt").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyInt").unwrap();
         assert!(extends_int32_scalar(&checker, s_id));
     }
 

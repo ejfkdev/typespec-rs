@@ -36,21 +36,21 @@ mod tests {
     #[test]
     fn test_is_enum() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         assert!(is_enum(&checker, e_id));
     }
 
     #[test]
     fn test_is_enum_not_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_enum(&checker, foo_id));
     }
 
     #[test]
     fn test_get_members() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         let members = get_members(&checker, e_id);
         assert_eq!(members.len(), 3);
     }
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn test_has_member() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         assert!(has_member(&checker, e_id, "red"));
         assert!(!has_member(&checker, e_id, "purple"));
     }
@@ -66,7 +66,7 @@ mod tests {
     #[test]
     fn test_enum_with_string_values() {
         let checker = check(r#"enum Direction { north: "N", south: "S", east: "E", west: "W" }"#);
-        let e_id = checker.declared_types.get("Direction").copied().unwrap();
+        let e_id = checker.get_type_by_name("Direction").unwrap();
         assert!(is_enum(&checker, e_id));
         let members = get_members(&checker, e_id);
         assert_eq!(members.len(), 4);
@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn test_enum_with_numeric_values() {
         let checker = check("enum Priority { low: 1, medium: 2, high: 3 }");
-        let e_id = checker.declared_types.get("Priority").copied().unwrap();
+        let e_id = checker.get_type_by_name("Priority").unwrap();
         assert!(is_enum(&checker, e_id));
         let members = get_members(&checker, e_id);
         assert_eq!(members.len(), 3);
@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn test_enum_implicit_values() {
         let checker = check("enum Status { active, inactive }");
-        let e_id = checker.declared_types.get("Status").copied().unwrap();
+        let e_id = checker.get_type_by_name("Status").unwrap();
         assert!(is_enum(&checker, e_id));
         assert!(has_member(&checker, e_id, "active"));
         assert!(has_member(&checker, e_id, "inactive"));

@@ -131,14 +131,14 @@ mod tests {
     #[test]
     fn test_is_union() {
         let checker = check("union Pet { cat: string, dog: string }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         assert!(is_union(&checker, u_id));
     }
 
     #[test]
     fn test_is_union_not_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_union(&checker, foo_id));
     }
 
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn test_get_variants() {
         let checker = check("union Pet { cat: string, dog: string }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         let variants = get_variants(&checker, u_id);
         assert_eq!(variants.len(), 2);
         let names: Vec<&str> = variants.iter().map(|(n, _)| n.as_str()).collect();
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn test_get_variants_three() {
         let checker = check("union Color { red: string, green: string, blue: string }");
-        let u_id = checker.declared_types.get("Color").copied().unwrap();
+        let u_id = checker.get_type_by_name("Color").unwrap();
         let variants = get_variants(&checker, u_id);
         assert_eq!(variants.len(), 3);
     }
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn test_get_variant_types() {
         let checker = check("union Pet { cat: string, dog: string }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         let types = get_variant_types(&checker, u_id);
         assert_eq!(types.len(), 2);
     }
@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn test_get_variant_types_unwraps_union_variants() {
         let checker = check("union Pet { cat: string, dog: int32 }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         let types = get_variant_types(&checker, u_id);
         // Should get the inner types (string, int32), not the UnionVariant wrappers
         assert_eq!(types.len(), 2);
@@ -188,14 +188,14 @@ mod tests {
     #[test]
     fn test_is_named_declaration() {
         let checker = check("union Pet { cat: string, dog: string }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         assert!(is_named(&checker, u_id));
     }
 
     #[test]
     fn test_is_named_expression_union() {
         let checker = check("alias Foo = string | int32;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         // Expression unions (from | operator) have empty names
         if is_union(&checker, resolved) {
@@ -206,14 +206,14 @@ mod tests {
     #[test]
     fn test_is_union_on_enum() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         assert!(!is_union(&checker, e_id));
     }
 
     #[test]
     fn test_get_variants_non_union() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let variants = get_variants(&checker, foo_id);
         assert!(variants.is_empty());
     }
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn test_get_variant_types_non_union() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let types = get_variant_types(&checker, foo_id);
         assert!(types.is_empty());
     }
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn test_is_extensible_with_scalar_variant() {
         let checker = check(r#"union Foo { string; "hi"; "bye"; }"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(is_extensible(&checker, foo_id));
     }
 
@@ -241,7 +241,7 @@ mod tests {
         // However, in our checker the variant types may resolve to the string scalar type
         // rather than StringLiteral. This depends on checker implementation.
         let checker = check(r#"union Bar { "hi"; "bye"; }"#);
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         // Just verify the function doesn't panic
         let _ = is_extensible(&checker, bar_id);
     }
@@ -249,14 +249,14 @@ mod tests {
     #[test]
     fn test_is_expression_named_union() {
         let checker = check("union Pet { cat: string, dog: string }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         assert!(!is_expression(&checker, u_id));
     }
 
     #[test]
     fn test_is_valid_enum_string_union() {
         let checker = check(r#"union Direction { up: "up", down: "down" }"#);
-        let u_id = checker.declared_types.get("Direction").copied().unwrap();
+        let u_id = checker.get_type_by_name("Direction").unwrap();
         // Depending on checker, may or may not be valid enum
         let _ = is_valid_enum(&checker, u_id);
     }
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn test_filter_union() {
         let checker = check("union Pet { cat: string, dog: string, fish: int32 }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         let filtered = filter(&checker, u_id, |_vt| {
             // Keep all variants
             true
@@ -281,7 +281,7 @@ mod tests {
         // Note: This depends on checker implementation for how it represents
         // string literal variants in unions
         let checker = check(r#"union Bar { "hi"; "bye"; }"#);
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         // Verify function doesn't panic - the exact result depends on
         // whether checker creates String or Scalar types for variants
         let _ = is_extensible(&checker, bar_id);
@@ -291,14 +291,14 @@ mod tests {
     fn test_is_extensible_true_with_scalar() {
         // A union with a scalar (non-literal) variant type IS extensible
         let checker = check(r#"union Foo { string; "hi"; "bye"; }"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(is_extensible(&checker, foo_id));
     }
 
     #[test]
     fn test_is_valid_enum_all_string_literals() {
         let checker = check(r#"union Dir { up: "up", down: "down" }"#);
-        let dir_id = checker.declared_types.get("Dir").copied().unwrap();
+        let dir_id = checker.get_type_by_name("Dir").unwrap();
         // Result depends on whether checker creates String literal types
         let _ = is_valid_enum(&checker, dir_id);
     }
@@ -307,7 +307,7 @@ mod tests {
     fn test_is_valid_enum_mixed_types() {
         // A union with mixed string and numeric types is NOT a valid enum
         let checker = check("union Mixed { a: string, b: int32 }");
-        let mixed_id = checker.declared_types.get("Mixed").copied().unwrap();
+        let mixed_id = checker.get_type_by_name("Mixed").unwrap();
         assert!(!is_valid_enum(&checker, mixed_id));
     }
 
@@ -315,14 +315,14 @@ mod tests {
     fn test_is_valid_enum_empty_union() {
         // An empty union is NOT a valid enum
         let checker = check("union Empty {}");
-        let empty_id = checker.declared_types.get("Empty").copied().unwrap();
+        let empty_id = checker.get_type_by_name("Empty").unwrap();
         assert!(!is_valid_enum(&checker, empty_id));
     }
 
     #[test]
     fn test_filter_with_actual_predicate() {
         let checker = check("union Pet { cat: string, dog: string, fish: int32 }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         // Filter to keep only string-type variants
         let filtered = filter(&checker, u_id, |vt| {
             matches!(checker.get_type(vt), Some(Type::Scalar(_)))
@@ -338,7 +338,7 @@ mod tests {
         // still returns a result when given a discriminator_property_name.
         // It just uses the provided property name to try to build the mapping.
         let checker = check("union Pet { cat: string, dog: string }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         let (result, _diags) = get_discriminated_union(&checker, u_id, "kind");
         // Result may or may not be None depending on implementation
         let _ = result;
@@ -347,7 +347,7 @@ mod tests {
     #[test]
     fn test_get_variant_types_empty_union() {
         let checker = check("union Empty {}");
-        let empty_id = checker.declared_types.get("Empty").copied().unwrap();
+        let empty_id = checker.get_type_by_name("Empty").unwrap();
         let types = get_variant_types(&checker, empty_id);
         assert!(types.is_empty());
     }
@@ -355,7 +355,7 @@ mod tests {
     #[test]
     fn test_get_variants_preserves_order() {
         let checker = check("union Order { first: string, second: int32, third: boolean }");
-        let u_id = checker.declared_types.get("Order").copied().unwrap();
+        let u_id = checker.get_type_by_name("Order").unwrap();
         let variants = get_variants(&checker, u_id);
         assert_eq!(variants.len(), 3);
         let names: Vec<&str> = variants.iter().map(|(n, _)| n.as_str()).collect();

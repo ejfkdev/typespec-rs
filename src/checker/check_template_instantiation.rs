@@ -64,7 +64,7 @@ impl Checker {
             return error;
         }
 
-        if let Some(&type_id) = self.declared_types.get(&name) {
+        if let Some(type_id) = self.resolve_declared_name(&name) {
             // Check if the resolved type is a decorator or function — can't be used as type references
             if let Some(error) = self.check_invalid_type_ref_kind(type_id) {
                 return error;
@@ -211,6 +211,8 @@ impl Checker {
 
         // Try to resolve name via using declarations
         if let Some(type_id) = self.resolve_via_using(&name) {
+            // Mark the using as used so it doesn't get reported as unused
+            self.mark_using_as_used_if_applicable(&name, type_id);
             // Check internal visibility for the resolved type
             self.check_internal_visibility(type_id);
             self.emit_deprecated_warning_if_needed(type_id);

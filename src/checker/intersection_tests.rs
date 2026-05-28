@@ -19,7 +19,7 @@ use crate::checker::test_utils::check;
 fn test_intersection_of_two_model_expressions() {
     // Ported from: "intersect 2 models"
     let checker = check("model Foo { prop: {a: string} & {b: string}; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -47,7 +47,7 @@ fn test_intersection_of_two_model_expressions() {
 fn test_intersection_expression_creates_type() {
     // Verify that an intersection expression at least produces a type
     let checker = check("alias X = {a: string} & {b: string};");
-    let x_type = checker.declared_types.get("X").copied().unwrap();
+    let x_type = checker.get_type_by_name("X").unwrap();
     let t = checker.get_type(x_type).cloned().unwrap();
     // Alias wraps as Scalar with base_scalar pointing to intersection result
     match t {
@@ -61,7 +61,7 @@ fn test_intersection_expression_creates_type() {
 #[test]
 fn test_intersection_is_finished() {
     let checker = check("alias X = {a: string} & {b: string};");
-    let x_type = checker.declared_types.get("X").copied().unwrap();
+    let x_type = checker.get_type_by_name("X").unwrap();
     let t = checker.get_type(x_type).cloned().unwrap();
     assert!(
         t.is_finished(),
@@ -104,7 +104,7 @@ fn test_intersection_of_two_models_has_both_properties() {
     // Our current simplified implementation may only return one side or a simplified result.
     // Just verify that the intersection produces a model type.
     let checker = check("model Foo { prop: {a: string} & {b: string}; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -137,7 +137,7 @@ fn test_intersection_of_two_models_has_both_properties() {
 #[test]
 fn test_intersection_of_two_model_expressions_has_both_properties_merged() {
     let checker = check("model Foo { prop: {a: string} & {b: string}; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -232,7 +232,7 @@ fn test_intersection_spread_resolved_declared_before() {
         alias Alias = B & {};
     ",
     );
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -269,11 +269,11 @@ fn test_intersection_spread_resolved_declared_after() {
     );
     // Verify at least A is declared without crash
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "A should be declared"
     );
     assert!(
-        checker.declared_types.contains_key("Alias"),
+        checker.get_type_by_name("Alias").is_some(),
         "Alias should be declared"
     );
 }
@@ -288,7 +288,7 @@ fn test_intersection_with_template_params() {
         model Foo { prop: Bar<{a: string}, {b: string}>; }
     ",
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -337,7 +337,7 @@ fn test_intersection_namespace_belongs_to_declaring_namespace() {
     );
     // Just verify no crash and Foo exists
     assert!(
-        checker.declared_types.contains_key("Foo"),
+        checker.get_type_by_name("Foo").is_some(),
         "Foo should be declared"
     );
     let diags = checker.diagnostics();

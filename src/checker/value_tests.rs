@@ -378,7 +378,7 @@ fn test_const_in_namespace() {
     // Const declared inside namespace should still be accessible
     // Note: namespace-qualified lookup not yet implemented,
     // but the value should be created in node_value_map
-    let ns_type = checker.declared_types.get("Data").copied();
+    let ns_type = checker.get_type_by_name("Data");
     assert!(ns_type.is_some(), "Data namespace should exist");
 }
 
@@ -472,7 +472,7 @@ fn test_const_model_reference() {
     // const should have a value, though it references a type not a value
     // Our implementation may handle this differently from TS
     assert!(
-        checker.declared_types.contains_key("Foo"),
+        checker.get_type_by_name("Foo").is_some(),
         "Foo model should exist"
     );
 }
@@ -822,7 +822,7 @@ fn test_const_assign_enum_member_to_int32() {
         const a: int32 = Direction.up;
     ",
     );
-    assert!(checker.declared_types.contains_key("Direction"));
+    assert!(checker.get_type_by_name("Direction").is_some());
 }
 
 #[test]

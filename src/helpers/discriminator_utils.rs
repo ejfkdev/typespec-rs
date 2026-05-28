@@ -372,7 +372,7 @@ mod tests {
             }
         ",
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (union_result, _diags) =
             get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         assert_eq!(union_result.variants.len(), 2);
@@ -396,7 +396,7 @@ mod tests {
             }
         ",
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (union_result, _diags) =
             get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         assert_eq!(union_result.variants.len(), 1);
@@ -418,7 +418,7 @@ mod tests {
             }
         ",
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (union_result, _diags) =
             get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         assert_eq!(union_result.variants.len(), 1);
@@ -437,7 +437,7 @@ mod tests {
             }
         ",
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (union_result, _diags) =
             get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         assert_eq!(union_result.variants.len(), 1);
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn test_get_string_values_from_string_type() {
         let checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         let values = get_string_values(&checker, resolved);
         assert_eq!(values, vec!["hello"]);
@@ -469,7 +469,7 @@ mod tests {
             model Dog is PetT<"dog"> {}
         "#,
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (union_result, diags) =
             get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         // Template instantiation may not fully work yet, but should not panic
@@ -489,7 +489,7 @@ mod tests {
             }
         "#,
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (union_result, _diags) =
             get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         // Should find both "cat" and "feline" as discriminator values mapping to Cat
@@ -516,13 +516,13 @@ mod tests {
             }
         "#,
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (pet_union, _diags) =
             get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         assert_eq!(pet_union.variants.len(), 1);
         assert!(pet_union.variants.contains_key("cat"));
 
-        let cat_id = checker.declared_types.get("Cat").copied().unwrap();
+        let cat_id = checker.get_type_by_name("Cat").unwrap();
         let (cat_union, _diags) =
             get_discriminated_union_from_inheritance(&checker, cat_id, "breed");
         assert_eq!(cat_union.variants.len(), 1);
@@ -543,7 +543,7 @@ mod tests {
         "#,
         );
         // Should report invalid-discriminator-value
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (_union, diags) = get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         let has_error = diags
             .iter()
@@ -577,7 +577,7 @@ mod tests {
             }
         "#,
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (_union, diags) = get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         let has_dup_error = diags
             .iter()
@@ -606,7 +606,7 @@ mod tests {
             }
         "#,
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (_union, diags) = get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         // Should report diagnostic because discriminator property must be required
         let has_error = diags
@@ -647,14 +647,14 @@ mod tests {
             }
         "#,
         );
-        let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+        let pet_id = checker.get_type_by_name("Pet").unwrap();
         let (pet_union, _diags) =
             get_discriminated_union_from_inheritance(&checker, pet_id, "kind");
         // Cat should be found as a variant even though it's behind Feline
         assert_eq!(pet_union.variants.len(), 1);
         assert!(pet_union.variants.contains_key("cat"));
 
-        let cat_id = checker.declared_types.get("Cat").copied().unwrap();
+        let cat_id = checker.get_type_by_name("Cat").unwrap();
         let (cat_union, _diags) =
             get_discriminated_union_from_inheritance(&checker, cat_id, "breed");
         assert_eq!(cat_union.variants.len(), 1);

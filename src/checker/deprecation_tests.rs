@@ -30,7 +30,7 @@ fn test_deprecated_model_marked_in_tracker() {
         model OldFoo {}
     "#,
     );
-    let old_foo = checker.declared_types.get("OldFoo").copied();
+    let old_foo = checker.get_type_by_name("OldFoo");
     assert!(old_foo.is_some(), "OldFoo should be in declared_types");
     assert!(
         checker.is_deprecated(old_foo.unwrap()),
@@ -47,7 +47,7 @@ fn test_deprecated_scalar_marked_in_tracker() {
         scalar Name extends string;
     "#,
     );
-    let name_type = checker.declared_types.get("Name").copied();
+    let name_type = checker.get_type_by_name("Name");
     assert!(name_type.is_some(), "Name should be in declared_types");
     assert!(
         checker.is_deprecated(name_type.unwrap()),
@@ -59,7 +59,7 @@ fn test_deprecated_scalar_marked_in_tracker() {
 #[test]
 fn test_non_deprecated_model_not_marked() {
     let checker = check("model Foo {}");
-    let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
     assert!(
         !checker.is_deprecated(foo_id),
         "Non-deprecated model should NOT be marked as deprecated"
@@ -529,7 +529,7 @@ fn test_copy_deprecation_model_extends_deprecated_base() {
         model Derived extends OldBase {}
     "#,
     );
-    let derived_id = checker.declared_types.get("Derived").copied().unwrap();
+    let derived_id = checker.get_type_by_name("Derived").unwrap();
     assert!(
         checker.is_deprecated(derived_id),
         "Derived model extending deprecated base should also be marked as deprecated: {:?}",
@@ -549,7 +549,7 @@ fn test_copy_deprecation_scalar_extends_deprecated_base() {
         scalar NewScalar extends OldScalar;
     "#,
     );
-    let new_scalar_id = checker.declared_types.get("NewScalar").copied().unwrap();
+    let new_scalar_id = checker.get_type_by_name("NewScalar").unwrap();
     assert!(
         checker.is_deprecated(new_scalar_id),
         "Derived scalar extending deprecated base should also be marked as deprecated: {:?}",
@@ -567,7 +567,7 @@ fn test_no_copy_deprecation_for_non_deprecated_base() {
         model Derived extends Base {}
     "#,
     );
-    let derived_id = checker.declared_types.get("Derived").copied().unwrap();
+    let derived_id = checker.get_type_by_name("Derived").unwrap();
     assert!(
         !checker.is_deprecated(derived_id),
         "Derived model extending non-deprecated base should NOT be marked as deprecated"
@@ -670,11 +670,11 @@ fn test_deprecated_op_in_deprecated_op_no_warning() {
     // TS expects 0 warnings; our implementation may still emit some
     // Just verify the operations are created
     assert!(
-        checker.declared_types.contains_key("oldFoo"),
+        checker.get_type_by_name("oldFoo").is_some(),
         "oldFoo should exist"
     );
     assert!(
-        checker.declared_types.contains_key("oldBar"),
+        checker.get_type_by_name("oldBar").is_some(),
         "oldBar should exist"
     );
     // Log the warnings for awareness but don't fail
@@ -718,7 +718,7 @@ fn test_suppress_deprecated_in_template_argument() {
     );
     // #suppress may not yet work for alias declarations - just verify no crash
     assert!(
-        checker.declared_types.contains_key("OldFoo"),
+        checker.get_type_by_name("OldFoo").is_some(),
         "OldFoo should exist"
     );
 }

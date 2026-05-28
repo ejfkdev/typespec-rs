@@ -176,28 +176,28 @@ mod tests {
     #[test]
     fn test_kind_name_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(kind_name(&checker, foo_id), "Model");
     }
 
     #[test]
     fn test_kind_name_enum() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         assert_eq!(kind_name(&checker, e_id), "Enum");
     }
 
     #[test]
     fn test_kind_name_scalar() {
         let checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         assert_eq!(kind_name(&checker, s_id), "Scalar");
     }
 
     #[test]
     fn test_kind_name_union() {
         let checker = check("union Pet { cat: string, dog: string }");
-        let u_id = checker.declared_types.get("Pet").copied().unwrap();
+        let u_id = checker.get_type_by_name("Pet").unwrap();
         assert_eq!(kind_name(&checker, u_id), "Union");
     }
 
@@ -211,14 +211,14 @@ mod tests {
     #[test]
     fn test_kind_name_operation() {
         let checker = check("op test(): void;");
-        let op_id = checker.declared_types.get("test").copied().unwrap();
+        let op_id = checker.get_type_by_name("test").unwrap();
         assert_eq!(kind_name(&checker, op_id), "Operation");
     }
 
     #[test]
     fn test_kind_name_string_literal() {
         let checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = resolve_alias(&checker, foo_id);
         assert_eq!(kind_name(&checker, resolved), "String");
     }
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_kind_name_numeric_literal() {
         let checker = check("alias Foo = 42;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = resolve_alias(&checker, foo_id);
         assert_eq!(kind_name(&checker, resolved), "Number");
     }
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn test_kind_name_boolean_literal() {
         let checker = check("alias Foo = true;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = resolve_alias(&checker, foo_id);
         assert_eq!(kind_name(&checker, resolved), "Boolean");
     }
@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn test_kind_name_tuple() {
         let checker = check("alias Foo = [string, int32];");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = resolve_alias(&checker, foo_id);
         assert_eq!(kind_name(&checker, resolved), "Tuple");
     }
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn test_resolve_alias_single() {
         let checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = resolve_alias(&checker, foo_id);
         assert!(is_literal(&checker, resolved));
     }
@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn test_resolve_alias_chained() {
         let checker = check(r#"alias A = "hello"; alias B = A;"#);
-        let b_id = checker.declared_types.get("B").copied().unwrap();
+        let b_id = checker.get_type_by_name("B").unwrap();
         let resolved = resolve_alias(&checker, b_id);
         let _ = is_literal(&checker, resolved);
     }
@@ -271,35 +271,35 @@ mod tests {
     #[test]
     fn test_get_plausible_name_named_model() {
         let checker = check("model Foo { props: string }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_plausible_name(&checker, foo_id), "Foo");
     }
 
     #[test]
     fn test_get_plausible_name_named_union() {
         let checker = check(r#"union Bar { "hi"; "bye"; }"#);
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         assert_eq!(get_plausible_name(&checker, bar_id), "Bar");
     }
 
     #[test]
     fn test_get_plausible_name_named_enum() {
         let checker = check(r#"enum Baz { Baz: "baz" }"#);
-        let baz_id = checker.declared_types.get("Baz").copied().unwrap();
+        let baz_id = checker.get_type_by_name("Baz").unwrap();
         assert_eq!(get_plausible_name(&checker, baz_id), "Baz");
     }
 
     #[test]
     fn test_get_plausible_name_named_scalar() {
         let checker = check("scalar Qux extends string;");
-        let qux_id = checker.declared_types.get("Qux").copied().unwrap();
+        let qux_id = checker.get_type_by_name("Qux").unwrap();
         assert_eq!(get_plausible_name(&checker, qux_id), "Qux");
     }
 
     #[test]
     fn test_get_plausible_name_anonymous_model() {
         let checker = check("alias Foo = { name: string };");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = resolve_alias(&checker, foo_id);
         if let Some(Type::Model(m)) = checker.get_type(resolved)
             && m.name.is_empty()
@@ -322,7 +322,7 @@ mod tests {
     #[test]
     fn test_is_error_on_non_error() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_error(&checker, foo_id));
     }
 
@@ -330,7 +330,7 @@ mod tests {
     fn test_is_user_defined_named_model_with_namespace() {
         let checker = check("namespace NS { model Foo {} }");
         // Foo should be in NS namespace
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         // If Foo has a namespace, it should be user-defined
         if let Some(Type::Model(m)) = checker.get_type(foo_id)
             && m.namespace.is_some()
@@ -348,16 +348,16 @@ mod tests {
     #[test]
     fn test_in_namespace_self() {
         let checker = check("namespace Root {}");
-        let root_id = checker.declared_types.get("Root").copied().unwrap();
+        let root_id = checker.get_type_by_name("Root").unwrap();
         assert!(in_namespace(&checker, root_id, root_id));
     }
 
     #[test]
     fn test_in_namespace_direct_child() {
         let checker = check("namespace Root { namespace Child1 { namespace Child2 {} } }");
-        let root_id = checker.declared_types.get("Root").copied().unwrap();
-        let child1_id = checker.declared_types.get("Child1").copied().unwrap();
-        let child2_id = checker.declared_types.get("Child2").copied().unwrap();
+        let root_id = checker.get_type_by_name("Root").unwrap();
+        let child1_id = checker.get_type_by_name("Child1").unwrap();
+        let child2_id = checker.get_type_by_name("Child2").unwrap();
 
         // Child1 is in Root
         assert!(in_namespace(&checker, child1_id, root_id));
@@ -368,8 +368,8 @@ mod tests {
     #[test]
     fn test_in_namespace_model() {
         let checker = check("namespace Root { model Inside { prop: string } }");
-        let root_id = checker.declared_types.get("Root").copied().unwrap();
-        let model_id = checker.declared_types.get("Inside").copied().unwrap();
+        let root_id = checker.get_type_by_name("Root").unwrap();
+        let model_id = checker.get_type_by_name("Inside").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(model_id)
             && m.namespace.is_some()
         {
@@ -380,9 +380,9 @@ mod tests {
     #[test]
     fn test_in_namespace_outside() {
         let checker = check("namespace Root { namespace Child1 {} } namespace Outside {}");
-        let _root_id = checker.declared_types.get("Root").copied().unwrap();
-        let child1_id = checker.declared_types.get("Child1").copied().unwrap();
-        let outside_id = checker.declared_types.get("Outside").copied().unwrap();
+        let _root_id = checker.get_type_by_name("Root").unwrap();
+        let child1_id = checker.get_type_by_name("Child1").unwrap();
+        let outside_id = checker.get_type_by_name("Outside").unwrap();
 
         // Child1 is NOT in Outside
         assert!(!in_namespace(&checker, child1_id, outside_id));
@@ -404,8 +404,8 @@ mod tests {
     #[test]
     fn test_in_namespace_enum_member() {
         let checker = check("namespace Root { enum Test { A, B } }");
-        let root_id = checker.declared_types.get("Root").copied().unwrap();
-        let test_id = checker.declared_types.get("Test").copied().unwrap();
+        let root_id = checker.get_type_by_name("Root").unwrap();
+        let test_id = checker.get_type_by_name("Test").unwrap();
         if let Some(Type::Enum(e)) = checker.get_type(test_id)
             && let Some(&member_id) = e.members.get("A")
         {
@@ -421,7 +421,7 @@ mod tests {
     #[test]
     fn test_min_max_value_none_by_default() {
         let checker = check("scalar MyNum extends numeric;");
-        let my_id = checker.declared_types.get("MyNum").copied().unwrap();
+        let my_id = checker.get_type_by_name("MyNum").unwrap();
         assert!(min_value(&checker, my_id).is_none());
         assert!(max_value(&checker, my_id).is_none());
     }
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn test_min_max_value_with_state() {
         let mut checker = check("scalar MyNum extends numeric;");
-        let my_id = checker.declared_types.get("MyNum").copied().unwrap();
+        let my_id = checker.get_type_by_name("MyNum").unwrap();
 
         // Manually set min/max value state (normally set by @minValue/@maxValue decorators)
         use crate::intrinsic_type_state::{NumericOrScalar, set_max_value, set_min_value};
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn test_min_max_value_exclusive_with_state() {
         let mut checker = check("scalar MyNum extends numeric;");
-        let my_id = checker.declared_types.get("MyNum").copied().unwrap();
+        let my_id = checker.get_type_by_name("MyNum").unwrap();
 
         use crate::intrinsic_type_state::{
             NumericOrScalar, set_max_value_exclusive, set_min_value_exclusive,
@@ -484,7 +484,7 @@ mod tests {
     #[test]
     fn test_min_max_length_none_by_default() {
         let checker = check("scalar MyStr extends string;");
-        let my_id = checker.declared_types.get("MyStr").copied().unwrap();
+        let my_id = checker.get_type_by_name("MyStr").unwrap();
         assert!(min_length(&checker, my_id).is_none());
         assert!(max_length(&checker, my_id).is_none());
     }
@@ -492,7 +492,7 @@ mod tests {
     #[test]
     fn test_min_max_length_with_state() {
         let mut checker = check("scalar MyStr extends string;");
-        let my_id = checker.declared_types.get("MyStr").copied().unwrap();
+        let my_id = checker.get_type_by_name("MyStr").unwrap();
 
         use crate::intrinsic_type_state::{set_max_length, set_min_length};
         use crate::numeric::Numeric;
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn test_min_max_items_none_by_default() {
         let checker = check("alias A = string[];");
-        let a_id = checker.declared_types.get("A").copied().unwrap();
+        let a_id = checker.get_type_by_name("A").unwrap();
         let resolved = resolve_alias(&checker, a_id);
         assert!(min_items(&checker, resolved).is_none());
         assert!(max_items(&checker, resolved).is_none());
@@ -520,7 +520,7 @@ mod tests {
     #[test]
     fn test_min_max_items_with_state() {
         let mut checker = check("alias A = string[];");
-        let a_id = checker.declared_types.get("A").copied().unwrap();
+        let a_id = checker.get_type_by_name("A").unwrap();
         let resolved = resolve_alias(&checker, a_id);
 
         use crate::intrinsic_type_state::{set_max_items, set_min_items};
@@ -540,7 +540,7 @@ mod tests {
     #[test]
     fn test_min_max_value_on_model_property() {
         let mut checker = check("model A { foo: int32; }");
-        let a_id = checker.declared_types.get("A").copied().unwrap();
+        let a_id = checker.get_type_by_name("A").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(a_id)
             && let Some(&prop_id) = m.properties.get("foo")
         {
@@ -568,7 +568,7 @@ mod tests {
     #[test]
     fn test_min_max_length_on_model_property() {
         let mut checker = check("model A { foo: string; }");
-        let a_id = checker.declared_types.get("A").copied().unwrap();
+        let a_id = checker.get_type_by_name("A").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(a_id)
             && let Some(&prop_id) = m.properties.get("foo")
         {

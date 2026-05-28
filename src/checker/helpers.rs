@@ -183,8 +183,8 @@ impl Checker {
         let global_ns = self.global_namespace_type?;
 
         if parts.len() == 1 {
-            // Simple name — look in declared_types
-            return self.declared_types.get(parts[0]).copied();
+            // Simple name — look in declared_types (FQN-aware)
+            return self.resolve_declared_name(parts[0]);
         }
 
         // Qualified name — walk namespace hierarchy

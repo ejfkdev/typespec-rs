@@ -15,7 +15,7 @@ use crate::checker::test_utils::check;
 fn test_declare_simple_scalar() {
     // Ported from: "declare simple scalar"
     let checker = check("scalar A;");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -30,7 +30,7 @@ fn test_declare_simple_scalar() {
 fn test_declare_scalar_extending_another() {
     // Ported from: "declare simple scalar extending another"
     let checker = check("scalar A extends numeric;");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -53,7 +53,7 @@ fn test_declare_scalar_extending_another() {
 #[test]
 fn test_declare_scalar_extending_string() {
     let checker = check("scalar email extends string;");
-    let email_type = checker.declared_types.get("email").copied().unwrap();
+    let email_type = checker.get_type_by_name("email").unwrap();
     let t = checker.get_type(email_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -69,7 +69,7 @@ fn test_declare_scalar_extending_string() {
 #[test]
 fn test_declare_scalar_extending_int32() {
     let checker = check("scalar positive_int extends int32;");
-    let s_type = checker.declared_types.get("positive_int").copied().unwrap();
+    let s_type = checker.get_type_by_name("positive_int").unwrap();
     let t = checker.get_type(s_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -85,7 +85,7 @@ fn test_declare_scalar_extending_int32() {
 #[test]
 fn test_scalar_with_decorator() {
     let checker = check("@tag scalar myScalar extends string;");
-    let s_type = checker.declared_types.get("myScalar").copied().unwrap();
+    let s_type = checker.get_type_by_name("myScalar").unwrap();
     let t = checker.get_type(s_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -98,7 +98,7 @@ fn test_scalar_with_decorator() {
 #[test]
 fn test_scalar_is_finished() {
     let checker = check("scalar A extends string;");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     assert!(
         t.is_finished(),
@@ -115,9 +115,9 @@ fn test_multiple_scalars() {
         scalar positive_int extends int32;
     ",
     );
-    assert!(checker.declared_types.contains_key("email"));
-    assert!(checker.declared_types.contains_key("uuid"));
-    assert!(checker.declared_types.contains_key("positive_int"));
+    assert!(checker.get_type_by_name("email").is_some());
+    assert!(checker.get_type_by_name("uuid").is_some());
+    assert!(checker.get_type_by_name("positive_int").is_some());
 }
 
 // ============================================================================
@@ -247,7 +247,7 @@ fn test_scalar_circular_self_extends_message() {
 fn test_scalar_simple_declaration_no_base() {
     // A scalar with no extends clause
     let checker = check("scalar MyScalar;");
-    let s_type = checker.declared_types.get("MyScalar").copied().unwrap();
+    let s_type = checker.get_type_by_name("MyScalar").unwrap();
     let t = checker.get_type(s_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -262,7 +262,7 @@ fn test_scalar_simple_declaration_no_base() {
 fn test_scalar_extends_numeric() {
     // Ported from: "declare simple scalar extending another" with numeric
     let checker = check("scalar MyNum extends numeric;");
-    let s_type = checker.declared_types.get("MyNum").copied().unwrap();
+    let s_type = checker.get_type_by_name("MyNum").unwrap();
     let t = checker.get_type(s_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -283,7 +283,7 @@ fn test_scalar_extends_numeric() {
 #[test]
 fn test_scalar_in_namespace() {
     let checker = check("namespace MyNs { scalar S extends string; }");
-    let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+    let ns_type = checker.get_type_by_name("MyNs").unwrap();
     let t = checker.get_type(ns_type).cloned().unwrap();
     match t {
         Type::Namespace(ns) => {
@@ -299,7 +299,7 @@ fn test_scalar_in_namespace() {
 #[test]
 fn test_scalar_simple_no_base_is_finished() {
     let checker = check("scalar A;");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     assert!(t.is_finished(), "Simple scalar type should be finished");
 }
@@ -307,7 +307,7 @@ fn test_scalar_simple_no_base_is_finished() {
 #[test]
 fn test_scalar_with_decorator_in_namespace() {
     let checker = check("namespace N { @tag scalar S extends string; }");
-    let ns_type = checker.declared_types.get("N").copied().unwrap();
+    let ns_type = checker.get_type_by_name("N").unwrap();
     let t = checker.get_type(ns_type).cloned().unwrap();
     match t {
         Type::Namespace(ns) => {
@@ -327,7 +327,7 @@ fn test_scalar_with_decorator_in_namespace() {
 #[test]
 fn test_scalar_extends_boolean() {
     let checker = check("scalar MyBool extends boolean;");
-    let s_type = checker.declared_types.get("MyBool").copied().unwrap();
+    let s_type = checker.get_type_by_name("MyBool").unwrap();
     let t = checker.get_type(s_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -347,7 +347,7 @@ fn test_scalar_extends_boolean() {
 #[test]
 fn test_scalar_extends_float64() {
     let checker = check("scalar Price extends float64;");
-    let s_type = checker.declared_types.get("Price").copied().unwrap();
+    let s_type = checker.get_type_by_name("Price").unwrap();
     let t = checker.get_type(s_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -363,7 +363,7 @@ fn test_scalar_extends_float64() {
 #[test]
 fn test_scalar_extends_int64() {
     let checker = check("scalar BigId extends int64;");
-    let s_type = checker.declared_types.get("BigId").copied().unwrap();
+    let s_type = checker.get_type_by_name("BigId").unwrap();
     let t = checker.get_type(s_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -379,7 +379,7 @@ fn test_scalar_extends_int64() {
 #[test]
 fn test_scalar_extends_url() {
     let checker = check("scalar MyUrl extends url;");
-    let s_type = checker.declared_types.get("MyUrl").copied().unwrap();
+    let s_type = checker.get_type_by_name("MyUrl").unwrap();
     let t = checker.get_type(s_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -395,7 +395,7 @@ fn test_scalar_extends_url() {
 #[test]
 fn test_scalar_multiple_decorators() {
     let checker = check("@doc @tag scalar MyScalar extends string;");
-    let s_type = checker.declared_types.get("MyScalar").copied().unwrap();
+    let s_type = checker.get_type_by_name("MyScalar").unwrap();
     let t = checker.get_type(s_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -414,7 +414,7 @@ fn test_scalar_extends_scalar_chain() {
         scalar Derived extends Base;
     ",
     );
-    let derived_type = checker.declared_types.get("Derived").copied().unwrap();
+    let derived_type = checker.get_type_by_name("Derived").unwrap();
     let t = checker.get_type(derived_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -469,10 +469,10 @@ fn test_scalar_in_global_namespace() {
 fn test_scalar_template_declaration() {
     let checker = check("scalar Id<T extends valueof string> extends string;");
     assert!(
-        checker.declared_types.contains_key("Id"),
+        checker.get_type_by_name("Id").is_some(),
         "Template scalar Id should be declared"
     );
-    let id_type = checker.declared_types.get("Id").copied().unwrap();
+    let id_type = checker.get_type_by_name("Id").unwrap();
     match checker.get_type(id_type).cloned().unwrap() {
         Type::Scalar(s) => {
             assert!(

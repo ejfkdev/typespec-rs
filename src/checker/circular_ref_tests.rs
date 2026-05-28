@@ -12,7 +12,7 @@ use crate::checker::test_utils::check;
 fn test_model_can_reference_itself() {
     // Ported from: "model can reference itself"
     let checker = check("model M { self: M; }");
-    let m_type = checker.declared_types.get("M").copied().unwrap();
+    let m_type = checker.get_type_by_name("M").unwrap();
     let t = checker.get_type(m_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -34,7 +34,7 @@ fn test_model_can_reference_itself() {
 fn test_model_can_reference_itself_in_array() {
     // Ported from: "model can reference itself in an array"
     let checker = check("model M { selfs: M[]; }");
-    let m_type = checker.declared_types.get("M").copied().unwrap();
+    let m_type = checker.get_type_by_name("M").unwrap();
     let t = checker.get_type(m_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -70,8 +70,8 @@ fn test_models_can_reference_each_other() {
         model Child { parent: Parent; }
     ",
     );
-    let parent_type = checker.declared_types.get("Parent").copied().unwrap();
-    let child_type = checker.declared_types.get("Child").copied().unwrap();
+    let parent_type = checker.get_type_by_name("Parent").unwrap();
+    let child_type = checker.get_type_by_name("Child").unwrap();
 
     // Parent.child should be Child
     let parent = checker.get_type(parent_type).cloned().unwrap();
@@ -282,7 +282,7 @@ fn test_template_model_can_reference_itself() {
     );
     // The template declaration should exist
     assert!(
-        checker.declared_types.contains_key("Templated"),
+        checker.get_type_by_name("Templated").is_some(),
         "Templated should be in declared_types"
     );
 }
@@ -304,7 +304,7 @@ fn test_model_self_reference_in_property() {
         diags
     );
     assert!(
-        checker.declared_types.contains_key("M"),
+        checker.get_type_by_name("M").is_some(),
         "M should be in declared_types"
     );
 }
@@ -337,11 +337,11 @@ fn test_template_models_can_reference_each_other() {
         diags
     );
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "A should be in declared_types"
     );
     assert!(
-        checker.declared_types.contains_key("B"),
+        checker.get_type_by_name("B").is_some(),
         "B should be in declared_types"
     );
 }
@@ -379,7 +379,7 @@ fn test_models_reference_each_other_different_namespace_same_name() {
     );
     // Both Foo.Nested.Some and Bar.Nested.Some should exist
     assert!(
-        checker.declared_types.contains_key("Some"),
+        checker.get_type_by_name("Some").is_some(),
         "Some should be in declared_types"
     );
 }

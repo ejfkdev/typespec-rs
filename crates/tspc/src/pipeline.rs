@@ -30,18 +30,24 @@ impl Pipeline {
     /// Run the full compilation pipeline
     pub fn run(&self) -> Result<(), String> {
         // 1. Parse (with globally registered libraries + any extra)
+        let t0 = std::time::Instant::now();
         let parse_result = if self.no_stdlib {
             parse_with_libraries(&self.source, vec![])
         } else {
             let options = ParseOptions::default();
             parse_with_libraries(&self.source, options.libraries)
         };
+        let parse_time = t0.elapsed();
+        if self.verbose {
+            eprintln!("PERF parse: {:.2?}", parse_time);
+        }
 
         if !self.quiet && self.verbose {
             eprintln!("Parsed {} AST nodes", parse_result.builder.nodes.len());
         }
 
         // 2. Type check
+        let t1 = std::time::Instant::now();
         let mut checker = Checker::new();
         checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
 
@@ -51,6 +57,10 @@ impl Pipeline {
         }
 
         checker.check_program();
+        let check_time = t1.elapsed();
+        if self.verbose {
+            eprintln!("PERF check: {:.2?}", check_time);
+        }
 
         let error_count = checker
             .diagnostics()

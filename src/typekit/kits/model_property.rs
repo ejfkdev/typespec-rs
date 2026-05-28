@@ -72,7 +72,7 @@ mod tests {
     #[test]
     fn test_is_model_property() {
         let checker = check("model Foo { name: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(foo_id) {
             let prop_id = m.properties["name"];
             assert!(is_model_property(&checker, prop_id));
@@ -82,14 +82,14 @@ mod tests {
     #[test]
     fn test_is_model_property_not_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_model_property(&checker, foo_id));
     }
 
     #[test]
     fn test_property_name_and_type() {
         let checker = check("model Foo { name: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(foo_id) {
             let prop_id = m.properties["name"];
             assert_eq!(get_name(&checker, prop_id), Some("name"));
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn test_optional_property() {
         let checker = check("model Foo { name?: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(foo_id) {
             let prop_id = m.properties["name"];
             assert!(is_optional(&checker, prop_id));
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn test_required_property() {
         let checker = check("model Foo { name: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(foo_id) {
             let prop_id = m.properties["name"];
             assert!(!is_optional(&checker, prop_id));
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn test_get_parent_model() {
         let checker = check("model Foo { name: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(foo_id) {
             let prop_id = m.properties["name"];
             assert_eq!(get_parent_model(&checker, prop_id), Some(foo_id));
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn test_multiple_properties() {
         let checker = check("model Foo { name: string; age: int32; active?: boolean; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(foo_id) {
             assert_eq!(get_name(&checker, m.properties["name"]), Some("name"));
             assert_eq!(get_name(&checker, m.properties["age"]), Some("age"));
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn test_get_default_value_none() {
         let checker = check("model Foo { name: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(foo_id) {
             let prop_id = m.properties["name"];
             // No default value specified

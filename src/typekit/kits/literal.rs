@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn test_is_literal_string() {
         let checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_literal(&checker, resolved));
     }
@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn test_is_literal_numeric() {
         let checker = check("alias Foo = 42;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_literal(&checker, resolved));
     }
@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn test_is_literal_boolean() {
         let checker = check("alias Foo = true;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_literal(&checker, resolved));
     }
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn test_is_literal_not_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_literal(&checker, foo_id));
     }
 
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn test_string_literal() {
         let checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_string_literal(&checker, resolved));
         assert_eq!(get_string_value(&checker, resolved), Some("hello"));
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn test_string_literal_empty() {
         let checker = check(r#"alias Foo = "";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_string_literal(&checker, resolved));
         assert_eq!(get_string_value(&checker, resolved), Some(""));
@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn test_string_literal_not_numeric() {
         let checker = check("alias Foo = 42;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(!is_string_literal(&checker, resolved));
     }
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn test_numeric_literal() {
         let checker = check("alias Foo = 42;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_numeric_literal(&checker, resolved));
         assert_eq!(get_numeric_value(&checker, resolved), Some(42.0));
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn test_numeric_literal_zero() {
         let checker = check("alias Foo = 0;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_numeric_literal(&checker, resolved));
         assert_eq!(get_numeric_value(&checker, resolved), Some(0.0));
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn test_numeric_literal_not_string() {
         let checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(!is_numeric_literal(&checker, resolved));
     }
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn test_boolean_literal_true() {
         let checker = check("alias Foo = true;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_boolean_literal(&checker, resolved));
         assert_eq!(get_boolean_value(&checker, resolved), Some(true));
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn test_boolean_literal_false() {
         let checker = check("alias Foo = false;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(is_boolean_literal(&checker, resolved));
         assert_eq!(get_boolean_value(&checker, resolved), Some(false));
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn test_boolean_literal_not_numeric() {
         let checker = check("alias Foo = 42;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert!(!is_boolean_literal(&checker, resolved));
     }
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn test_get_string_value_non_string() {
         let checker = check("alias Foo = 42;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert_eq!(get_string_value(&checker, resolved), None);
     }
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn test_get_numeric_value_non_numeric() {
         let checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert_eq!(get_numeric_value(&checker, resolved), None);
     }
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn test_get_boolean_value_non_boolean() {
         let checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         assert_eq!(get_boolean_value(&checker, resolved), None);
     }

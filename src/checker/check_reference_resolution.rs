@@ -58,12 +58,16 @@ impl Checker {
 
         // Check internal visibility for member access (e.g., "TypeSpec.indexer")
         let full_name = Self::get_identifier_name(&ast, node_id);
-        if let Some(decl_id) = self.declared_types.get(full_name.as_str()).copied()
+        if let Some(decl_id) = self.resolve_declared_name(full_name.as_str())
             && self.is_internal_type(decl_id)
-            && !self.is_current_context_compiler()
         {
-            self.error("invalid-ref", &format!("Symbol '{}' is internal and can only be accessed from within its declaring package.", full_name));
-            return self.error_type;
+            use crate::helpers::location_context::is_access_allowed;
+            let source_context = self.get_current_location_context();
+            let target_context = self.get_stdlib_location_context(decl_id);
+            if !is_access_allowed(&source_context, &target_context) {
+                self.error("invalid-ref", &format!("Symbol '{}' is internal and can only be accessed from within its declaring package.", full_name));
+                return self.error_type;
+            }
         }
 
         // Look up the property in the base type
@@ -302,7 +306,7 @@ impl Checker {
             return error;
         }
 
-        if let Some(&type_id) = self.declared_types.get(&name) {
+        if let Some(type_id) = self.resolve_declared_name(&name) {
             // Check if the resolved type is a decorator or function — can't be used as type references
             if let Some(error) = self.check_invalid_type_ref_kind(type_id) {
                 return error;
@@ -355,6 +359,8 @@ impl Checker {
 
         // Try to resolve name via using declarations
         if let Some(type_id) = self.resolve_via_using(&name) {
+            // Mark the using as used so it doesn't get reported as unused
+            self.mark_using_as_used_if_applicable(&name, type_id);
             // Check internal visibility for the resolved type
             self.check_internal_visibility(type_id);
             return type_id;

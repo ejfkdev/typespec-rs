@@ -20,7 +20,7 @@ use crate::checker::test_utils::check;
 #[test]
 fn test_simple_alias_to_scalar() {
     let checker = check("alias MyString = string;");
-    let my_string = checker.declared_types.get("MyString").copied().unwrap();
+    let my_string = checker.get_type_by_name("MyString").unwrap();
     let t = checker.get_type(my_string).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -40,7 +40,7 @@ fn test_simple_alias_to_scalar() {
 #[test]
 fn test_alias_to_model() {
     let checker = check("model Foo { x: string; } alias Bar = Foo;");
-    let bar_type = checker.declared_types.get("Bar").copied().unwrap();
+    let bar_type = checker.get_type_by_name("Bar").unwrap();
     let t = checker.get_type(bar_type).cloned().unwrap();
     // Alias to model is represented as Scalar with base_scalar pointing to the model
     match t {
@@ -63,7 +63,7 @@ fn test_alias_to_model() {
 fn test_alias_to_union_expression() {
     // Ported from: "can alias a union expression" (simplified)
     let checker = check("alias Foo = int32 | string;");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -84,7 +84,7 @@ fn test_alias_to_union_expression() {
 #[test]
 fn test_alias_as_property_type() {
     let checker = check("alias MyInt = int32; model Foo { x: MyInt; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -120,7 +120,7 @@ fn test_alias_as_property_type() {
 #[test]
 fn test_alias_is_finished() {
     let checker = check("alias Foo = string;");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     assert!(t.is_finished(), "Alias type should be finished");
 }
@@ -128,16 +128,16 @@ fn test_alias_is_finished() {
 #[test]
 fn test_multiple_aliases() {
     let checker = check("alias A = string; alias B = int32; alias C = boolean;");
-    assert!(checker.declared_types.contains_key("A"));
-    assert!(checker.declared_types.contains_key("B"));
-    assert!(checker.declared_types.contains_key("C"));
+    assert!(checker.get_type_by_name("A").is_some());
+    assert!(checker.get_type_by_name("B").is_some());
+    assert!(checker.get_type_by_name("C").is_some());
 }
 
 #[test]
 fn test_template_alias_declaration() {
     let checker = check("alias Pair<K, V> = [K, V];");
     assert!(
-        checker.declared_types.contains_key("Pair"),
+        checker.get_type_by_name("Pair").is_some(),
         "Template alias should be declared"
     );
 }
@@ -199,7 +199,7 @@ fn test_circular_alias_with_generic_self_reference() {
 fn test_alias_to_model_expression() {
     // Alias pointing to a model expression
     let checker = check("alias Foo = {x: string};");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -220,7 +220,7 @@ fn test_alias_to_model_expression() {
 #[test]
 fn test_alias_in_namespace() {
     let checker = check("namespace MyNs { alias Foo = string; }");
-    let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+    let ns_type = checker.get_type_by_name("MyNs").unwrap();
     let t = checker.get_type(ns_type).cloned().unwrap();
     match t {
         Type::Namespace(ns) => {
@@ -237,7 +237,7 @@ fn test_alias_in_namespace() {
 fn test_alias_to_array_type() {
     // Alias to an array type
     let checker = check("alias StringList = string[];");
-    let sl_type = checker.declared_types.get("StringList").copied().unwrap();
+    let sl_type = checker.get_type_by_name("StringList").unwrap();
     let t = checker.get_type(sl_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -260,7 +260,7 @@ fn test_alias_to_array_type() {
 fn test_alias_to_tuple_type() {
     // Alias to a tuple type
     let checker = check("alias Pair = [string, int32];");
-    let pair_type = checker.declared_types.get("Pair").copied().unwrap();
+    let pair_type = checker.get_type_by_name("Pair").unwrap();
     let t = checker.get_type(pair_type).cloned().unwrap();
     match t {
         Type::Scalar(s) => {
@@ -289,7 +289,7 @@ fn test_circular_alias_via_model() {
     ",
     );
     // Just verify no crash - diagnostics may or may not report circularity
-    assert!(checker.declared_types.contains_key("A") || checker.declared_types.contains_key("B"));
+    assert!(checker.get_type_by_name("A").is_some() || checker.get_type_by_name("B").is_some());
 }
 
 #[test]
@@ -332,7 +332,7 @@ fn test_circular_alias_via_another_alias() {
 fn test_alias_template_declaration() {
     let checker = check("alias Foo<T> = T;");
     assert!(
-        checker.declared_types.contains_key("Foo"),
+        checker.get_type_by_name("Foo").is_some(),
         "Template alias Foo should be declared"
     );
 }
@@ -378,7 +378,7 @@ fn test_alias_union_expression_variants() {
         }
     "#,
     );
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -423,7 +423,7 @@ fn test_alias_intersection_expression_properties() {
         }
     "#,
     );
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -451,7 +451,7 @@ fn test_alias_used_like_any_model() {
         model C { c: Alias };
     "#,
     );
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let a = checker.get_type(a_type).cloned().unwrap();
     match a {
         Type::Model(m) => {
@@ -459,7 +459,7 @@ fn test_alias_used_like_any_model() {
         }
         _ => panic!("Expected Model type"),
     }
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let b = checker.get_type(b_type).cloned().unwrap();
     match b {
         Type::Model(m) => {
@@ -471,7 +471,7 @@ fn test_alias_used_like_any_model() {
         }
         _ => panic!("Expected Model type"),
     }
-    let c_type = checker.declared_types.get("C").copied().unwrap();
+    let c_type = checker.get_type_by_name("C").unwrap();
     let c = checker.get_type(c_type).cloned().unwrap();
     match c {
         Type::Model(m) => {
@@ -494,10 +494,10 @@ fn test_alias_used_like_any_namespace() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("Baz"),
+        checker.get_type_by_name("Baz").is_some(),
         "Baz should be declared"
     );
-    let baz_type = checker.declared_types.get("Baz").copied().unwrap();
+    let baz_type = checker.get_type_by_name("Baz").unwrap();
     let baz = checker.get_type(baz_type).cloned().unwrap();
     match baz {
         Type::Model(m) => {

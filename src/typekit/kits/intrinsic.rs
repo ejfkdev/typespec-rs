@@ -60,7 +60,7 @@ mod tests {
     #[test]
     fn test_is_intrinsic_not_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_intrinsic(&checker, foo_id));
     }
 
@@ -131,14 +131,14 @@ mod tests {
     #[test]
     fn test_is_void_model_is_not() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_void(&checker, foo_id));
     }
 
     #[test]
     fn test_get_intrinsic_name_non_intrinsic() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_intrinsic_name(&checker, foo_id), None);
     }
 }

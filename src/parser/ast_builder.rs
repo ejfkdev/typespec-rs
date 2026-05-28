@@ -31,6 +31,8 @@ pub struct AstBuilder {
     pub source: String,
     /// Map from declaration node ID to its directive nodes (e.g., #deprecated, #suppress)
     pub directives_map: HashMap<u32, Vec<u32>>,
+    /// Cached byte offsets of the start of each line (line 1 = offset 0, etc.)
+    line_starts: Vec<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,12 +105,25 @@ pub enum AstNode {
 
 impl AstBuilder {
     pub fn new(source: String) -> Self {
+        let line_starts = Self::compute_line_starts(&source);
         AstBuilder {
             node_id_gen: NodeIdGenerator::new(),
             nodes: HashMap::new(),
             source,
             directives_map: HashMap::new(),
+            line_starts,
         }
+    }
+
+    /// Pre-compute byte offsets where each line starts.
+    fn compute_line_starts(source: &str) -> Vec<usize> {
+        let mut starts = vec![0];
+        for (i, &byte) in source.as_bytes().iter().enumerate() {
+            if byte == b'\n' {
+                starts.push(i + 1);
+            }
+        }
+        starts
     }
 
     pub fn id_to_node(&self, id: u32) -> Option<&AstNode> {
@@ -136,21 +151,19 @@ impl AstBuilder {
 
     /// Convert a byte offset in the source to a line:column Position.
     /// Line numbers are 1-based, column numbers are 0-based (matching TS convention).
+    /// Uses binary search on the pre-computed line_starts table for O(log n) lookup.
     fn offset_to_position(&self, offset: usize) -> Position {
-        if offset == 0 || self.source.is_empty() {
+        if offset == 0 || self.line_starts.is_empty() {
             return Position { line: 1, column: 0 };
         }
-        let bytes = self.source.as_bytes();
-        let safe_offset = offset.min(bytes.len());
-        let mut line = 1u32;
-        let mut last_line_start = 0usize;
-        for (i, &byte) in bytes.iter().enumerate().take(safe_offset) {
-            if byte == b'\n' {
-                line += 1;
-                last_line_start = i + 1;
-            }
-        }
-        let column = (safe_offset - last_line_start) as u32;
+        let safe_offset = offset.min(self.source.len());
+        // Binary search for the last line_start <= safe_offset
+        let idx = self
+            .line_starts
+            .partition_point(|&start| start <= safe_offset)
+            - 1;
+        let line = (idx + 1) as u32;
+        let column = (safe_offset - self.line_starts[idx]) as u32;
         Position { line, column }
     }
 

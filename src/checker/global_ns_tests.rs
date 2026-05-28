@@ -138,7 +138,7 @@ fn test_global_namespace_has_alias() {
     let checker = check("alias MyAlias = string;");
     // Just verify the alias exists in declared_types
     assert!(
-        checker.declared_types.contains_key("MyAlias"),
+        checker.get_type_by_name("MyAlias").is_some(),
         "MyAlias should be in declared_types"
     );
 }
@@ -198,11 +198,11 @@ fn test_global_namespace_can_shadow_stdlib() {
     );
     // The custom model should exist
     assert!(
-        checker.declared_types.contains_key("int32"),
+        checker.get_type_by_name("int32").is_some(),
         "Custom int32 model should be declared"
     );
     // The model should have an 'x' property (distinct from stdlib int32)
-    let int32_type = checker.declared_types.get("int32").copied().unwrap();
+    let int32_type = checker.get_type_by_name("int32").unwrap();
     let t = checker.get_type(int32_type).cloned().unwrap();
     match t {
         Type::Model(m) => {

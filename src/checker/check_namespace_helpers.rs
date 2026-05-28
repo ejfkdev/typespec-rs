@@ -142,7 +142,7 @@ impl Checker {
                 } else {
                     // Base is a simple identifier - look it up or create it
                     let base_name = Self::get_identifier_name(ast, expr.object);
-                    if let Some(&existing_id) = self.declared_types.get(&base_name) {
+                    if let Some(existing_id) = self.get_declared_type_in_scope(&base_name) {
                         existing_id
                     } else {
                         // Create the parent namespace
@@ -154,7 +154,7 @@ impl Checker {
                                 current_parent,
                                 true,
                             ))));
-                        self.declared_types.insert(base_name.clone(), new_id);
+                        self.register_declared_type(&base_name, new_id);
 
                         // Register in global namespace
                         if let Some(global_ns) = self.global_namespace_type

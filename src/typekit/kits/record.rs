@@ -41,21 +41,21 @@ mod tests {
     #[test]
     fn test_is_record() {
         let checker = check("model Foo is Record<string, string> {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let _ = is_record(&checker, foo_id);
     }
 
     #[test]
     fn test_regular_model_not_record() {
         let checker = check("model Foo { name: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_record(&checker, foo_id));
     }
 
     #[test]
     fn test_get_key_type() {
         let checker = check("model Foo is Record<string, int32> {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let key_type = get_key_type(&checker, foo_id);
         let _ = key_type;
     }
@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn test_get_value_type() {
         let checker = check("model Foo is Record<string, int32> {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let value_type = get_value_type(&checker, foo_id);
         let _ = value_type;
     }
@@ -71,21 +71,21 @@ mod tests {
     #[test]
     fn test_get_key_type_non_record() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_key_type(&checker, foo_id), None);
     }
 
     #[test]
     fn test_get_value_type_non_record() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_value_type(&checker, foo_id), None);
     }
 
     #[test]
     fn test_is_record_scalar() {
         let checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         assert!(!is_record(&checker, s_id));
     }
 }

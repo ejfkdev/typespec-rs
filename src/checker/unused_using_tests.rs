@@ -84,7 +84,7 @@ fn test_no_unused_diagnostic_when_using_qualified_name() {
     );
     // Verify no crash and that the namespace is declared
     assert!(
-        checker.declared_types.contains_key("N"),
+        checker.get_type_by_name("N").is_some(),
         "N should be declared"
     );
 }
@@ -103,7 +103,7 @@ fn test_report_unused_using_when_only_qualified_name_used() {
     );
     // Verify no crash; whether unused-using is reported depends on implementation
     assert!(
-        checker.declared_types.contains_key("N"),
+        checker.get_type_by_name("N").is_some(),
         "N should be declared"
     );
 }
@@ -277,7 +277,7 @@ fn test_used_using_dotted_namespace() {
     // Note: Due to current implementation, dotted namespaces may not
     // correctly track using usage. Verify no crash.
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "A should be declared"
     );
 }
@@ -353,8 +353,8 @@ fn test_cross_namespace_using_in_same_file() {
     );
     // N uses M (for XX), M uses N (for X) — both usings should be used
     // Verify no crash and namespaces exist
-    assert!(checker.declared_types.contains_key("N"), "N should exist");
-    assert!(checker.declared_types.contains_key("M"), "M should exist");
+    assert!(checker.get_type_by_name("N").is_some(), "N should exist");
+    assert!(checker.get_type_by_name("M").is_some(), "M should exist");
 }
 
 /// Ported from TS: "2 namespace with the same last name"
@@ -438,11 +438,11 @@ fn test_using_unused_when_type_referenced_via_full_name() {
     // the 'using Other' is not needed — should report unused-using
     // Verify no crash and namespaces exist
     assert!(
-        checker.declared_types.contains_key("Other"),
+        checker.get_type_by_name("Other").is_some(),
         "Other should exist"
     );
     assert!(
-        checker.declared_types.contains_key("Main"),
+        checker.get_type_by_name("Main").is_some(),
         "Main should exist"
     );
 }
@@ -467,11 +467,11 @@ fn test_unused_using_with_shadowing_local_type() {
     // Main.OtherModel shadows Other.OtherModel, so using Other is unused
     // Verify no crash and that both namespaces exist
     assert!(
-        checker.declared_types.contains_key("Other"),
+        checker.get_type_by_name("Other").is_some(),
         "Other should exist"
     );
     assert!(
-        checker.declared_types.contains_key("Main"),
+        checker.get_type_by_name("Main").is_some(),
         "Main should exist"
     );
 }

@@ -15,7 +15,7 @@ use crate::checker::test_utils::check;
 fn test_valueless_enum() {
     // Ported from: "can be valueless"
     let checker = check("enum E { A, B, C }");
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -42,7 +42,7 @@ fn test_valueless_enum() {
 fn test_enum_with_string_values() {
     // Ported from: "can have values"
     let checker = check(r#"enum E { A: "a"; B: "b"; C: "c"; }"#);
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -84,7 +84,7 @@ fn test_enum_with_string_values() {
 #[test]
 fn test_enum_with_numeric_values() {
     let checker = check("enum E { A: 1; B: 2; C: 3; }");
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -110,7 +110,7 @@ fn test_enum_with_numeric_values() {
 fn test_enum_as_model_property() {
     // Ported from: "can be a model property"
     let checker = check("enum E { A, B, C } model Foo { prop: E; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -135,7 +135,7 @@ fn test_enum_as_model_property() {
 #[test]
 fn test_enum_is_finished() {
     let checker = check("enum E { A, B }");
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     assert!(t.is_finished(), "Enum type should be finished");
 }
@@ -143,7 +143,7 @@ fn test_enum_is_finished() {
 #[test]
 fn test_enum_member_name() {
     let checker = check("enum Direction { North, South, East, West }");
-    let e_type = checker.declared_types.get("Direction").copied().unwrap();
+    let e_type = checker.get_type_by_name("Direction").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -156,7 +156,7 @@ fn test_enum_member_name() {
 #[test]
 fn test_enum_with_decorator() {
     let checker = check("@doc enum E { A, B }");
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -169,7 +169,7 @@ fn test_enum_with_decorator() {
 #[test]
 fn test_enum_member_with_decorator() {
     let checker = check("enum E { @doc A, B }");
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -230,7 +230,7 @@ fn test_enum_duplicate_member_message() {
 fn test_enum_member_parent_reference() {
     // Verify enum members reference their parent enum
     let checker = check("enum E { A, B }");
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -250,7 +250,7 @@ fn test_enum_member_parent_reference() {
 #[test]
 fn test_enum_in_namespace() {
     let checker = check("namespace MyNs { enum E { A, B } }");
-    let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+    let ns_type = checker.get_type_by_name("MyNs").unwrap();
     let t = checker.get_type(ns_type).cloned().unwrap();
     match t {
         Type::Namespace(ns) => {
@@ -266,7 +266,7 @@ fn test_enum_in_namespace() {
 #[test]
 fn test_enum_multiple_decorators() {
     let checker = check("@foo @bar enum E { A, B }");
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -280,7 +280,7 @@ fn test_enum_multiple_decorators() {
 fn test_enum_mixed_members() {
     // Enum with both valueless and valued members
     let checker = check(r#"enum E { A, B: "b", C, D: 1 }"#);
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -317,7 +317,7 @@ fn test_enum_mixed_members() {
 #[test]
 fn test_enum_single_member() {
     let checker = check("enum E { A }");
-    let e_type = checker.declared_types.get("E").copied().unwrap();
+    let e_type = checker.get_type_by_name("E").unwrap();
     let t = checker.get_type(e_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -360,7 +360,7 @@ fn test_enum_can_have_spread_members() {
         }
     "#,
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -392,7 +392,7 @@ fn test_enum_can_have_spread_members() {
     }
 
     // Bar should still have 2 members, unaffected
-    let bar_type = checker.declared_types.get("Bar").copied().unwrap();
+    let bar_type = checker.get_type_by_name("Bar").unwrap();
     let t = checker.get_type(bar_type).cloned().unwrap();
     match t {
         Type::Enum(e) => {
@@ -424,8 +424,8 @@ fn test_enum_spread_source_member_tracking() {
     "#,
     );
 
-    let bar_type = checker.declared_types.get("Bar").copied().unwrap();
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let bar_type = checker.get_type_by_name("Bar").unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
 
     // Get the source member from Bar
     let bar_one_id = {

@@ -463,7 +463,7 @@ impl Checker {
                 {
                     has_value_interp = true;
                 } else if let Some(name) = &expr_name
-                    && self.declared_types.contains_key(name)
+                    && self.resolve_declared_name(name).is_some()
                 {
                     has_type_interp = true;
                 }

@@ -483,7 +483,7 @@ mod tests {
     #[test]
     fn test_model_name() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let name = get_type_name(&checker, foo_id, &TypeNameOptions::default());
         assert_eq!(name, "Foo");
     }
@@ -491,7 +491,7 @@ mod tests {
     #[test]
     fn test_scalar_name() {
         let checker = check("scalar MyScalar extends string;");
-        let s_id = checker.declared_types.get("MyScalar").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyScalar").unwrap();
         let name = get_type_name(&checker, s_id, &TypeNameOptions::default());
         assert_eq!(name, "MyScalar");
     }
@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn test_enum_name() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         let name = get_type_name(&checker, e_id, &TypeNameOptions::default());
         assert_eq!(name, "Color");
     }
@@ -507,7 +507,7 @@ mod tests {
     #[test]
     fn test_string_literal_name() {
         let checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         let name = get_type_name(&checker, resolved, &TypeNameOptions::default());
         assert_eq!(name, "\"hello\"");
@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn test_numeric_literal_name() {
         let checker = check("alias Foo = 42;");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         let name = get_type_name(&checker, resolved, &TypeNameOptions::default());
         assert_eq!(name, "42");
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn test_namespace_name() {
         let checker = check("namespace Foo {}");
-        let ns_id = checker.declared_types.get("Foo").copied().unwrap();
+        let ns_id = checker.get_type_by_name("Foo").unwrap();
         let name = get_type_name(&checker, ns_id, &TypeNameOptions::default());
         assert_eq!(name, "Foo");
     }
@@ -533,7 +533,7 @@ mod tests {
     #[test]
     fn test_name_only_option() {
         let checker = check("namespace Foo { model Bar {} }");
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         let name = get_type_name(
             &checker,
             bar_id,
@@ -556,7 +556,7 @@ mod tests {
     #[test]
     fn test_empty_model_name() {
         let checker = check("model Test { x: {}; }");
-        let test_id = checker.declared_types.get("Test").copied().unwrap();
+        let test_id = checker.get_type_by_name("Test").unwrap();
         let t = checker.get_type(test_id).cloned().unwrap();
         if let Type::Model(m) = t {
             let prop_id = m.properties.get("x").copied().unwrap();
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn test_get_entity_name_type() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let name = get_entity_name(&checker, &Entity::Type(foo_id), &TypeNameOptions::default());
         assert_eq!(name, "Foo");
     }
@@ -584,7 +584,7 @@ mod tests {
             .declared_types
             .get("Foo.Bar")
             .copied()
-            .or_else(|| checker.declared_types.get("Bar").copied());
+            .or_else(|| checker.get_type_by_name("Bar"));
         if let Some(id) = ns_id {
             let name = get_type_name(&checker, id, &TypeNameOptions::default());
             assert!(
@@ -603,7 +603,7 @@ mod tests {
             .declared_types
             .get("unreal")
             .copied()
-            .or_else(|| checker.declared_types.get("Foo.unreal").copied());
+            .or_else(|| checker.get_type_by_name("Foo.unreal"));
         if let Some(id) = scalar_id {
             let name = get_type_name(&checker, id, &TypeNameOptions::default());
             assert!(
@@ -622,7 +622,7 @@ mod tests {
             .declared_types
             .get("Pet")
             .copied()
-            .or_else(|| checker.declared_types.get("Foo.Pet").copied());
+            .or_else(|| checker.get_type_by_name("Foo.Pet"));
         if let Some(id) = union_id {
             let name = get_type_name(&checker, id, &TypeNameOptions::default());
             assert!(

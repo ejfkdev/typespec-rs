@@ -26,7 +26,7 @@ use crate::checker::test_utils::{check, has_diagnostic};
 #[test]
 fn test_resolve_simple_namespace() {
     let checker = check("namespace MyService {}");
-    let ns_id = checker.declared_types.get("MyService").copied();
+    let ns_id = checker.get_type_by_name("MyService");
     assert!(
         ns_id.is_some(),
         "Should be able to resolve namespace MyService: {:?}",
@@ -37,7 +37,7 @@ fn test_resolve_simple_namespace() {
 #[test]
 fn test_resolve_model_at_root() {
     let checker = check("model Pet {}");
-    let pet_id = checker.declared_types.get("Pet").copied();
+    let pet_id = checker.get_type_by_name("Pet");
     assert!(
         pet_id.is_some(),
         "Should be able to resolve model Pet: {:?}",
@@ -49,7 +49,7 @@ fn test_resolve_model_at_root() {
 fn test_resolve_model_in_namespace() {
     let checker = check("namespace MyOrg.MyService; model Pet {}");
     // In namespace, Pet might be under the namespace prefix
-    let pet_id = checker.declared_types.get("Pet").copied();
+    let pet_id = checker.get_type_by_name("Pet");
     assert!(
         pet_id.is_some(),
         "Should be able to resolve model Pet in namespace: {:?}",
@@ -60,7 +60,7 @@ fn test_resolve_model_in_namespace() {
 #[test]
 fn test_resolve_model_property() {
     let checker = check("model Pet { name: string }");
-    let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+    let pet_id = checker.get_type_by_name("Pet").unwrap();
     let pet_type = checker.get_type(pet_id).cloned().unwrap();
     match pet_type {
         crate::checker::Type::Model(m) => {
@@ -76,7 +76,7 @@ fn test_resolve_model_property() {
 #[test]
 fn test_resolve_model_property_from_base() {
     let checker = check("model Animal { name: string } model Pet extends Animal { }");
-    let pet_id = checker.declared_types.get("Pet").copied().unwrap();
+    let pet_id = checker.get_type_by_name("Pet").unwrap();
     let pet_type = checker.get_type(pet_id).cloned().unwrap();
     match pet_type {
         crate::checker::Type::Model(m) => {
@@ -96,7 +96,7 @@ fn test_resolve_model_property_from_base() {
 #[test]
 fn test_resolve_enum_member() {
     let checker = check("enum Direction { up, down }");
-    let dir_id = checker.declared_types.get("Direction").copied().unwrap();
+    let dir_id = checker.get_type_by_name("Direction").unwrap();
     let dir_type = checker.get_type(dir_id).cloned().unwrap();
     match dir_type {
         crate::checker::Type::Enum(e) => {
@@ -125,7 +125,7 @@ fn test_resolve_nested_namespace() {
 fn test_resolve_alias() {
     let checker = check("model Pet { name: string } alias PetName = Pet.name;");
     // PetName should be resolved as an alias
-    let pet_name_id = checker.declared_types.get("PetName").copied();
+    let pet_name_id = checker.get_type_by_name("PetName");
     assert!(
         pet_name_id.is_some(),
         "Should be able to resolve alias PetName: {:?}",

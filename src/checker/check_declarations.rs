@@ -105,7 +105,7 @@ impl Checker {
 
         self.node_type_map.insert(node_id, type_id);
         if !name.is_empty() {
-            self.declared_types.insert(name, type_id);
+            self.register_declared_type(&name, type_id);
         }
 
         type_id
@@ -217,7 +217,7 @@ impl Checker {
             }));
             self.node_type_map.insert(node_id, new_id);
             if !name.is_empty() {
-                self.declared_types.insert(name.clone(), new_id);
+                self.register_declared_type(&name, new_id);
             }
             new_id
         };

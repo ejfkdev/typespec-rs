@@ -29,7 +29,7 @@ mod tests {
     #[test]
     fn test_is_enum_member() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         if let Some(Type::Enum(e)) = checker.get_type(e_id) {
             let first_member_name = &e.member_names[0];
             let member_id = e.members[first_member_name];
@@ -40,14 +40,14 @@ mod tests {
     #[test]
     fn test_is_enum_member_not_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_enum_member(&checker, foo_id));
     }
 
     #[test]
     fn test_get_enum_parent() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         if let Some(Type::Enum(e)) = checker.get_type(e_id) {
             let first_member_name = &e.member_names[0];
             let member_id = e.members[first_member_name];
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn test_get_enum_member_name() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         if let Some(Type::Enum(e)) = checker.get_type(e_id) {
             let member_id = e.members["red"];
             assert_eq!(get_name(&checker, member_id), Some("red"));
@@ -68,7 +68,7 @@ mod tests {
     #[test]
     fn test_get_enum_member_name_all() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         if let Some(Type::Enum(e)) = checker.get_type(e_id) {
             assert_eq!(get_name(&checker, e.members["red"]), Some("red"));
             assert_eq!(get_name(&checker, e.members["green"]), Some("green"));
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn test_get_value_implicit() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         if let Some(Type::Enum(e)) = checker.get_type(e_id) {
             let member_id = e.members["red"];
             let value = get_value(&checker, member_id);
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn test_get_value_explicit_string() {
         let checker = check(r#"enum Direction { north: "N", south: "S" }"#);
-        let e_id = checker.declared_types.get("Direction").copied().unwrap();
+        let e_id = checker.get_type_by_name("Direction").unwrap();
         if let Some(Type::Enum(e)) = checker.get_type(e_id) {
             let member_id = e.members["north"];
             let value = get_value(&checker, member_id);
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn test_get_value_explicit_numeric() {
         let checker = check("enum Priority { low: 1, high: 2 }");
-        let e_id = checker.declared_types.get("Priority").copied().unwrap();
+        let e_id = checker.get_type_by_name("Priority").unwrap();
         if let Some(Type::Enum(e)) = checker.get_type(e_id) {
             let member_id = e.members["low"];
             let value = get_value(&checker, member_id);
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn test_get_value_as_string() {
         let checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         if let Some(Type::Enum(e)) = checker.get_type(e_id) {
             let member_id = e.members["red"];
             let value_str = get_value_as_string(&checker, member_id);
@@ -127,14 +127,14 @@ mod tests {
     #[test]
     fn test_get_name_non_member() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_name(&checker, foo_id), None);
     }
 
     #[test]
     fn test_get_enum_non_member() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_enum(&checker, foo_id), None);
     }
 }

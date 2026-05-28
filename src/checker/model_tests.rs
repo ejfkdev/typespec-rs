@@ -34,7 +34,7 @@ use crate::checker::test_utils::check;
 #[test]
 fn test_empty_model() {
     let checker = check("model Foo {}");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -49,7 +49,7 @@ fn test_empty_model() {
 #[test]
 fn test_model_with_single_property() {
     let checker = check("model Foo { x: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -63,7 +63,7 @@ fn test_model_with_single_property() {
 #[test]
 fn test_model_with_multiple_properties() {
     let checker = check("model Foo { x: string; y: int32; z: boolean; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -79,7 +79,7 @@ fn test_model_with_multiple_properties() {
 #[test]
 fn test_model_optional_property() {
     let checker = check("model Foo { x?: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -100,7 +100,7 @@ fn test_model_optional_property() {
 #[test]
 fn test_model_required_property() {
     let checker = check("model Foo { x: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -124,8 +124,8 @@ fn test_model_required_property() {
 #[test]
 fn test_model_extends_sets_base_model() {
     let checker = check("model Base {} model Derived extends Base {}");
-    let derived_type = checker.declared_types.get("Derived").copied().unwrap();
-    let base_type = checker.declared_types.get("Base").copied().unwrap();
+    let derived_type = checker.get_type_by_name("Derived").unwrap();
+    let base_type = checker.get_type_by_name("Base").unwrap();
     let t = checker.get_type(derived_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -145,9 +145,9 @@ fn test_model_extends_registers_derived_model() {
         model Dog extends Pet { bark: string; }
     ",
     );
-    let pet_type = checker.declared_types.get("Pet").copied().unwrap();
-    let cat_type = checker.declared_types.get("Cat").copied().unwrap();
-    let dog_type = checker.declared_types.get("Dog").copied().unwrap();
+    let pet_type = checker.get_type_by_name("Pet").unwrap();
+    let cat_type = checker.get_type_by_name("Cat").unwrap();
+    let dog_type = checker.get_type_by_name("Dog").unwrap();
 
     let t = checker.get_type(pet_type).cloned().unwrap();
     match t {
@@ -168,7 +168,7 @@ fn test_model_extends_registers_derived_model() {
 fn test_model_extends_inherits_indexer() {
     let checker = check("model Base {} model Derived extends Base {}");
     // No indexer in base, so derived should not have one
-    let derived_type = checker.declared_types.get("Derived").copied().unwrap();
+    let derived_type = checker.get_type_by_name("Derived").unwrap();
     let t = checker.get_type(derived_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -186,8 +186,8 @@ fn test_model_extends_inherits_indexer() {
 fn test_model_is_sets_source_model() {
     // Ported from: "keeps reference to source model in sourceModel"
     let checker = check("model A { } model B is A { };");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
 
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
@@ -202,7 +202,7 @@ fn test_model_is_sets_source_model() {
 fn test_model_is_copies_properties() {
     // Ported from: "copies properties"
     let checker = check("model A { x: int32; } model B is A { y: string; };");
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -223,8 +223,8 @@ fn test_model_is_copied_property_parent_is_new_model() {
     // Cloned properties should have model reference pointing to the new model,
     // and source_property pointing to the original property.
     let checker = check("model Foo { prop: string; } model Test is Foo;");
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -264,8 +264,8 @@ fn test_model_is_copied_property_parent_is_new_model() {
 fn test_model_is_copies_heritage() {
     // Ported from: "copies heritage"
     let checker = check("model A { x: int32; } model B extends A { y: string; } model C is B { }");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
-    let c_type = checker.declared_types.get("C").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
+    let c_type = checker.get_type_by_name("C").unwrap();
 
     let t = checker.get_type(c_type).cloned().unwrap();
     match t {
@@ -284,7 +284,7 @@ fn test_model_is_copies_heritage() {
 fn test_model_is_copies_indexer() {
     // "model is accept array expression" - simplified check
     let checker = check("model A is string[];");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -313,8 +313,8 @@ fn test_model_property_parent_reference() {
         model B { pB: int32; }
     ",
     );
-    let a_type = checker.declared_types.get("A").copied().unwrap();
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
 
     // Check property in A
     let a_model = checker.get_type(a_type).cloned().unwrap();
@@ -357,7 +357,7 @@ fn test_model_property_parent_reference() {
 #[test]
 fn test_named_model_effective_type_is_self() {
     let checker = check("model Foo { x: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let effective = checker.get_effective_model_type(foo_type);
     assert_eq!(effective, foo_type);
 }
@@ -365,8 +365,8 @@ fn test_named_model_effective_type_is_self() {
 #[test]
 fn test_model_is_effective_type_returns_source() {
     let checker = check("model A { x: string; } model B is A { y: int32; }");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
 
     // B is named, so its effective type is itself
     assert_eq!(checker.get_effective_model_type(b_type), b_type);
@@ -389,8 +389,8 @@ fn test_model_is_effective_type_returns_source() {
 fn test_model_property_refers_to_other_model() {
     let checker =
         check("model Address { street: string; } model Person { name: string; address: Address; }");
-    let addr_type = checker.declared_types.get("Address").copied().unwrap();
-    let person_type = checker.declared_types.get("Person").copied().unwrap();
+    let addr_type = checker.get_type_by_name("Address").unwrap();
+    let person_type = checker.get_type_by_name("Person").unwrap();
 
     let t = checker.get_type(person_type).cloned().unwrap();
     match t {
@@ -414,7 +414,7 @@ fn test_model_property_refers_to_other_model() {
 #[test]
 fn test_model_property_refers_to_std_type() {
     let checker = check("model Foo { x: string; y: int32; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
 
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
@@ -444,7 +444,7 @@ fn test_model_property_refers_to_std_type() {
 #[test]
 fn test_model_with_string_literal_property() {
     let checker = check(r#"model Foo { x: "hello"; }"#);
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -468,7 +468,7 @@ fn test_model_with_string_literal_property() {
 #[test]
 fn test_model_with_numeric_literal_property() {
     let checker = check("model Foo { x: 42; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -492,7 +492,7 @@ fn test_model_with_numeric_literal_property() {
 #[test]
 fn test_model_with_boolean_literal_property() {
     let checker = check("model Foo { x: true; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -520,7 +520,7 @@ fn test_model_with_boolean_literal_property() {
 #[test]
 fn test_model_with_tuple_property() {
     let checker = check("model Foo { x: [string, int32]; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -545,7 +545,7 @@ fn test_model_with_tuple_property() {
 #[test]
 fn test_model_with_array_property() {
     let checker = check("model Foo { x: string[]; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -574,7 +574,7 @@ fn test_model_with_array_property() {
 #[test]
 fn test_model_with_union_property() {
     let checker = check(r#"model Foo { x: "a" | "b"; }"#);
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -603,7 +603,7 @@ fn test_model_with_union_property() {
 #[test]
 fn test_model_with_single_decorator() {
     let checker = check("@doc model Foo {}");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -616,7 +616,7 @@ fn test_model_with_single_decorator() {
 #[test]
 fn test_model_with_multiple_decorators() {
     let checker = check("@foo @bar model Foo {}");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -629,7 +629,7 @@ fn test_model_with_multiple_decorators() {
 #[test]
 fn test_property_with_decorator() {
     let checker = check("model Foo { @minLength name: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -657,7 +657,7 @@ fn test_property_with_decorator() {
 #[test]
 fn test_model_in_namespace() {
     let checker = check("namespace MyNs { model Foo { x: string; } }");
-    let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+    let ns_type = checker.get_type_by_name("MyNs").unwrap();
     let t = checker.get_type(ns_type).cloned().unwrap();
     match t {
         Type::Namespace(ns) => {
@@ -677,7 +677,7 @@ fn test_model_in_namespace() {
 #[test]
 fn test_template_model_declaration() {
     let checker = check("model Pair<K, V> { key: K; value: V; }");
-    let pair_type = checker.declared_types.get("Pair").copied();
+    let pair_type = checker.get_type_by_name("Pair");
     assert!(pair_type.is_some(), "Pair should be in declared_types");
 }
 
@@ -686,14 +686,14 @@ fn test_template_model_instantiation_via_extends() {
     let checker = check(
         "model Pair<K, V> { key: K; value: V; } model StringPair extends Pair<string, int32> {}",
     );
-    assert!(checker.declared_types.contains_key("Pair"));
-    assert!(checker.declared_types.contains_key("StringPair"));
+    assert!(checker.get_type_by_name("Pair").is_some());
+    assert!(checker.get_type_by_name("StringPair").is_some());
 }
 
 #[test]
 fn test_template_model_instantiation_via_is() {
     let checker = check("model Box<T> { content: T; } model MyBox is Box<string> {}");
-    let my_box_type = checker.declared_types.get("MyBox").copied().unwrap();
+    let my_box_type = checker.get_type_by_name("MyBox").unwrap();
     let t = checker.get_type(my_box_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -713,7 +713,7 @@ fn test_template_model_instantiation_via_is() {
 #[test]
 fn test_model_with_void_property() {
     let checker = check("model Foo { x: void; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -733,7 +733,7 @@ fn test_model_with_void_property() {
 #[test]
 fn test_model_with_never_property() {
     let checker = check("model Foo { x: never; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -1190,7 +1190,7 @@ fn test_model_is_array_expression() {
     // Ported from TS: "model is accept array expression"
     // model A is string[] → should be an array model (has integer indexer)
     let checker = check("model A is string[];");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -1336,7 +1336,7 @@ fn test_model_is_resolves_target_before_spreading_declared_before() {
         }
     ",
     );
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -1372,7 +1372,7 @@ fn test_model_is_resolves_target_before_spreading_declared_after() {
         model B is A;
     ",
     );
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -1402,8 +1402,8 @@ fn test_model_is_copies_heritage_registers_derived() {
         model C is B {}
     ",
     );
-    let a_type = checker.declared_types.get("A").copied().unwrap();
-    let c_type = checker.declared_types.get("C").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
+    let c_type = checker.get_type_by_name("C").unwrap();
 
     // C should have base_model = A (inherited from B)
     let c = checker.get_type(c_type).cloned().unwrap();
@@ -1507,7 +1507,7 @@ fn test_model_is_self_via_template() {
 fn test_model_is_array_of_complex_type() {
     // Ported from: "model is accept array expression of complex type"
     let checker = check("model A is (string | int32)[];");
-    let a_type = checker.declared_types.get("A").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
     let t = checker.get_type(a_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -1583,7 +1583,7 @@ fn test_no_additional_diagnostic_for_error_type() {
 #[test]
 fn test_clone_model() {
     let mut checker = check("model Foo { x: string; y: int32; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let clone_id = checker.clone_type(foo_type);
 
     // Clone should have a different TypeId
@@ -1604,7 +1604,7 @@ fn test_clone_model() {
 #[test]
 fn test_clone_model_properties_reparented() {
     let mut checker = check("model Foo { x: string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let clone_id = checker.clone_type(foo_type);
 
     let clone = checker.get_type(clone_id).cloned().unwrap();
@@ -1630,7 +1630,7 @@ fn test_clone_model_properties_reparented() {
 #[test]
 fn test_clone_enum() {
     let mut checker = check("enum Color { Red, Blue }");
-    let color_type = checker.declared_types.get("Color").copied().unwrap();
+    let color_type = checker.get_type_by_name("Color").unwrap();
     let clone_id = checker.clone_type(color_type);
 
     assert_ne!(clone_id, color_type);
@@ -1649,7 +1649,7 @@ fn test_clone_enum() {
 fn test_clone_enum_members_reparented() {
     // Ported from TS: clone-type.test.ts — "clones enums" re-parenting check
     let mut checker = check("enum Color { Red, Blue }");
-    let color_type = checker.declared_types.get("Color").copied().unwrap();
+    let color_type = checker.get_type_by_name("Color").unwrap();
     let clone_id = checker.clone_type(color_type);
 
     let clone = checker.get_type(clone_id).cloned().unwrap();
@@ -1677,7 +1677,7 @@ fn test_clone_enum_members_reparented() {
 #[test]
 fn test_clone_union() {
     let mut checker = check("union Flavor { sweet: string; sour: int32; }");
-    let flavor_type = checker.declared_types.get("Flavor").copied().unwrap();
+    let flavor_type = checker.get_type_by_name("Flavor").unwrap();
     let clone_id = checker.clone_type(flavor_type);
 
     assert_ne!(clone_id, flavor_type);
@@ -1696,7 +1696,7 @@ fn test_clone_union() {
 fn test_clone_union_variants_reparented() {
     // Ported from TS: clone-type.test.ts — "clones unions" re-parenting check
     let mut checker = check("union Flavor { sweet: string; sour: int32; }");
-    let flavor_type = checker.declared_types.get("Flavor").copied().unwrap();
+    let flavor_type = checker.get_type_by_name("Flavor").unwrap();
     let clone_id = checker.clone_type(flavor_type);
 
     let clone = checker.get_type(clone_id).cloned().unwrap();
@@ -1724,7 +1724,7 @@ fn test_clone_union_variants_reparented() {
 #[test]
 fn test_clone_interface() {
     let mut checker = check("interface IFoo { read(): string; write(x: int32): void; }");
-    let ifoo_type = checker.declared_types.get("IFoo").copied().unwrap();
+    let ifoo_type = checker.get_type_by_name("IFoo").unwrap();
     let clone_id = checker.clone_type(ifoo_type);
 
     assert_ne!(clone_id, ifoo_type);
@@ -1743,7 +1743,7 @@ fn test_clone_interface() {
 fn test_clone_interface_operations_reparented() {
     // Ported from TS: clone-type.test.ts — "clones interfaces" re-parenting check
     let mut checker = check("interface IFoo { read(): string; }");
-    let ifoo_type = checker.declared_types.get("IFoo").copied().unwrap();
+    let ifoo_type = checker.get_type_by_name("IFoo").unwrap();
     let clone_id = checker.clone_type(ifoo_type);
 
     let clone = checker.get_type(clone_id).cloned().unwrap();
@@ -1772,7 +1772,7 @@ fn test_clone_interface_operations_reparented() {
 fn test_clone_model_decorators_independent() {
     // Ported from TS: clone-type.test.ts — decorator list independence check
     let mut checker = check("@doc model Foo {}");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let orig_dec_count = match checker.get_type(foo_type).cloned().unwrap() {
         Type::Model(m) => m.decorators.len(),
         _ => panic!("Expected Model"),
@@ -1808,7 +1808,7 @@ fn test_clone_model_decorators_independent() {
 fn test_clone_model_with_base_model() {
     // Clone should preserve base_model reference
     let mut checker = check("model Base {} model Derived extends Base { x: string; }");
-    let derived_type = checker.declared_types.get("Derived").copied().unwrap();
+    let derived_type = checker.get_type_by_name("Derived").unwrap();
     let clone_id = checker.clone_type(derived_type);
 
     let clone = checker.get_type(clone_id).cloned().unwrap();
@@ -1827,7 +1827,7 @@ fn test_clone_model_with_base_model() {
 fn test_clone_model_with_source_model() {
     // Clone should preserve source_model reference (from `is`)
     let mut checker = check("model A { x: string; } model B is A { y: int32; }");
-    let b_type = checker.declared_types.get("B").copied().unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
     let clone_id = checker.clone_type(b_type);
 
     let clone = checker.get_type(clone_id).cloned().unwrap();
@@ -2089,7 +2089,7 @@ fn test_spread_model_with_overridden_property() {
         model Spread { ...Widget }
     "#,
     );
-    let spread_type = checker.declared_types.get("Spread").copied().unwrap();
+    let spread_type = checker.get_type_by_name("Spread").unwrap();
     let t = checker.get_type(spread_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -2545,7 +2545,7 @@ fn test_model_is_accepts_array_expression() {
         model Foo is string[] { }
     "#,
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -2565,7 +2565,7 @@ fn test_model_is_accepts_array_expression_of_complex_type() {
         model Foo is Bar[] { }
     "#,
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -2586,9 +2586,9 @@ fn test_model_keeps_reference_of_children() {
         model C extends A { }
     "#,
     );
-    let a_type = checker.declared_types.get("A").copied().unwrap();
-    let b_type = checker.declared_types.get("B").copied().unwrap();
-    let c_type = checker.declared_types.get("C").copied().unwrap();
+    let a_type = checker.get_type_by_name("A").unwrap();
+    let b_type = checker.get_type_by_name("B").unwrap();
+    let c_type = checker.get_type_by_name("C").unwrap();
     let a = checker.get_type(a_type).cloned().unwrap();
     match a {
         Type::Model(m) => {
@@ -2678,7 +2678,7 @@ fn test_spread_property_parent_is_target_model() {
         model Test { ...Foo }
     "#,
     );
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -2710,7 +2710,7 @@ fn test_is_property_parent_is_target_model() {
         model Test is Foo;
     "#,
     );
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {

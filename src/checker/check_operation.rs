@@ -103,9 +103,9 @@ impl Checker {
             };
             self.node_type_map.insert(node_id, new_id);
 
-            // Register in declared_types (consistent with other check_* functions)
+            // Register in declared_types (FQN key, consistent with other check_* functions)
             if ctx.mapper.is_none() && parent_interface.is_none() && !name.is_empty() {
-                self.declared_types.insert(name.clone(), new_id);
+                self.register_declared_type(&name, new_id);
             }
             new_id
         };

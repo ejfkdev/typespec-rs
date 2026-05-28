@@ -19,7 +19,7 @@ mod tests {
     #[test]
     fn test_is_union_variant() {
         let checker = check("union Shape { circle: string, square: string }");
-        let u_id = checker.declared_types.get("Shape").copied().unwrap();
+        let u_id = checker.get_type_by_name("Shape").unwrap();
         if let Some(Type::Union(u)) = checker.get_type(u_id) {
             let variant_id = u.variants["circle"];
             assert!(is_union_variant(&checker, variant_id));
@@ -29,14 +29,14 @@ mod tests {
     #[test]
     fn test_is_union_variant_not_model() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_union_variant(&checker, foo_id));
     }
 
     #[test]
     fn test_variant_name_and_type() {
         let checker = check("union Shape { circle: string, square: string }");
-        let u_id = checker.declared_types.get("Shape").copied().unwrap();
+        let u_id = checker.get_type_by_name("Shape").unwrap();
         if let Some(Type::Union(u)) = checker.get_type(u_id) {
             let variant_id = u.variants["circle"];
             assert_eq!(get_name(&checker, variant_id), Some("circle"));
@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn test_get_union_parent() {
         let checker = check("union Shape { circle: string, square: string }");
-        let u_id = checker.declared_types.get("Shape").copied().unwrap();
+        let u_id = checker.get_type_by_name("Shape").unwrap();
         if let Some(Type::Union(u)) = checker.get_type(u_id) {
             let variant_id = u.variants["circle"];
             assert_eq!(get_union(&checker, variant_id), Some(u_id));
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn test_all_variants() {
         let checker = check("union Shape { circle: string, square: int32 }");
-        let u_id = checker.declared_types.get("Shape").copied().unwrap();
+        let u_id = checker.get_type_by_name("Shape").unwrap();
         if let Some(Type::Union(u)) = checker.get_type(u_id) {
             let circle_id = u.variants["circle"];
             let square_id = u.variants["square"];
@@ -72,21 +72,21 @@ mod tests {
     #[test]
     fn test_get_name_non_variant() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_name(&checker, foo_id), None);
     }
 
     #[test]
     fn test_get_type_non_variant() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_type(&checker, foo_id), None);
     }
 
     #[test]
     fn test_get_union_non_variant() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_union(&checker, foo_id), None);
     }
 }

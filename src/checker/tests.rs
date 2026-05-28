@@ -48,7 +48,7 @@ mod checker_core_tests {
     fn test_check_empty_model() {
         let checker = check("model Foo {}");
         // Find the model type by name
-        let foo_type = checker.declared_types.get("Foo").copied();
+        let foo_type = checker.get_type_by_name("Foo");
         assert!(
             foo_type.is_some(),
             "Model 'Foo' should be in declared_types"
@@ -61,7 +61,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_model_with_properties() {
         let checker = check("model Foo { x: string; y: int32; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
 
         match &t {
@@ -82,7 +82,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_model_with_optional_property() {
         let checker = check("model Foo { x?: string; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
 
         // Find the property type
         let t = checker.get_type(foo_type).cloned().unwrap();
@@ -106,8 +106,8 @@ mod checker_core_tests {
     #[test]
     fn test_check_model_extends() {
         let checker = check("model Base {} model Derived extends Base {}");
-        let derived_type = checker.declared_types.get("Derived").copied().unwrap();
-        let base_type = checker.declared_types.get("Base").copied().unwrap();
+        let derived_type = checker.get_type_by_name("Derived").unwrap();
+        let base_type = checker.get_type_by_name("Base").unwrap();
 
         let t = checker.get_type(derived_type).cloned().unwrap();
         match t {
@@ -123,7 +123,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_numeric_literal() {
         let checker = check("model Foo { x: 42; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
 
         match t {
@@ -148,7 +148,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_string_literal() {
         let checker = check("model Foo { x: \"hello\"; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
 
         match t {
@@ -173,7 +173,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_boolean_literal() {
         let checker = check("model Foo { x: true; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
 
         match t {
@@ -200,7 +200,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_enum() {
         let checker = check("enum Status { active; inactive; }");
-        let enum_type = checker.declared_types.get("Status").copied().unwrap();
+        let enum_type = checker.get_type_by_name("Status").unwrap();
         let t = checker.get_type(enum_type).cloned().unwrap();
 
         match t {
@@ -219,7 +219,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_scalar() {
         let checker = check("scalar uuid extends string;");
-        let scalar_type = checker.declared_types.get("uuid").copied().unwrap();
+        let scalar_type = checker.get_type_by_name("uuid").unwrap();
         let t = checker.get_type(scalar_type).cloned().unwrap();
 
         match t {
@@ -236,7 +236,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_union() {
         let checker = check("union Color { red: string; blue: string; }");
-        let union_type = checker.declared_types.get("Color").copied().unwrap();
+        let union_type = checker.get_type_by_name("Color").unwrap();
         let t = checker.get_type(union_type).cloned().unwrap();
 
         match t {
@@ -253,7 +253,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_namespace() {
         let checker = check("namespace MyNs { model Foo {} }");
-        let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+        let ns_type = checker.get_type_by_name("MyNs").unwrap();
         let t = checker.get_type(ns_type).cloned().unwrap();
 
         match t {
@@ -270,7 +270,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_interface() {
         let checker = check("interface Foo { bar(): void; }");
-        let iface_type = checker.declared_types.get("Foo").copied().unwrap();
+        let iface_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(iface_type).cloned().unwrap();
 
         match t {
@@ -287,8 +287,8 @@ mod checker_core_tests {
     #[test]
     fn test_type_reference_to_model() {
         let checker = check("model Foo {} model Bar { x: Foo; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
-        let bar_type = checker.declared_types.get("Bar").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
+        let bar_type = checker.get_type_by_name("Bar").unwrap();
 
         // Check that the property x has type Foo
         let t = checker.get_type(bar_type).cloned().unwrap();
@@ -313,7 +313,7 @@ mod checker_core_tests {
     #[test]
     fn test_type_reference_to_std_scalar() {
         let checker = check("model Foo { x: string; }");
-        let bar_type = checker.declared_types.get("Foo").copied().unwrap();
+        let bar_type = checker.get_type_by_name("Foo").unwrap();
 
         let t = checker.get_type(bar_type).cloned().unwrap();
         match t {
@@ -342,7 +342,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_tuple_expression() {
         let checker = check("model Foo { x: [string, int32]; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
 
         match t {
@@ -368,7 +368,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_array_expression() {
         let checker = check("model Foo { x: string[]; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
 
         match t {
@@ -397,7 +397,7 @@ mod checker_core_tests {
     #[test]
     fn test_void_keyword() {
         let checker = check("model Foo { x: void; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
 
         match t {
@@ -420,7 +420,7 @@ mod checker_core_tests {
     #[test]
     fn test_check_alias() {
         let checker = check("alias MyStr = string;");
-        let alias_type = checker.declared_types.get("MyStr").copied().unwrap();
+        let alias_type = checker.get_type_by_name("MyStr").unwrap();
         let t = checker.get_type(alias_type).cloned().unwrap();
 
         match t {
@@ -449,7 +449,7 @@ mod template_instantiation_tests {
     fn test_template_model_single_param() {
         let checker = check("model Pair<K, V> { key: K; value: V; }");
         // The template declaration itself should be registered
-        let pair_type = checker.declared_types.get("Pair").copied();
+        let pair_type = checker.get_type_by_name("Pair");
         assert!(pair_type.is_some(), "Pair should be in declared_types");
     }
 
@@ -459,14 +459,14 @@ mod template_instantiation_tests {
             "model Pair<K, V> { key: K; value: V; } model StringPair extends Pair<string, int32> {}",
         );
         // Check that StringPair was created
-        let string_pair_type = checker.declared_types.get("StringPair").copied();
+        let string_pair_type = checker.get_type_by_name("StringPair");
         assert!(
             string_pair_type.is_some(),
             "StringPair should be in declared_types"
         );
 
         // Check that Pair was created
-        let pair_type = checker.declared_types.get("Pair").copied();
+        let pair_type = checker.get_type_by_name("Pair");
         assert!(pair_type.is_some(), "Pair should be in declared_types");
     }
 
@@ -474,7 +474,7 @@ mod template_instantiation_tests {
     fn test_template_alias_instantiation() {
         let checker =
             check("alias MaybeUndefined<T> = T; model Foo { x: MaybeUndefined<string>; }");
-        let foo_type = checker.declared_types.get("Foo").copied();
+        let foo_type = checker.get_type_by_name("Foo");
         assert!(foo_type.is_some(), "Foo should be in declared_types");
     }
 
@@ -482,7 +482,7 @@ mod template_instantiation_tests {
     fn test_template_model_with_default() {
         // Template parameter with default value
         let checker = check("model Container<T, Wrapper = T> { value: T; wrapper: Wrapper; }");
-        let container_type = checker.declared_types.get("Container").copied();
+        let container_type = checker.get_type_by_name("Container");
         assert!(
             container_type.is_some(),
             "Container should be in declared_types"
@@ -494,7 +494,7 @@ mod template_instantiation_tests {
     #[test]
     fn test_template_param_resolved_in_model() {
         let checker = check("model Box<T> { content: T; }");
-        let box_type = checker.declared_types.get("Box").copied().unwrap();
+        let box_type = checker.get_type_by_name("Box").unwrap();
         let t = checker.get_type(box_type).cloned().unwrap();
 
         // The model should have one property 'content'
@@ -514,7 +514,7 @@ mod template_instantiation_tests {
     #[test]
     fn test_template_interface() {
         let checker = check("interface Repository<T> { get(id: int32): T; set(item: T): void; }");
-        let repo_type = checker.declared_types.get("Repository").copied();
+        let repo_type = checker.get_type_by_name("Repository");
         assert!(
             repo_type.is_some(),
             "Repository should be in declared_types"
@@ -526,7 +526,7 @@ mod template_instantiation_tests {
     #[test]
     fn test_template_union() {
         let checker = check("union Result<T> { ok: T; error: string; }");
-        let result_type = checker.declared_types.get("Result").copied();
+        let result_type = checker.get_type_by_name("Result");
         assert!(result_type.is_some(), "Result should be in declared_types");
     }
 
@@ -543,7 +543,7 @@ mod template_instantiation_tests {
     #[test]
     fn test_template_scalar() {
         let checker = check("scalar constrained<T> extends T;");
-        let scalar_type = checker.declared_types.get("constrained").copied();
+        let scalar_type = checker.get_type_by_name("constrained");
         assert!(
             scalar_type.is_some(),
             "constrained should be in declared_types"
@@ -561,7 +561,7 @@ mod template_instantiation_tests {
             check("model Pair<K, V> { key: K; value: V; } model MyPair is Pair<string, int32> {}");
 
         // MyPair should exist
-        let my_pair_type = checker.declared_types.get("MyPair").copied().unwrap();
+        let my_pair_type = checker.get_type_by_name("MyPair").unwrap();
         let t = checker.get_type(my_pair_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -583,7 +583,7 @@ mod template_instantiation_tests {
             check("model Foo<T> { value: T; } model Bar { ... Foo<string>; extra: int32; }");
 
         // Bar should exist
-        let bar_type = checker.declared_types.get("Bar").copied().unwrap();
+        let bar_type = checker.get_type_by_name("Bar").unwrap();
         let t = checker.get_type(bar_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -602,7 +602,7 @@ mod template_instantiation_tests {
         // Alias wrapping a template model
         let checker = check("model Box<T> { content: T; } model MyBox { box: Box<string>; }");
 
-        let my_box_type = checker.declared_types.get("MyBox").copied().unwrap();
+        let my_box_type = checker.get_type_by_name("MyBox").unwrap();
         let t = checker.get_type(my_box_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -623,10 +623,10 @@ mod template_instantiation_tests {
         );
 
         // Both A and B should be created
-        assert!(checker.declared_types.contains_key("A"), "A should exist");
-        assert!(checker.declared_types.contains_key("B"), "B should exist");
+        assert!(checker.get_type_by_name("A").is_some(), "A should exist");
+        assert!(checker.get_type_by_name("B").is_some(), "B should exist");
         assert!(
-            checker.declared_types.contains_key("Container"),
+            checker.get_type_by_name("Container").is_some(),
             "Container should exist"
         );
     }
@@ -647,7 +647,7 @@ mod decorator_checking_tests {
     #[test]
     fn test_model_with_decorator_application() {
         let checker = check("@doc model Foo {}");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -664,7 +664,7 @@ mod decorator_checking_tests {
     #[test]
     fn test_decorator_declaration() {
         let checker = check("extern dec myDec(target: Type);");
-        let dec_type = checker.declared_types.get("myDec").copied();
+        let dec_type = checker.get_type_by_name("myDec");
         assert!(dec_type.is_some(), "myDec should be in declared_types");
 
         let t = checker.get_type(dec_type.unwrap()).cloned().unwrap();
@@ -679,7 +679,7 @@ mod decorator_checking_tests {
     #[test]
     fn test_decorator_with_args() {
         let checker = check("@doc model Foo {}");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -874,7 +874,7 @@ mod value_tests {
         checker.set_parse_result(result.root_id, result.builder);
         checker.check_program();
 
-        let foo_type = checker.declared_types.get("Foo").copied();
+        let foo_type = checker.get_type_by_name("Foo");
         assert!(foo_type.is_some(), "model Foo should have a type");
     }
 
@@ -884,7 +884,7 @@ mod value_tests {
         let checker = check(r#"const x = "hello"; model Foo { name: string; }"#);
 
         // Type context: Foo is a type
-        assert!(checker.declared_types.contains_key("Foo"));
+        assert!(checker.get_type_by_name("Foo").is_some());
 
         // Value context: x is a value
         assert!(checker.declared_values.contains_key("x"));
@@ -941,7 +941,7 @@ mod effective_model_type_tests {
     fn test_named_model_returns_self() {
         // Named models are their own effective type
         let checker = check("model Foo { x: string; }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let effective = checker.get_effective_model_type(foo_type);
         assert_eq!(effective, foo_type, "Named model should return itself");
     }
@@ -951,7 +951,7 @@ mod effective_model_type_tests {
         // model Dog is Pet → Dog has source_model = Pet's instantiated type
         // getEffectiveModelType on the anonymous model from 'is' should return the source
         let checker = check("model Pet { name: string; } model Dog is Pet { breed: string; }");
-        let dog_type = checker.declared_types.get("Dog").copied().unwrap();
+        let dog_type = checker.get_type_by_name("Dog").unwrap();
 
         // Dog is a named model, so its effective type is itself
         let effective = checker.get_effective_model_type(dog_type);
@@ -974,7 +974,7 @@ mod effective_model_type_tests {
     fn test_named_model_always_self() {
         // Even models with 'extends' should return themselves
         let checker = check("model Base {} model Derived extends Base {}");
-        let derived_type = checker.declared_types.get("Derived").copied().unwrap();
+        let derived_type = checker.get_type_by_name("Derived").unwrap();
         let effective = checker.get_effective_model_type(derived_type);
         assert_eq!(effective, derived_type);
     }
@@ -982,7 +982,7 @@ mod effective_model_type_tests {
     #[test]
     fn test_empty_named_model_returns_self() {
         let checker = check("model Empty {}");
-        let empty_type = checker.declared_types.get("Empty").copied().unwrap();
+        let empty_type = checker.get_type_by_name("Empty").unwrap();
         let effective = checker.get_effective_model_type(empty_type);
         assert_eq!(effective, empty_type);
     }
@@ -991,7 +991,7 @@ mod effective_model_type_tests {
     fn test_non_model_type_returns_self() {
         // getEffectiveModelType on a non-model type returns the input
         let checker = check("enum Status { active; }");
-        let enum_type = checker.declared_types.get("Status").copied().unwrap();
+        let enum_type = checker.get_type_by_name("Status").unwrap();
         let effective = checker.get_effective_model_type(enum_type);
         assert_eq!(effective, enum_type);
     }

@@ -24,11 +24,7 @@ fn test_scenario_a_route_on_interface() {
         vec![("route", "HTTP", "Interface")],
     );
 
-    let chat_id = checker
-        .declared_types
-        .get("Chat")
-        .copied()
-        .expect("Chat should exist");
+    let chat_id = checker.get_type_by_name("Chat").expect("Chat should exist");
     let iface = match checker.get_type(chat_id) {
         Some(Type::Interface(i)) => i,
         _ => panic!("expected Interface"),
@@ -63,9 +59,7 @@ fn test_scenario_b_command_on_operation() {
     );
 
     let op_id = checker
-        .declared_types
-        .get("gitStatus")
-        .copied()
+        .get_type_by_name("gitStatus")
         .expect("gitStatus should exist");
     let op = match checker.get_type(op_id) {
         Some(Type::Operation(o)) => o,
@@ -103,9 +97,7 @@ fn test_scenario_c_header_with_object_param() {
     );
 
     let model_id = checker
-        .declared_types
-        .get("Request")
-        .copied()
+        .get_type_by_name("Request")
         .expect("Request should exist");
     let model = match checker.get_type(model_id) {
         Some(Type::Model(m)) => m,
@@ -158,9 +150,7 @@ fn test_scenario_d_namespace_hierarchy() {
     );
 
     let llm_id = checker
-        .declared_types
-        .get("Llm")
-        .copied()
+        .get_type_by_name("Llm")
         .expect("Llm namespace should exist");
     let llm_ns = match checker.get_type(llm_id) {
         Some(Type::Namespace(ns)) => ns,
@@ -175,11 +165,7 @@ fn test_scenario_d_namespace_hierarchy() {
     );
 
     // Chat interface's namespace should point to Llm, not global
-    let chat_id = checker
-        .declared_types
-        .get("Chat")
-        .copied()
-        .expect("Chat should exist");
+    let chat_id = checker.get_type_by_name("Chat").expect("Chat should exist");
     let chat_iface = match checker.get_type(chat_id) {
         Some(Type::Interface(i)) => i,
         _ => panic!("expected Interface"),
@@ -210,11 +196,7 @@ fn test_scenario_e_decorator_inheritance() {
         vec![("route", "HTTP", "unknown")],
     );
 
-    let chat_id = checker
-        .declared_types
-        .get("Chat")
-        .copied()
-        .expect("Chat should exist");
+    let chat_id = checker.get_type_by_name("Chat").expect("Chat should exist");
     let iface = match checker.get_type(chat_id) {
         Some(Type::Interface(i)) => i,
         _ => panic!("expected Interface"),
@@ -277,9 +259,7 @@ fn test_scenario_g_using_dotted_namespace() {
 
     // Check if the property decorator was resolved
     let opts_id = checker
-        .declared_types
-        .get("Options")
-        .copied()
+        .get_type_by_name("Options")
         .expect("Options should exist");
     if let Some(Type::Model(m)) = checker.get_type(opts_id)
         && let Some(prop_id) = m.properties.get("verbose")
@@ -321,9 +301,7 @@ fn test_scenario_h_multiple_custom_namespaces() {
     );
 
     let op_id = checker
-        .declared_types
-        .get("getData")
-        .copied()
+        .get_type_by_name("getData")
         .expect("getData should exist");
     let op = match checker.get_type(op_id) {
         Some(Type::Operation(o)) => o,
@@ -374,16 +352,8 @@ fn test_scenario_i_same_name_types_different_namespaces() {
     );
 
     // FQN should differentiate them
-    let a_ns_id = checker
-        .declared_types
-        .get("A")
-        .copied()
-        .expect("A should exist");
-    let b_ns_id = checker
-        .declared_types
-        .get("B")
-        .copied()
-        .expect("B should exist");
+    let a_ns_id = checker.get_type_by_name("A").expect("A should exist");
+    let b_ns_id = checker.get_type_by_name("B").expect("B should exist");
 
     // Find Request in each namespace
     let a_req = {
@@ -439,9 +409,7 @@ fn test_scenario_k_model_property_structured_decorator_args() {
     );
 
     let opts_id = checker
-        .declared_types
-        .get("Options")
-        .copied()
+        .get_type_by_name("Options")
         .expect("Options should exist");
     let model = match checker.get_type(opts_id) {
         Some(Type::Model(m)) => m,
@@ -497,9 +465,7 @@ fn test_scenario_l_multiple_decorators_on_property() {
     );
 
     let model_id = checker
-        .declared_types
-        .get("Request")
-        .copied()
+        .get_type_by_name("Request")
         .expect("Request should exist");
     let model = match checker.get_type(model_id) {
         Some(Type::Model(m)) => m,
@@ -569,9 +535,7 @@ fn test_bug2_no_invalid_argument_count_for_paramless_decorators() {
 
     // Decorator should still be applied with correct args
     let op_id = checker
-        .declared_types
-        .get("gitStatus")
-        .copied()
+        .get_type_by_name("gitStatus")
         .expect("gitStatus should exist");
     let op = match checker.get_type(op_id) {
         Some(Type::Operation(o)) => o,
@@ -716,11 +680,7 @@ fn test_bug1_overlapping_namespace_decorator_and_user_code() {
     );
 
     // Llm namespace should have the operation
-    let llm_id = checker
-        .declared_types
-        .get("Llm")
-        .copied()
-        .expect("Llm should exist");
+    let llm_id = checker.get_type_by_name("Llm").expect("Llm should exist");
     let llm_ns = match checker.get_type(llm_id) {
         Some(Type::Namespace(ns)) => ns,
         _ => panic!("expected Namespace"),

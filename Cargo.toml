@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/tspc"]
+members = [".", "crates/tspc", "crates/cdp-profile"]
 resolver = "3"
 
 # Config for 'dist'

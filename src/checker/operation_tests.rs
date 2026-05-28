@@ -28,7 +28,7 @@ use crate::checker::test_utils::check;
 #[test]
 fn test_operation_declaration() {
     let checker = check("op foo(): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -42,7 +42,7 @@ fn test_operation_declaration() {
 fn test_operation_return_type_void() {
     // Ported from: "can return void"
     let checker = check("op foo(): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -62,7 +62,7 @@ fn test_operation_return_type_void() {
 #[test]
 fn test_operation_return_type_scalar() {
     let checker = check("op foo(): string;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -80,7 +80,7 @@ fn test_operation_return_type_scalar() {
 #[test]
 fn test_operation_with_parameters() {
     let checker = check("op foo(name: string, age: int32): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -93,7 +93,7 @@ fn test_operation_with_parameters() {
 #[test]
 fn test_operation_with_decorator() {
     let checker = check("@doc op foo(): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -106,7 +106,7 @@ fn test_operation_with_decorator() {
 #[test]
 fn test_operation_is_finished() {
     let checker = check("op foo(): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     assert!(t.is_finished(), "Operation type should be finished");
 }
@@ -114,7 +114,7 @@ fn test_operation_is_finished() {
 #[test]
 fn test_operation_in_namespace() {
     let checker = check("namespace MyNs { op foo(): void; }");
-    let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+    let ns_type = checker.get_type_by_name("MyNs").unwrap();
     let t = checker.get_type(ns_type).cloned().unwrap();
     match t {
         Type::Namespace(ns) => {
@@ -130,7 +130,7 @@ fn test_operation_in_namespace() {
 #[test]
 fn test_operation_in_interface() {
     let checker = check("interface Foo { bar(): void; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Interface(i) => {
@@ -147,7 +147,7 @@ fn test_operation_in_interface() {
 fn test_js_special_word_parameter() {
     // Ported from: "js special words for parameter names"
     let checker = check("op foo(constructor: string): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -165,8 +165,8 @@ fn test_js_special_word_parameter() {
 fn test_operation_is_keeps_source_reference() {
     // Ported from: "keeps reference to source operation"
     let checker = check("op a(): void; op b is a;");
-    let a_type = checker.declared_types.get("a").copied().unwrap();
-    let b_type = checker.declared_types.get("b").copied().unwrap();
+    let a_type = checker.get_type_by_name("a").unwrap();
+    let b_type = checker.get_type_by_name("b").unwrap();
 
     let t = checker.get_type(b_type).cloned().unwrap();
     match t {
@@ -275,7 +275,7 @@ fn test_operation_is_valid_no_error() {
 fn test_operation_parameter_types() {
     // Verify operation parameter types are resolved correctly
     let checker = check("op foo(name: string, age: int32): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -399,7 +399,7 @@ fn test_operation_is_non_operation_message() {
 fn test_operation_return_type_model() {
     // Operation returning a model type
     let checker = check("model Bar { x: int32; } op foo(): Bar;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -423,7 +423,7 @@ fn test_operation_return_type_model() {
 #[test]
 fn test_operation_multiple_decorators() {
     let checker = check("@doc @route(\"/api\") op foo(): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -436,7 +436,7 @@ fn test_operation_multiple_decorators() {
 #[test]
 fn test_operation_return_type_boolean() {
     let checker = check("op foo(): boolean;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -454,7 +454,7 @@ fn test_operation_return_type_boolean() {
 #[test]
 fn test_operation_return_type_int32() {
     let checker = check("op foo(): int32;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -474,9 +474,9 @@ fn test_operation_is_chained() {
     // Ported from: "can be defined based on other operation references"
     // op b is a; (chained reference)
     let checker = check("op a(): void; op b is a; op c is b;");
-    let a_type = checker.declared_types.get("a").copied().unwrap();
-    let b_type = checker.declared_types.get("b").copied().unwrap();
-    let c_type = checker.declared_types.get("c").copied().unwrap();
+    let a_type = checker.get_type_by_name("a").unwrap();
+    let b_type = checker.get_type_by_name("b").unwrap();
+    let c_type = checker.get_type_by_name("c").unwrap();
 
     // b.sourceOperation should be a
     let b_t = checker.get_type(b_type).cloned().unwrap();
@@ -520,7 +520,7 @@ fn test_operation_circular_via_interface() {
     );
     // Verify the operation is at least declared
     assert!(
-        checker.declared_types.contains_key("Group"),
+        checker.get_type_by_name("Group").is_some(),
         "Group interface should be declared"
     );
     // TODO: When member expression resolution is improved, check for circular-op-signature
@@ -531,7 +531,7 @@ fn test_operation_template_declaration() {
     // Template operation declaration
     let checker = check("op create<T>(value: T): T;");
     assert!(
-        checker.declared_types.contains_key("create"),
+        checker.get_type_by_name("create").is_some(),
         "create operation should be declared"
     );
 }
@@ -539,7 +539,7 @@ fn test_operation_template_declaration() {
 #[test]
 fn test_operation_optional_parameter() {
     let checker = check("op foo(name?: string): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -553,7 +553,7 @@ fn test_operation_optional_parameter() {
 fn test_operation_no_parameters() {
     // Operation with no parameters
     let checker = check("op foo(): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -580,7 +580,7 @@ fn test_operation_is_parameters_spread() {
         op foo is bar;
     ",
     );
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -616,7 +616,7 @@ fn test_operation_template_is_reference() {
     ",
     );
     assert!(
-        checker.declared_types.contains_key("getUser"),
+        checker.get_type_by_name("getUser").is_some(),
         "getUser operation should be declared"
     );
 }
@@ -633,7 +633,7 @@ fn test_operation_is_chained_template_reference() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("Cat"),
+        checker.get_type_by_name("Cat").is_some(),
         "Cat operation should be declared"
     );
 }
@@ -650,7 +650,7 @@ fn test_operation_is_in_interface() {
         }
     ",
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Interface(i) => {
@@ -676,7 +676,7 @@ fn test_operation_is_from_interface_member() {
     ",
     );
     assert!(
-        checker.declared_types.contains_key("baz"),
+        checker.get_type_by_name("baz").is_some(),
         "baz operation should be declared"
     );
 }
@@ -693,7 +693,7 @@ fn test_operation_is_same_interface_member() {
         }
     ",
     );
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Interface(i) => {
@@ -797,7 +797,7 @@ fn test_operation_is_parameter_resolution_declared_before() {
         op bar(x: string): void;
     ",
     );
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -825,7 +825,7 @@ fn test_operation_is_parameter_resolution_declared_after() {
         op foo is bar;
     ",
     );
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -859,10 +859,10 @@ fn test_operation_is_source_operation_chain() {
         op d is c;
     ",
     );
-    let a_type = checker.declared_types.get("a").copied().unwrap();
-    let b_type = checker.declared_types.get("b").copied().unwrap();
-    let c_type = checker.declared_types.get("c").copied().unwrap();
-    let d_type = checker.declared_types.get("d").copied().unwrap();
+    let a_type = checker.get_type_by_name("a").unwrap();
+    let b_type = checker.get_type_by_name("b").unwrap();
+    let c_type = checker.get_type_by_name("c").unwrap();
+    let d_type = checker.get_type_by_name("d").unwrap();
 
     // Verify chain: d → c → b → a
     let d_t = checker.get_type(d_type).cloned().unwrap();
@@ -911,7 +911,7 @@ fn test_operation_is_from_interface_operation_return_type() {
         op baz is Foo.bar;
     ",
     );
-    let baz_type = checker.declared_types.get("baz").copied().unwrap();
+    let baz_type = checker.get_type_by_name("baz").unwrap();
     let t = checker.get_type(baz_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -939,7 +939,7 @@ fn test_operation_invalid_is_reference_creates_operation() {
     );
     // Operation should still be created even with invalid reference
     assert!(
-        checker.declared_types.contains_key("foo"),
+        checker.get_type_by_name("foo").is_some(),
         "foo operation should still be declared"
     );
 }
@@ -957,7 +957,7 @@ fn test_operation_interface_self_reference_circular() {
     );
     // Verify interface is declared (no crash)
     assert!(
-        checker.declared_types.contains_key("Group"),
+        checker.get_type_by_name("Group").is_some(),
         "Group interface should be declared"
     );
 }
@@ -975,7 +975,7 @@ fn test_operation_interface_mutual_reference_circular() {
     );
     // Verify interface is declared (no crash)
     assert!(
-        checker.declared_types.contains_key("Group"),
+        checker.get_type_by_name("Group").is_some(),
         "Group interface should be declared"
     );
 }
@@ -989,7 +989,7 @@ fn test_operation_with_spread_parameters() {
         op foo(...Params): void;
     ",
     );
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -1019,7 +1019,7 @@ fn test_operation_with_spread_parameters() {
 #[test]
 fn test_js_special_word_parameter_to_string() {
     let checker = check("op foo(toString: string): void;");
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -1090,7 +1090,7 @@ fn test_operation_is_non_operation_empty_fallback() {
         op foo is Bar;
     ",
     );
-    let foo_type = checker.declared_types.get("foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -1121,11 +1121,11 @@ fn test_operation_is_parameter_resolution_with_model_ref() {
     ",
     );
     assert!(
-        checker.declared_types.contains_key("myOp"),
+        checker.get_type_by_name("myOp").is_some(),
         "myOp should be declared"
     );
     assert!(
-        checker.declared_types.contains_key("Base"),
+        checker.get_type_by_name("Base").is_some(),
         "Base should be declared"
     );
 }

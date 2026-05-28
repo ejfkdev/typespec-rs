@@ -48,12 +48,14 @@ impl Checker {
     /// Ported from TS name-resolver.ts resolveIdentifierInScope.
     pub(crate) fn resolve_via_using(&self, name: &str) -> Option<TypeId> {
         for (_, using_ns_name) in &self.using_declarations {
-            // Resolve the using'd namespace (supports dotted names like "AnyUse.CLI")
-            if let Some(ns_id) = self.resolve_namespace_by_name(using_ns_name)
+            let ns_id = self.resolve_namespace_by_name(using_ns_name);
+            if let Some(ns_id) = ns_id
                 && let Some(Type::Namespace(ns)) = self.get_type(ns_id)
-                && let Some(type_id) = ns.lookup_member(name)
             {
-                return Some(type_id);
+                let member = ns.lookup_member(name);
+                if let Some(type_id) = member {
+                    return Some(type_id);
+                }
             }
         }
         None
@@ -104,7 +106,7 @@ impl Checker {
             // Only report unused-using if the namespace itself is valid (no invalid-ref errors)
             // Check if the namespace was resolved successfully by looking in declared_types
             // or by checking if the using name refers to a known namespace type
-            let is_valid_namespace = self.declared_types.contains_key(&ns_name)
+            let is_valid_namespace = self.resolve_declared_name(&ns_name).is_some()
                 || self.is_valid_namespace_name(&ns_name);
             if is_valid_namespace {
                 self.warning(
@@ -122,17 +124,16 @@ impl Checker {
             let parent_name = &name[..dot_pos];
             let child_name = &name[dot_pos + 1..];
 
-            if let Some(&parent_id) = self.declared_types.get(parent_name)
+            if let Some(parent_id) = self.resolve_declared_name(parent_name)
                 && let Some(Type::Namespace(ns)) = self.get_type(parent_id)
             {
                 return ns.namespaces.contains_key(child_name);
             }
             false
         } else {
-            // Simple name - check if it's a namespace type in declared_types
-            self.declared_types
-                .get(name)
-                .is_some_and(|&id| matches!(self.get_type(id), Some(Type::Namespace(_))))
+            // Simple name - check if it's a namespace type
+            self.resolve_declared_name(name)
+                .is_some_and(|id| matches!(self.get_type(id), Some(Type::Namespace(_))))
         }
     }
 
@@ -147,7 +148,7 @@ impl Checker {
         // and validate it references a valid decorator declaration.
         // If not found, this will produce an invalid-ref diagnostic.
         let decorator_name = Self::get_identifier_name(&ast, node.target);
-        let decorator_found = self.declared_types.contains_key(&decorator_name)
+        let decorator_found = self.resolve_declared_name(&decorator_name).is_some()
             || self.node_type_map.contains_key(&node.target);
         if !decorator_found {
             // Try to check the target node - this may produce invalid-ref
@@ -260,7 +261,7 @@ impl Checker {
             && let Some(AstNode::MemberExpression(me)) = ast.id_to_node(me_id)
         {
             let obj_name = Self::get_identifier_name(&ast, me.object);
-            if let Some(&type_id) = self.declared_types.get(&obj_name) {
+            if let Some(type_id) = self.resolve_declared_name(&obj_name) {
                 // Check if the object type is a template instance
                 if self.is_template_instance(type_id) {
                     self.error(
@@ -397,8 +398,8 @@ impl Checker {
         let object_name = Self::get_identifier_name(ast, me.object);
 
         // Look up the object type
-        let object_type_id = match self.declared_types.get(&object_name) {
-            Some(&id) => id,
+        let object_type_id = match self.resolve_declared_name(&object_name) {
+            Some(id) => id,
             None => return false,
         };
 

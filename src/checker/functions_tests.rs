@@ -198,7 +198,7 @@ fn test_function_in_namespace_callable() {
     use crate::checker::test_utils::check as check_fn;
     use crate::checker::types::Type;
     let checker = check_fn("namespace MyLib { extern fn helper(x: int32): string; }");
-    let found_fn = checker.declared_types.get("helper").copied();
+    let found_fn = checker.get_type_by_name("helper");
     assert!(
         found_fn.is_some(),
         "Function 'helper' should be in declared_types"

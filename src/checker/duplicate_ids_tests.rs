@@ -93,7 +93,7 @@ fn test_duplicate_template_parameters() {
     let checker = check("model A<T, T> { }");
     // Template parameter duplicate detection - verify it doesn't crash
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "A should be in declared_types"
     );
 }

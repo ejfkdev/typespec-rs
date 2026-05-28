@@ -395,7 +395,8 @@ pub struct Checker {
     pub typespec_namespace_id: Option<TypeId>,
 
     // ---- Declaration maps ----
-    /// Map from name to TypeId for all declared types
+    /// Map from FQN to TypeId for all declared types.
+    /// Top-level types have FQN == bare name; namespace members have FQN like "Ns.Name".
     pub declared_types: HashMap<String, TypeId>,
     /// Map from name to ValueId for all declared values (const declarations)
     pub declared_values: HashMap<String, ValueId>,
@@ -757,6 +758,82 @@ impl Checker {
         self.diagnostics_list.push(diag);
     }
 
+    /// Build a fully qualified name by walking the `current_namespace` chain.
+    /// E.g. if current_namespace is `_.Accessibility` and name is `disable`,
+    /// returns `_.Accessibility.disable`.
+    /// Anonymous (empty-name) namespaces are skipped so top-level types get bare names.
+    pub(crate) fn build_fqn(&self, name: &str) -> String {
+        let mut parts = Vec::new();
+        let mut ns_id = self.current_namespace;
+        while let Some(id) = ns_id {
+            if let Some(Type::Namespace(ns)) = self.get_type(id) {
+                if !ns.name.is_empty() {
+                    parts.push(ns.name.clone());
+                }
+                ns_id = ns.namespace;
+            } else {
+                break;
+            }
+        }
+        parts.reverse();
+        parts.push(name.to_string());
+        parts.join(".")
+    }
+
+    /// Register a type in `declared_types` using its fully qualified name.
+    pub(crate) fn register_declared_type(&mut self, name: &str, type_id: TypeId) {
+        let fqn = self.build_fqn(name);
+        self.declared_types.insert(fqn, type_id);
+    }
+
+    /// Check if a name is already registered in the current namespace scope (exact FQN).
+    pub(crate) fn contains_declared_type_in_scope(&self, name: &str) -> bool {
+        let fqn = self.build_fqn(name);
+        self.declared_types.contains_key(&fqn)
+    }
+
+    /// Get a type by exact FQN in the current namespace scope.
+    pub(crate) fn get_declared_type_in_scope(&self, name: &str) -> Option<TypeId> {
+        let fqn = self.build_fqn(name);
+        self.declared_types.get(&fqn).copied()
+    }
+
+    /// Resolve a name by walking the namespace chain from inner to outer.
+    /// E.g. inside `_.Accessibility`, looking up `disable`:
+    /// 1. Try `_.Accessibility.disable`
+    /// 2. Try `_.disable`
+    /// 3. Try `disable` (top-level)
+    ///
+    /// Anonymous (empty-name) namespaces are skipped in the chain.
+    pub(crate) fn resolve_declared_name(&self, name: &str) -> Option<TypeId> {
+        let mut ns_chain = Vec::new();
+        let mut ns_id = self.current_namespace;
+        while let Some(id) = ns_id {
+            if let Some(Type::Namespace(ns)) = self.get_type(id) {
+                if !ns.name.is_empty() {
+                    ns_chain.push(ns.name.clone());
+                }
+                ns_id = ns.namespace;
+            } else {
+                break;
+            }
+        }
+        for prefix_len in (0..=ns_chain.len()).rev() {
+            let fqn = if prefix_len == 0 {
+                name.to_string()
+            } else {
+                let mut parts: Vec<&str> =
+                    ns_chain[..prefix_len].iter().map(|s| s.as_str()).collect();
+                parts.push(name);
+                parts.join(".")
+            };
+            if let Some(&type_id) = self.declared_types.get(&fqn) {
+                return Some(type_id);
+            }
+        }
+        None
+    }
+
     /// Add an error diagnostic (convenience shorthand)
     pub(crate) fn error(&mut self, code: &str, msg: &str) {
         self.add_diagnostic(Diagnostic::error(code, msg));
@@ -822,6 +899,23 @@ impl Checker {
     /// Get all diagnostics
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics_list
+    }
+
+    /// Look up a type by its simple name.
+    /// Tries exact match first (works for top-level types where FQN == bare name),
+    /// then searches for FQN keys ending with `.name`.
+    /// For unambiguous results in production code, prefer `declared_types.get(fqn)`.
+    pub fn get_type_by_name(&self, name: &str) -> Option<TypeId> {
+        if let Some(&id) = self.declared_types.get(name) {
+            return Some(id);
+        }
+        let suffix = format!(".{}", name);
+        for (key, &id) in &self.declared_types {
+            if key.ends_with(&suffix) {
+                return Some(id);
+            }
+        }
+        None
     }
 
     // ========================================================================
@@ -1929,8 +2023,10 @@ impl Checker {
             return;
         }
 
-        // Template declaration (no mapper) — update full registration
-        self.declared_types.insert(name.to_string(), type_id);
+        // Template declaration (no mapper) — update full registration (FQN key)
+        let fqn = self.build_fqn(name);
+        self.declared_types.insert(fqn, type_id);
+        let links = self.symbol_links.get_mut(&node_id).unwrap();
         links.declared_type = Some(type_id);
         links.type_id = Some(type_id);
     }

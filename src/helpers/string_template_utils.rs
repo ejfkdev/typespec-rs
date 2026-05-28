@@ -77,7 +77,7 @@ mod tests {
     fn test_string_template_with_only_literals_is_serializable() {
         // A simple string literal (not a template) is trivially serializable
         let checker = check(r#"model Foo { x: "hello"; }"#);
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
         if let Type::Model(m) = t {
             let prop_id = m.properties.get("x").copied().unwrap();
@@ -98,7 +98,7 @@ mod tests {
             model Test { test: "prefix_${M}"; }
         "#,
         );
-        let test_type = checker.declared_types.get("Test").copied().unwrap();
+        let test_type = checker.get_type_by_name("Test").unwrap();
         let t = checker.get_type(test_type).cloned().unwrap();
         if let Type::Model(m) = t {
             let prop_id = m.properties.get("test").copied().unwrap();
@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn test_string_template_with_numeric_interpolation() {
         let checker = check(r#"model Test { test: "Start ${123} end"; }"#);
-        let test_type = checker.declared_types.get("Test").copied().unwrap();
+        let test_type = checker.get_type_by_name("Test").unwrap();
         let t = checker.get_type(test_type).cloned().unwrap();
         if let Type::Model(m) = t {
             let prop_id = m.properties.get("test").copied().unwrap();

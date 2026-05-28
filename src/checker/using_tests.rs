@@ -323,7 +323,7 @@ fn test_using_resolves_local_decls_over_usings() {
     "#,
     );
     // Local model Foo should take precedence over Lib.Foo
-    let foo_id = checker.declared_types.get("Foo").copied();
+    let foo_id = checker.get_type_by_name("Foo");
     assert!(
         foo_id.is_some(),
         "Should resolve local Foo over using'd Foo"

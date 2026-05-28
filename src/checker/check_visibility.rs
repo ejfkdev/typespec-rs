@@ -78,8 +78,8 @@ impl Checker {
     /// 4. Recursive search of all sub-namespaces under the global namespace
     /// 5. Dotted name walk: "TypeSpec.indexer", "TypeSpec.Prototypes.getter"
     pub(crate) fn resolve_decorator_by_name(&self, name: &str) -> Option<TypeId> {
-        // 1. Try direct lookup first (simple names like "doc")
-        if let Some(&id) = self.declared_types.get(name) {
+        // 1. Try direct lookup first (FQN-aware, simple names like "doc")
+        if let Some(id) = self.resolve_declared_name(name) {
             return Some(id);
         }
 
@@ -126,7 +126,7 @@ impl Checker {
             } else {
                 // Navigate into namespace
                 if i == 0 {
-                    current_ns_id = self.declared_types.get(*part).copied();
+                    current_ns_id = self.resolve_declared_name(part);
                 } else if let Some(ns_id) = current_ns_id {
                     if let Some(Type::Namespace(ns)) = self.get_type(ns_id) {
                         current_ns_id = ns.namespaces.get(*part).copied();
@@ -193,8 +193,8 @@ impl Checker {
     /// For "AnyUse.CLI", walks: declared_types["AnyUse"] → namespaces["CLI"].
     /// For simple names like "HTTP", looks up declared_types directly.
     pub(crate) fn resolve_namespace_by_name(&self, name: &str) -> Option<TypeId> {
-        // Try direct lookup first
-        if let Some(&id) = self.declared_types.get(name) {
+        // Try direct lookup first (FQN-aware)
+        if let Some(id) = self.resolve_declared_name(name) {
             return Some(id);
         }
 
@@ -204,7 +204,7 @@ impl Checker {
             return None;
         }
 
-        let mut current_id = self.declared_types.get(parts[0]).copied()?;
+        let mut current_id = self.resolve_declared_name(parts[0])?;
         for part in &parts[1..] {
             match self.get_type(current_id) {
                 Some(Type::Namespace(ns)) => {

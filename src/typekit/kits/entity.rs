@@ -64,8 +64,8 @@ mod tests {
     #[test]
     fn test_is_assignable_same_type() {
         let mut checker = check("scalar A extends string; scalar B extends string;");
-        let a_id = checker.declared_types.get("A").copied().unwrap();
-        let b_id = checker.declared_types.get("B").copied().unwrap();
+        let a_id = checker.get_type_by_name("A").unwrap();
+        let b_id = checker.get_type_by_name("B").unwrap();
         // Both extend string - just verify no panic
         let _ = is_assignable_to(&mut checker, a_id, b_id);
     }
@@ -73,8 +73,8 @@ mod tests {
     #[test]
     fn test_is_assignable_incompatible() {
         let mut checker = check("scalar A extends string; scalar B extends int32;");
-        let a_id = checker.declared_types.get("A").copied().unwrap();
-        let b_id = checker.declared_types.get("B").copied().unwrap();
+        let a_id = checker.get_type_by_name("A").unwrap();
+        let b_id = checker.get_type_by_name("B").unwrap();
         // string-based scalar should not be assignable to int32-based scalar
         assert!(!is_assignable_to(&mut checker, a_id, b_id));
     }
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn test_is_assignable_scalar_extends_string_to_string() {
         let mut checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         let string_id = builtin::string(&checker).unwrap();
         // MyS extends string, so should be assignable to string
         assert!(is_assignable_to(&mut checker, s_id, string_id));
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn test_is_assignable_string_literal_to_string() {
         let mut checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         let string_id = builtin::string(&checker).unwrap();
         // string literal "hello" is assignable to string
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn test_is_assignable_string_literal_to_int32_is_not() {
         let mut checker = check(r#"alias Foo = "hello";"#);
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         let int32_id = builtin::int32(&checker).unwrap();
         // string literal is not assignable to int32

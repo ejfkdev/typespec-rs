@@ -28,7 +28,7 @@ use crate::checker::test_utils::{check, has_diagnostic};
 #[test]
 fn test_reference_model_property() {
     let checker = check("model MyModel { x: string }");
-    let model_id = checker.declared_types.get("MyModel").copied().unwrap();
+    let model_id = checker.get_type_by_name("MyModel").unwrap();
     let model_type = checker.get_type(model_id).cloned().unwrap();
     match model_type {
         Type::Model(m) => {
@@ -44,7 +44,7 @@ fn test_reference_model_property() {
 #[test]
 fn test_reference_inherited_property() {
     let checker = check("model Base { y: string } model MyModel extends Base { x: string }");
-    let model_id = checker.declared_types.get("MyModel").copied().unwrap();
+    let model_id = checker.get_type_by_name("MyModel").unwrap();
     let model_type = checker.get_type(model_id).cloned().unwrap();
     match model_type {
         Type::Model(m) => {
@@ -63,7 +63,7 @@ fn test_reference_inherited_property() {
 #[test]
 fn test_reference_property_from_model_is() {
     let checker = check("model Base { y: string } model MyModel is Base { x: string }");
-    let model_id = checker.declared_types.get("MyModel").copied().unwrap();
+    let model_id = checker.get_type_by_name("MyModel").unwrap();
     let model_type = checker.get_type(model_id).cloned().unwrap();
     match model_type {
         Type::Model(m) => {
@@ -84,7 +84,7 @@ fn test_reference_property_from_model_is() {
 fn test_reference_spread_property() {
     let checker =
         check("model Spreadable { y: string } model MyModel { x: string, ...Spreadable }");
-    let model_id = checker.declared_types.get("MyModel").copied().unwrap();
+    let model_id = checker.get_type_by_name("MyModel").unwrap();
     let model_type = checker.get_type(model_id).cloned().unwrap();
     match model_type {
         Type::Model(m) => {
@@ -105,7 +105,7 @@ fn test_reference_spread_property() {
 fn test_reference_alias_model_property() {
     let checker = check("model MyModel { x: string } alias MyModelAlias = MyModel;");
     // Alias should resolve to the same model
-    let alias_id = checker.declared_types.get("MyModelAlias").copied();
+    let alias_id = checker.get_type_by_name("MyModelAlias");
     assert!(
         alias_id.is_some(),
         "Alias MyModelAlias should be resolvable"
@@ -119,7 +119,7 @@ fn test_reference_alias_model_property() {
 #[test]
 fn test_reference_enum_member() {
     let checker = check("enum MyEnum { x, y, z }");
-    let enum_id = checker.declared_types.get("MyEnum").copied().unwrap();
+    let enum_id = checker.get_type_by_name("MyEnum").unwrap();
     let enum_type = checker.get_type(enum_id).cloned().unwrap();
     match enum_type {
         Type::Enum(e) => {
@@ -134,7 +134,7 @@ fn test_reference_enum_member() {
 #[test]
 fn test_reference_spread_enum_member() {
     let checker = check("enum Spreadable { x, y } enum MyEnum { ...Spreadable, z }");
-    let enum_id = checker.declared_types.get("MyEnum").copied().unwrap();
+    let enum_id = checker.get_type_by_name("MyEnum").unwrap();
     let enum_type = checker.get_type(enum_id).cloned().unwrap();
     match enum_type {
         Type::Enum(e) => {
@@ -155,7 +155,7 @@ fn test_reference_spread_enum_member() {
 #[test]
 fn test_reference_union_variant() {
     let checker = check("union MyUnion { x: string }");
-    let union_id = checker.declared_types.get("MyUnion").copied().unwrap();
+    let union_id = checker.get_type_by_name("MyUnion").unwrap();
     let union_type = checker.get_type(union_id).cloned().unwrap();
     match union_type {
         Type::Union(u) => {
@@ -175,7 +175,7 @@ fn test_reference_union_variant() {
 #[test]
 fn test_reference_interface_member() {
     let checker = check("interface MyInterface { operation(): void; }");
-    let iface_id = checker.declared_types.get("MyInterface").copied().unwrap();
+    let iface_id = checker.get_type_by_name("MyInterface").unwrap();
     let iface_type = checker.get_type(iface_id).cloned().unwrap();
     match iface_type {
         Type::Interface(i) => {
@@ -193,7 +193,7 @@ fn test_reference_interface_member_from_extends() {
     let checker = check(
         "interface Base { operation(): void; } interface MyInterface extends Base { x(): void; }",
     );
-    let iface_id = checker.declared_types.get("MyInterface").copied().unwrap();
+    let iface_id = checker.get_type_by_name("MyInterface").unwrap();
     let iface_type = checker.get_type(iface_id).cloned().unwrap();
     match iface_type {
         Type::Interface(i) => {
@@ -312,7 +312,7 @@ fn test_reference_meta_type_property() {
     );
     // Meta-type references may produce diagnostics or resolve - verify no crash
     assert!(
-        checker.declared_types.contains_key("Person"),
+        checker.get_type_by_name("Person").is_some(),
         "Person should exist"
     );
 }
@@ -363,7 +363,7 @@ fn test_reference_templated_alias_with_defaults() {
     );
     // With defaults, the alias should auto-instantiate
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "A should be declared"
     );
 }
@@ -379,7 +379,7 @@ fn test_spread_meta_type_property() {
     "#,
     );
     // Verify the code doesn't crash
-    assert!(checker.declared_types.contains_key("B"), "B should exist");
+    assert!(checker.get_type_by_name("B").is_some(), "B should exist");
 }
 
 // ============================================================================
@@ -457,7 +457,7 @@ fn test_reference_spread_property_from_model_before() {
         model MyModel { x: string, ...Spreadable }
     "#,
     );
-    let model_id = checker.declared_types.get("MyModel").copied().unwrap();
+    let model_id = checker.get_type_by_name("MyModel").unwrap();
     let model_type = checker.get_type(model_id).cloned().unwrap();
     match model_type {
         Type::Model(m) => {
@@ -480,7 +480,7 @@ fn test_reference_spread_property_from_model_after() {
         model Spreadable { y: string }
     "#,
     );
-    let model_id = checker.declared_types.get("MyModel").copied().unwrap();
+    let model_id = checker.get_type_by_name("MyModel").unwrap();
     let model_type = checker.get_type(model_id).cloned().unwrap();
     match model_type {
         Type::Model(m) => {
@@ -504,7 +504,7 @@ fn test_reference_spread_property_via_alias() {
         model MyModel { x: string, ...SpreadAlias }
     "#,
     );
-    let model_id = checker.declared_types.get("MyModel").copied().unwrap();
+    let model_id = checker.get_type_by_name("MyModel").unwrap();
     let model_type = checker.get_type(model_id).cloned().unwrap();
     match model_type {
         Type::Model(m) => {
@@ -531,7 +531,7 @@ fn test_reference_alias_of_alias_model_member() {
     );
     // Should resolve MyModelAlias.x to the model property
     assert!(
-        checker.declared_types.contains_key("MyModelAlias"),
+        checker.get_type_by_name("MyModelAlias").is_some(),
         "Alias should exist"
     );
 }
@@ -546,7 +546,7 @@ fn test_reference_inherited_property_from_extends() {
         model MyModel extends Base { x: string }
     "#,
     );
-    let model_id = checker.declared_types.get("MyModel").copied().unwrap();
+    let model_id = checker.get_type_by_name("MyModel").unwrap();
     let model_type = checker.get_type(model_id).cloned().unwrap();
     match model_type {
         Type::Model(m) => {
@@ -570,11 +570,11 @@ fn test_reference_enum_member_access() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("MyEnum"),
+        checker.get_type_by_name("MyEnum").is_some(),
         "MyEnum should exist"
     );
     assert!(
-        checker.declared_types.contains_key("Test"),
+        checker.get_type_by_name("Test").is_some(),
         "Test model should exist"
     );
 }
@@ -589,7 +589,7 @@ fn test_reference_union_variant_access() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("MyUnion"),
+        checker.get_type_by_name("MyUnion").is_some(),
         "MyUnion should exist"
     );
 }
@@ -604,7 +604,7 @@ fn test_reference_interface_operation_access() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("MyInterface"),
+        checker.get_type_by_name("MyInterface").is_some(),
         "MyInterface should exist"
     );
 }
@@ -619,7 +619,7 @@ fn test_reference_alias_interface_member() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("MyInterfaceAlias"),
+        checker.get_type_by_name("MyInterfaceAlias").is_some(),
         "MyInterfaceAlias should exist"
     );
 }
@@ -635,7 +635,7 @@ fn test_reference_alias_of_alias_interface_member() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("MyInterfaceAlias"),
+        checker.get_type_by_name("MyInterfaceAlias").is_some(),
         "MyInterfaceAlias should exist"
     );
 }
@@ -649,7 +649,7 @@ fn test_reference_interface_extends_member() {
         interface MyInterface extends Base { x(): void; }
     "#,
     );
-    let iface_id = checker.declared_types.get("MyInterface").copied().unwrap();
+    let iface_id = checker.get_type_by_name("MyInterface").unwrap();
     let iface_type = checker.get_type(iface_id).cloned().unwrap();
     match iface_type {
         Type::Interface(i) => {
@@ -687,11 +687,11 @@ fn test_reference_spread_property_via_alias_of_alias() {
     );
     // Verify at least MyModel is declared without crash
     assert!(
-        checker.declared_types.contains_key("MyModel"),
+        checker.get_type_by_name("MyModel").is_some(),
         "MyModel should be declared"
     );
     assert!(
-        checker.declared_types.contains_key("SpreadAlias3"),
+        checker.get_type_by_name("SpreadAlias3").is_some(),
         "SpreadAlias3 should be declared"
     );
     // TODO: Once spread through alias chain works, assert:
@@ -707,7 +707,7 @@ fn test_reference_spread_property_from_templated_model() {
         model MyModel { ...Spreadable<string> }
     "#,
     );
-    let model_id = checker.declared_types.get("MyModel").copied().unwrap();
+    let model_id = checker.get_type_by_name("MyModel").unwrap();
     let t = checker.get_type(model_id).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -733,7 +733,7 @@ fn test_reference_property_from_template_instance_alias() {
     );
     // Verify at least the alias is declared
     assert!(
-        checker.declared_types.contains_key("MyModel"),
+        checker.get_type_by_name("MyModel").is_some(),
         "MyModel alias should be declared"
     );
 }
@@ -749,7 +749,7 @@ fn test_reference_sibling_property_before() {
         }
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_id).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -777,7 +777,7 @@ fn test_reference_sibling_property_after() {
         }
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_id).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -807,7 +807,7 @@ fn test_reference_templated_alias_default_param() {
     );
     // Verify at least the alias is declared
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "Alias A should be declared"
     );
 }
@@ -823,11 +823,11 @@ fn test_reference_alias_of_alias_templated() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "Alias A should be declared"
     );
     assert!(
-        checker.declared_types.contains_key("B"),
+        checker.get_type_by_name("B").is_some(),
         "Alias B should be declared"
     );
 }
@@ -841,7 +841,7 @@ fn test_reference_templated_alias_model_literal_default() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("A"),
+        checker.get_type_by_name("A").is_some(),
         "Alias A should be declared"
     );
 }
@@ -856,7 +856,7 @@ fn test_reference_union_variant_via_alias() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("MyUnionAlias"),
+        checker.get_type_by_name("MyUnionAlias").is_some(),
         "MyUnionAlias should be declared"
     );
 }
@@ -871,7 +871,7 @@ fn test_reference_union_variant_via_template_instance() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("MyUnionT"),
+        checker.get_type_by_name("MyUnionT").is_some(),
         "MyUnionT alias should be declared"
     );
 }
@@ -886,7 +886,7 @@ fn test_reference_interface_member_via_template_instance() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("MyInterfaceT"),
+        checker.get_type_by_name("MyInterfaceT").is_some(),
         "MyInterfaceT alias should be declared"
     );
 }
@@ -901,7 +901,7 @@ fn test_reference_meta_type_anonymous_model() {
         model Person { address: { ...A, ...B } }
     "#,
     );
-    let person_id = checker.declared_types.get("Person").copied().unwrap();
+    let person_id = checker.get_type_by_name("Person").unwrap();
     let t = checker.get_type(person_id).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -924,7 +924,7 @@ fn test_reference_meta_type_intersection() {
         model Person { address: A & B }
     "#,
     );
-    let person_id = checker.declared_types.get("Person").copied().unwrap();
+    let person_id = checker.get_type_by_name("Person").unwrap();
     let t = checker.get_type(person_id).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -947,10 +947,10 @@ fn test_reference_operation_return_type() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("testOp"),
+        checker.get_type_by_name("testOp").is_some(),
         "testOp should be declared"
     );
-    let op_id = checker.declared_types.get("testOp").copied().unwrap();
+    let op_id = checker.get_type_by_name("testOp").unwrap();
     let t = checker.get_type(op_id).cloned().unwrap();
     match t {
         Type::Operation(op) => {
@@ -970,10 +970,10 @@ fn test_reference_operation_parameters() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("testOp"),
+        checker.get_type_by_name("testOp").is_some(),
         "testOp should be declared"
     );
-    let op_id = checker.declared_types.get("testOp").copied().unwrap();
+    let op_id = checker.get_type_by_name("testOp").unwrap();
     let t = checker.get_type(op_id).cloned().unwrap();
     match t {
         Type::Operation(op) => {

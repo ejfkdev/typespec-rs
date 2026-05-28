@@ -231,7 +231,7 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(usages.is_used_as(foo_id, UsageFlags::Input));
         assert!(!usages.is_used_as(foo_id, UsageFlags::Output));
     }
@@ -247,7 +247,7 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!usages.is_used_as(foo_id, UsageFlags::Input));
         assert!(usages.is_used_as(foo_id, UsageFlags::Output));
     }
@@ -263,7 +263,7 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(usages.is_used_as(foo_id, UsageFlags::Input));
         assert!(usages.is_used_as(foo_id, UsageFlags::Output));
     }
@@ -281,7 +281,7 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(usages.is_used_as(foo_id, UsageFlags::Output));
     }
 
@@ -297,7 +297,7 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         assert!(usages.is_used_as(bar_id, UsageFlags::Output));
     }
 
@@ -312,7 +312,7 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let enum_id = checker.declared_types.get("MyEnum").copied().unwrap();
+        let enum_id = checker.get_type_by_name("MyEnum").unwrap();
         assert!(usages.is_used_as(enum_id, UsageFlags::Output));
     }
 
@@ -331,7 +331,7 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(usages.is_used_as(foo_id, UsageFlags::Output));
     }
 
@@ -347,8 +347,8 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let _bar_id = checker.declared_types.get("Bar").copied().unwrap();
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let _bar_id = checker.get_type_by_name("Bar").unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         // Foo is used as output
         assert!(usages.is_used_as(foo_id, UsageFlags::Output));
         // Base model Bar should not be tracked directly (only via derived)
@@ -367,8 +367,8 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         assert!(usages.is_used_as(foo_id, UsageFlags::Output));
         assert!(usages.is_used_as(bar_id, UsageFlags::Output));
     }
@@ -386,7 +386,7 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(usages.is_used_as(foo_id, UsageFlags::Output));
     }
 
@@ -402,7 +402,7 @@ mod tests {
         let global_ns_id = checker.get_global_namespace_type().unwrap();
         let usages = resolve_usages(&checker, &[global_ns_id]);
 
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         assert!(usages.is_used_as(bar_id, UsageFlags::Output));
     }
 
@@ -417,11 +417,11 @@ mod tests {
             op get(): Foo;
         ",
         );
-        let get_id = checker.declared_types.get("get").copied().unwrap();
+        let get_id = checker.get_type_by_name("get").unwrap();
         let usages = resolve_usages(&checker, &[get_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         assert!(usages.is_used_as(foo_id, UsageFlags::Output));
         // Bar should not be in the usage of get operation
         // (May or may not be tracked depending on implementation)
@@ -444,11 +444,11 @@ mod tests {
             }
         ",
         );
-        let two_id = checker.declared_types.get("Two").copied().unwrap();
+        let two_id = checker.get_type_by_name("Two").unwrap();
         let usages = resolve_usages(&checker, &[two_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         assert!(usages.is_used_as(foo_id, UsageFlags::Output));
         assert!(usages.is_used_as(bar_id, UsageFlags::Input));
     }
@@ -470,12 +470,12 @@ mod tests {
         ",
         );
         // Resolve usages for One and Two interfaces
-        let one_id = checker.declared_types.get("One").copied().unwrap();
-        let two_id = checker.declared_types.get("Two").copied().unwrap();
+        let one_id = checker.get_type_by_name("One").unwrap();
+        let two_id = checker.get_type_by_name("Two").unwrap();
         let usages = resolve_usages(&checker, &[one_id, two_id]);
 
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
         assert!(usages.is_used_as(foo_id, UsageFlags::Input));
         assert!(usages.is_used_as(bar_id, UsageFlags::Input));
     }

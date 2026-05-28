@@ -29,7 +29,7 @@ fn test_doc_comment_on_model() {
         model Foo {}
     "#,
     );
-    let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
     // Should be able to retrieve the doc comment from the type
     // getDoc(program, Foo) === "This is a doc comment."
     assert!(
@@ -416,7 +416,7 @@ fn test_doc_decorator_overrides_doc_comment() {
     "#,
     );
     // getDoc(program, Foo) === "This is the actual doc."
-    assert!(checker.declared_types.contains_key("Foo"));
+    assert!(checker.get_type_by_name("Foo").is_some());
 }
 
 // ============================================================================
@@ -436,8 +436,8 @@ fn test_model_is_overrides_base_doc_comment() {
     "#,
     );
     // getDoc(program, Foo) === "Override comment"
-    assert!(checker.declared_types.contains_key("Foo"));
-    assert!(checker.declared_types.contains_key("Base"));
+    assert!(checker.get_type_by_name("Foo").is_some());
+    assert!(checker.get_type_by_name("Base").is_some());
 }
 
 /// Ported from TS: "override @doc" (model is)
@@ -453,7 +453,7 @@ fn test_model_is_overrides_base_doc_decorator() {
     "#,
     );
     // getDoc(program, Foo) === "Override comment"
-    assert!(checker.declared_types.contains_key("Foo"));
+    assert!(checker.get_type_by_name("Foo").is_some());
 }
 
 // ============================================================================

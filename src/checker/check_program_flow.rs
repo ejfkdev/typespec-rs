@@ -120,8 +120,8 @@ impl Checker {
                             continue;
                         }
                         let child_stmts = decl.statements.clone();
-                        // Namespace merging: special handling
-                        if let Some(&existing_id) = self.declared_types.get(&name) {
+                        // Namespace merging: special handling (FQN-based lookup)
+                        if let Some(existing_id) = self.get_declared_type_in_scope(&name) {
                             let existing_is_ns =
                                 matches!(self.get_type(existing_id), Some(Type::Namespace(_)));
                             if existing_is_ns {
@@ -132,10 +132,8 @@ impl Checker {
                                 self.current_namespace = prev_ns;
                                 continue;
                             }
-                            self.error(
-                                "duplicate-symbol",
-                                &format!("Duplicate symbol: '{}'", name),
-                            );
+                            let fqn = self.build_fqn(&name);
+                            self.error("duplicate-symbol", &format!("Duplicate symbol: '{}'", fqn));
                             continue;
                         }
                         let type_id =
@@ -147,7 +145,7 @@ impl Checker {
                                 false,
                             ))));
                         self.node_type_map.insert(stmt_id, type_id);
-                        self.declared_types.insert(name, type_id);
+                        self.register_declared_type(&name, type_id);
                         let prev_ns = self.current_namespace;
                         self.current_namespace = Some(type_id);
                         self.pre_register_declarations(ast, &child_stmts);
@@ -157,13 +155,14 @@ impl Checker {
                     _ => continue,
                 };
 
-            // Common path: check name, check duplicate, register
+            // Common path: check name, check duplicate, register (FQN-based)
             let name = Self::get_identifier_name(ast, name_node);
             if name.is_empty() {
                 continue;
             }
-            if self.declared_types.contains_key(&name) {
-                self.error("duplicate-symbol", &format!("Duplicate symbol: '{}'", name));
+            if self.contains_declared_type_in_scope(&name) {
+                let fqn = self.build_fqn(&name);
+                self.error("duplicate-symbol", &format!("Duplicate symbol: '{}'", fqn));
                 continue;
             }
 
@@ -173,7 +172,7 @@ impl Checker {
             }
 
             self.node_type_map.insert(stmt_id, shell);
-            self.declared_types.insert(name, shell);
+            self.register_declared_type(&name, shell);
 
             // Recurse into namespace body (not applicable here, kept for symmetry)
             if let Some(child_stmts) = child_statements {

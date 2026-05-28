@@ -557,7 +557,7 @@ mod namespace_tests {
         }
     "#,
         );
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -583,7 +583,7 @@ mod namespace_tests {
         model Qux { };
     "#,
         );
-        let foo_type = checker.declared_types.get("Foo").copied();
+        let foo_type = checker.get_type_by_name("Foo");
         assert!(foo_type.is_some(), "Foo namespace should exist");
         if let Some(ft) = foo_type {
             let t = checker.get_type(ft).cloned().unwrap();
@@ -602,7 +602,7 @@ mod namespace_tests {
     #[test]
     fn test_namespace_contains_model() {
         let checker = check("namespace MyNs { model Foo { x: string; } }");
-        let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+        let ns_type = checker.get_type_by_name("MyNs").unwrap();
         let t = checker.get_type(ns_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -618,7 +618,7 @@ mod namespace_tests {
     #[test]
     fn test_namespace_contains_operation() {
         let checker = check("namespace MyNs { op foo(): void; }");
-        let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+        let ns_type = checker.get_type_by_name("MyNs").unwrap();
         let t = checker.get_type(ns_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -634,7 +634,7 @@ mod namespace_tests {
     #[test]
     fn test_namespace_contains_interface() {
         let checker = check("namespace MyNs { interface I { op bar(): void; } }");
-        let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+        let ns_type = checker.get_type_by_name("MyNs").unwrap();
         let t = checker.get_type(ns_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -650,7 +650,7 @@ mod namespace_tests {
     #[test]
     fn test_namespace_contains_enum() {
         let checker = check("namespace MyNs { enum E { A, B } }");
-        let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+        let ns_type = checker.get_type_by_name("MyNs").unwrap();
         let t = checker.get_type(ns_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -666,7 +666,7 @@ mod namespace_tests {
     #[test]
     fn test_namespace_contains_union() {
         let checker = check("namespace MyNs { union U { x: int32; } }");
-        let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+        let ns_type = checker.get_type_by_name("MyNs").unwrap();
         let t = checker.get_type(ns_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -682,7 +682,7 @@ mod namespace_tests {
     #[test]
     fn test_namespace_contains_scalar() {
         let checker = check("namespace MyNs { scalar S extends string; }");
-        let ns_type = checker.declared_types.get("MyNs").copied().unwrap();
+        let ns_type = checker.get_type_by_name("MyNs").unwrap();
         let t = checker.get_type(ns_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -704,8 +704,8 @@ mod namespace_tests {
         namespace N { model B extends A { } }
     "#,
         );
-        let b_type = checker.declared_types.get("B").copied().unwrap();
-        let a_type = checker.declared_types.get("A").copied().unwrap();
+        let b_type = checker.get_type_by_name("B").unwrap();
+        let a_type = checker.get_type_by_name("A").unwrap();
         let t = checker.get_type(b_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -731,7 +731,7 @@ mod namespace_tests {
         }
     "#,
         );
-        let outer_type = checker.declared_types.get("Outer").copied().unwrap();
+        let outer_type = checker.get_type_by_name("Outer").unwrap();
         let t = checker.get_type(outer_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -758,7 +758,7 @@ mod namespace_tests {
     #[test]
     fn test_namespace_with_decorator() {
         let checker = check("@doc namespace Foo { }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -771,7 +771,7 @@ mod namespace_tests {
     #[test]
     fn test_namespace_is_finished() {
         let checker = check("namespace Foo { model Bar { x: string; } }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
         assert!(t.is_finished(), "Namespace type should be finished");
     }
@@ -779,7 +779,7 @@ mod namespace_tests {
     #[test]
     fn test_empty_namespace() {
         let checker = check("namespace Foo { }");
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let t = checker.get_type(foo_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -807,7 +807,7 @@ mod namespace_tests {
         namespace N { model Z { ...X, ...Y } }
     "#,
         );
-        let n_type = checker.declared_types.get("N").copied().unwrap();
+        let n_type = checker.get_type_by_name("N").unwrap();
         let t = checker.get_type(n_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -830,8 +830,8 @@ mod namespace_tests {
         namespace N { model B extends A { } }
     "#,
         );
-        let b_type = checker.declared_types.get("B").copied().unwrap();
-        let a_type = checker.declared_types.get("A").copied().unwrap();
+        let b_type = checker.get_type_by_name("B").unwrap();
+        let a_type = checker.get_type_by_name("A").unwrap();
         let t = checker.get_type(b_type).cloned().unwrap();
         match t {
             Type::Model(m) => {
@@ -856,7 +856,7 @@ mod namespace_tests {
         model Qux { };
     "#,
         );
-        let foo_type = checker.declared_types.get("Foo").copied();
+        let foo_type = checker.get_type_by_name("Foo");
         assert!(foo_type.is_some(), "Foo namespace should exist");
     }
 
@@ -873,11 +873,11 @@ mod namespace_tests {
     "#,
         );
         assert!(
-            checker.declared_types.contains_key("Yo"),
+            checker.get_type_by_name("Yo").is_some(),
             "Yo model should be declared"
         );
         assert!(
-            checker.declared_types.contains_key("Hey"),
+            checker.get_type_by_name("Hey").is_some(),
             "Hey model should be declared"
         );
         let diags = checker.diagnostics();
@@ -902,7 +902,7 @@ mod namespace_tests {
         );
         // This tests forward reference resolution within blockless nested namespaces
         assert!(
-            checker.declared_types.contains_key("SayYo"),
+            checker.get_type_by_name("SayYo").is_some(),
             "SayYo model should be declared"
         );
     }
@@ -920,7 +920,7 @@ mod namespace_tests {
     "#,
         );
         // Verify Model1 is in Foo namespace
-        let model1_type = checker.declared_types.get("Model1").copied().unwrap();
+        let model1_type = checker.get_type_by_name("Model1").unwrap();
         let m1 = checker.get_type(model1_type).cloned().unwrap();
         match m1 {
             Type::Model(m) => {
@@ -929,7 +929,7 @@ mod namespace_tests {
             _ => panic!("Expected Model type"),
         }
         // Verify Model2 is in Other.Bar namespace
-        let model2_type = checker.declared_types.get("Model2").copied().unwrap();
+        let model2_type = checker.get_type_by_name("Model2").unwrap();
         let m2 = checker.get_type(model2_type).cloned().unwrap();
         match m2 {
             Type::Model(m) => {
@@ -959,20 +959,20 @@ mod namespace_tests {
         );
         // Verify both Y and X exist (global keyword resolution may or may not work)
         assert!(
-            checker.declared_types.contains_key("Y"),
+            checker.get_type_by_name("Y").is_some(),
             "Y model should be declared"
         );
         assert!(
-            checker.declared_types.contains_key("X"),
+            checker.get_type_by_name("X").is_some(),
             "X model should be declared"
         );
         // If global.B.X resolves correctly, Y extends X
-        let y_type = checker.declared_types.get("Y").copied().unwrap();
+        let y_type = checker.get_type_by_name("Y").unwrap();
         let y = checker.get_type(y_type).cloned().unwrap();
         if let Type::Model(m) = y
             && m.base_model.is_some()
         {
-            let x_type = checker.declared_types.get("X").copied().unwrap();
+            let x_type = checker.get_type_by_name("X").unwrap();
             assert_eq!(
                 m.base_model,
                 Some(x_type),
@@ -1018,8 +1018,8 @@ mod namespace_tests {
         model Bar extends A.Foo { }
     "#,
         );
-        let bar_type = checker.declared_types.get("Bar").copied().unwrap();
-        let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+        let bar_type = checker.get_type_by_name("Bar").unwrap();
+        let foo_type = checker.get_type_by_name("Foo").unwrap();
         let bar = checker.get_type(bar_type).cloned().unwrap();
         match bar {
             Type::Model(m) => {
@@ -1043,7 +1043,7 @@ mod namespace_tests {
         );
         // Just verify no crash - decorator resolution is simplified
         assert!(
-            checker.declared_types.contains_key("Baz"),
+            checker.get_type_by_name("Baz").is_some(),
             "Baz namespace should exist"
         );
     }
@@ -1064,7 +1064,7 @@ mod namespace_tests {
         }
     "#,
         );
-        let n_type = checker.declared_types.get("N").copied().unwrap();
+        let n_type = checker.get_type_by_name("N").unwrap();
         let t = checker.get_type(n_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -1094,11 +1094,11 @@ mod namespace_tests {
         );
         // Top should be declared as a namespace
         assert!(
-            checker.declared_types.contains_key("Top"),
+            checker.get_type_by_name("Top").is_some(),
             "Top namespace should be declared"
         );
         // B should be a sub-namespace of Top
-        let top_type = checker.declared_types.get("Top").copied().unwrap();
+        let top_type = checker.get_type_by_name("Top").unwrap();
         let t = checker.get_type(top_type).cloned().unwrap();
         match t {
             Type::Namespace(ns) => {
@@ -1111,7 +1111,7 @@ mod namespace_tests {
         }
         // A should be declared (either in B's namespace or globally)
         assert!(
-            checker.declared_types.contains_key("A"),
+            checker.get_type_by_name("A").is_some(),
             "Model A should be declared"
         );
     }

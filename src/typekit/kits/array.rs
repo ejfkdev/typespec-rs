@@ -41,7 +41,7 @@ mod tests {
     #[test]
     fn test_is_array() {
         let checker = check("model Foo { items: string[]; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(foo_id)
             && let Some(&pt) = m.properties.get("items")
         {
@@ -53,14 +53,14 @@ mod tests {
     #[test]
     fn test_is_array_not_regular_model() {
         let checker = check("model Foo { name: string; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert!(!is_array(&checker, foo_id));
     }
 
     #[test]
     fn test_get_element_type() {
         let checker = check("model Foo { items: string[]; }");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         if let Some(Type::Model(m)) = checker.get_type(foo_id)
             && let Some(&pt) = m.properties.get("items")
         {
@@ -74,14 +74,14 @@ mod tests {
     #[test]
     fn test_get_element_type_non_array() {
         let checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         assert_eq!(get_element_type(&checker, foo_id), None);
     }
 
     #[test]
     fn test_is_array_array_expression() {
         let checker = check("alias Foo = string[];");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let resolved = checker.resolve_alias_chain(foo_id);
         let _ = is_array(&checker, resolved);
     }

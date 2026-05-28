@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn test_typekit_is_model() {
         let mut checker = check("model Foo {}");
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let tk = TypeKit::new(&mut checker);
         assert!(tk.is_model(foo_id));
         assert!(!tk.is_scalar(foo_id));
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn test_typekit_is_scalar() {
         let mut checker = check("scalar MyS extends string;");
-        let s_id = checker.declared_types.get("MyS").copied().unwrap();
+        let s_id = checker.get_type_by_name("MyS").unwrap();
         let tk = TypeKit::new(&mut checker);
         assert!(tk.is_scalar(s_id));
         assert!(!tk.is_model(s_id));
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn test_typekit_is_enum() {
         let mut checker = check("enum Color { red, green, blue }");
-        let e_id = checker.declared_types.get("Color").copied().unwrap();
+        let e_id = checker.get_type_by_name("Color").unwrap();
         let tk = TypeKit::new(&mut checker);
         assert!(tk.is_enum(e_id));
     }
@@ -125,8 +125,8 @@ mod tests {
     #[test]
     fn test_typekit_resolve_alias() {
         let mut checker = check("model Foo {} alias Bar = Foo;");
-        let bar_id = checker.declared_types.get("Bar").copied().unwrap();
-        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let bar_id = checker.get_type_by_name("Bar").unwrap();
+        let foo_id = checker.get_type_by_name("Foo").unwrap();
         let tk = TypeKit::new(&mut checker);
         let resolved = tk.resolve_alias(bar_id);
         assert_eq!(resolved, foo_id);
@@ -135,8 +135,8 @@ mod tests {
     #[test]
     fn test_typekit_is_assignable() {
         let mut checker = check("scalar A extends string; scalar B extends int32;");
-        let a_id = checker.declared_types.get("A").copied().unwrap();
-        let b_id = checker.declared_types.get("B").copied().unwrap();
+        let a_id = checker.get_type_by_name("A").unwrap();
+        let b_id = checker.get_type_by_name("B").unwrap();
         let mut tk = TypeKit::new(&mut checker);
         // A extends string, so A is assignable to string but not to B (which extends int32)
         // This test just verifies the method works without panic

@@ -29,7 +29,7 @@ fn test_simple_string_template_with_numeric_interpolation() {
     //   span[1]: interpolated Number(123), isInterpolated=true (StringTemplateSpan with expression=Some)
     //   span[2]: literal, isInterpolated=false
     let checker = check(r#"model Test { test: "Start ${123} end"; }"#);
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -140,7 +140,7 @@ fn test_string_template_with_string_interpolation() {
     // Ported from: "string interpolated are marked with isInterpolated"
     // `"Start ${"interpolate"} end"` → span[1] is String("interpolate")
     let checker = check(r#"model Test { test: "Start ${"interpolate"} end"; }"#);
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -255,7 +255,7 @@ fn test_string_template_with_model_interpolation() {
         model Test { test: "Start ${TestModel} end"; }
     "#,
     );
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -365,7 +365,7 @@ fn test_string_template_with_model_interpolation() {
 fn test_string_template_no_interpolation() {
     // A simple string literal (not a template) used as model property
     let checker = check(r#"model Foo { x: "hello"; }"#);
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -398,7 +398,7 @@ fn test_string_template_multiple_interpolations() {
         model Test { test: "${A} and ${B}"; }
     "#,
     );
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -591,7 +591,7 @@ fn test_mixed_string_template_diagnostic() {
 fn test_string_template_with_scalar_interpolation() {
     // Interpolating a scalar type (string) in a template
     let checker = check(r#"model Test { test: "prefix_${string}"; }"#);
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -672,7 +672,7 @@ fn test_string_template_only_interpolation() {
         model Test { test: "${M}"; }
     "#,
     );
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -737,7 +737,7 @@ fn test_string_template_with_enum_interpolation() {
         model Test { test: "color: ${Color}"; }
     "#,
     );
-    let test_type = checker.declared_types.get("Test").copied().unwrap();
+    let test_type = checker.get_type_by_name("Test").unwrap();
     let t = checker.get_type(test_type).cloned().unwrap();
     match t {
         Type::Model(m) => {

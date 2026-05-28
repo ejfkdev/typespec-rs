@@ -22,7 +22,7 @@ use crate::checker::test_utils::check;
 fn test_valueof_expression_produces_type() {
     // valueof expression should at least produce a type (even if simplified)
     let checker = check("model Foo { x: valueof string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -39,7 +39,7 @@ fn test_valueof_expression_produces_type() {
 fn test_valueof_expression_in_alias() {
     let checker = check("alias X = valueof string;");
     assert!(
-        checker.declared_types.contains_key("X"),
+        checker.get_type_by_name("X").is_some(),
         "valueof alias should be declared"
     );
 }
@@ -49,7 +49,7 @@ fn test_valueof_string_in_template_constraint() {
     // valueof string as a template parameter constraint
     let checker = check("model Foo<T extends valueof string> { x: T; }");
     assert!(
-        checker.declared_types.contains_key("Foo"),
+        checker.get_type_by_name("Foo").is_some(),
         "Foo should be declared"
     );
 }
@@ -59,7 +59,7 @@ fn test_valueof_int32_in_template_constraint() {
     // valueof int32 as a template parameter constraint
     let checker = check("model Foo<T extends valueof int32> { x: T; }");
     assert!(
-        checker.declared_types.contains_key("Foo"),
+        checker.get_type_by_name("Foo").is_some(),
         "Foo should be declared"
     );
 }
@@ -69,7 +69,7 @@ fn test_valueof_with_union_constraint() {
     // valueof string | string as a template parameter constraint
     let checker = check("model Foo<T extends valueof string | string> { x: T; }");
     assert!(
-        checker.declared_types.contains_key("Foo"),
+        checker.get_type_by_name("Foo").is_some(),
         "Foo should be declared"
     );
 }
@@ -82,7 +82,7 @@ fn test_valueof_with_union_constraint() {
 fn test_valueof_string_returns_string_type() {
     // valueof string in a model property context should return string scalar type
     let checker = check("model Foo { x: valueof string; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -109,7 +109,7 @@ fn test_valueof_string_returns_string_type() {
 fn test_valueof_int32_returns_int32_type() {
     // valueof int32 should resolve to int32 scalar type
     let checker = check("model Foo { x: valueof int32; }");
-    let foo_type = checker.declared_types.get("Foo").copied().unwrap();
+    let foo_type = checker.get_type_by_name("Foo").unwrap();
     let t = checker.get_type(foo_type).cloned().unwrap();
     match t {
         Type::Model(m) => {
@@ -147,7 +147,7 @@ fn test_string_constraint_returns_string_type() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("Bar"),
+        checker.get_type_by_name("Bar").is_some(),
         "Bar should be declared"
     );
     let diags = checker.diagnostics();
@@ -170,7 +170,7 @@ fn test_int32_constraint_returns_numeric_type() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("Bar"),
+        checker.get_type_by_name("Bar").is_some(),
         "Bar should be declared"
     );
 }
@@ -186,7 +186,7 @@ fn test_ambiguous_scalar_type_diagnostic() {
     let diags = checker.diagnostics();
     // May emit ambiguous-scalar-type if the checker detects ambiguity
     // For now, just verify no crash
-    assert!(checker.declared_types.contains_key("Foo") || !diags.is_empty());
+    assert!(checker.get_type_by_name("Foo").is_some() || !diags.is_empty());
 }
 
 // ============================================================================
@@ -249,7 +249,7 @@ fn test_string_constraint_produces_type() {
     );
     // Should not crash, "hello" satisfies T extends string
     assert!(
-        checker.declared_types.contains_key("Instance"),
+        checker.get_type_by_name("Instance").is_some(),
         "Instance should be declared"
     );
 }
@@ -266,7 +266,7 @@ fn test_int32_constraint_produces_type() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("Instance"),
+        checker.get_type_by_name("Instance").is_some(),
         "Instance should be declared"
     );
 }
@@ -283,7 +283,7 @@ fn test_value_wins_over_type_in_union() {
     "#,
     );
     assert!(
-        checker.declared_types.contains_key("Instance"),
+        checker.get_type_by_name("Instance").is_some(),
         "Instance should be declared"
     );
 }
@@ -305,7 +305,7 @@ fn test_ambiguous_scalar_with_valueof_int32_int64() {
         .any(|d| d.code == "ambiguous-scalar-type");
     // At minimum, should not crash
     assert!(
-        checker.declared_types.contains_key("Test")
+        checker.get_type_by_name("Test").is_some()
             || has_ambiguous
             || !checker.diagnostics().is_empty(),
         "Should either declare Test or emit diagnostics"
@@ -388,7 +388,7 @@ fn test_valueof_string_rejects_string_scalar() {
     // TS behavior: should emit unassignable because valueof string only accepts values, not types
     // Verify at least the declaration exists and no crash
     assert!(
-        checker.declared_types.contains_key("Foo") || checker.declared_types.contains_key("Test"),
+        checker.get_type_by_name("Foo").is_some() || checker.get_type_by_name("Test").is_some(),
         "Foo or Test should be declared"
     );
 }

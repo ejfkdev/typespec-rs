@@ -50,7 +50,7 @@ impl Pipeline {
         let t1 = std::time::Instant::now();
         let library_line_offset = parse_result.library_line_offset;
         let mut checker = Checker::new();
-        checker.set_parse_result(parse_result.root_id, parse_result.builder);
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
 
         // Register custom decorators before check_program()
         for (name, namespace, target_type) in &self.custom_decorators {

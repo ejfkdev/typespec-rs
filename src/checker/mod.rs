@@ -2160,6 +2160,8 @@ mod decorators_tests;
 #[cfg(test)]
 mod deprecation_tests;
 #[cfg(test)]
+mod diagnostic_location_tests;
+#[cfg(test)]
 mod doc_comment_tests;
 #[cfg(test)]
 mod duplicate_ids_tests;

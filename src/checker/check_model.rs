@@ -162,9 +162,14 @@ impl Checker {
                     let base_is_anonymous = base_model.name.is_empty();
                     let base_indexer = base_model.indexer;
                     if base_is_anonymous {
-                        self.error("extend-model", "Models cannot extend model expressions.");
+                        self.error_at(
+                            node_id,
+                            "extend-model",
+                            "Models cannot extend model expressions.",
+                        );
                     } else if is_circular {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "circular-base-type",
                             &format!(
                                 "Type '{}' recursively references itself as a base type.",
@@ -192,7 +197,7 @@ impl Checker {
                 } else if self.get_type(resolved_base_type).is_some() {
                     // Extending a non-model type
                     // TS: "Models must extend other models."
-                    self.error("extend-model", "Models must extend other models.");
+                    self.error_at(node_id, "extend-model", "Models must extend other models.");
                 }
             }
         }
@@ -202,7 +207,8 @@ impl Checker {
         if let Some(is_id) = is_node {
             // Check if the 'is' target is currently being type-checked (direct circular)
             if self.pending_type_checks.contains(&is_id) {
-                self.error(
+                self.error_at(
+                    node_id,
                     "circular-base-type",
                     &format!(
                         "Type '{}' recursively references itself as a base type.",
@@ -241,9 +247,14 @@ impl Checker {
                         let is_base_model = is_model.base_model;
                         let is_indexer = is_model.indexer;
                         if is_anonymous {
-                            self.error("is-model", "Model `is` cannot specify a model expression.");
+                            self.error_at(
+                                node_id,
+                                "is-model",
+                                "Model `is` cannot specify a model expression.",
+                            );
                         } else if is_circular {
-                            self.error(
+                            self.error_at(
+                                node_id,
                                 "circular-base-type",
                                 &format!(
                                     "Type '{}' recursively references itself as a base type.",
@@ -280,7 +291,11 @@ impl Checker {
                         }
                     } else if self.get_type(resolved_is_type).is_some() {
                         // 'is' targets a non-model type
-                        self.error("is-model", "Model `is` must specify another model.");
+                        self.error_at(
+                            node_id,
+                            "is-model",
+                            "Model `is` must specify another model.",
+                        );
                     }
                 }
             }
@@ -300,7 +315,8 @@ impl Checker {
                         && m.properties.contains_key(&prop_name)
                     {
                         let model_name = type_name.clone();
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "duplicate-property",
                             &Self::format_duplicate_property_msg(&model_name, &prop_name),
                         );
@@ -377,7 +393,8 @@ impl Checker {
                         Some(Type::Model(ref target_model)) if !target_model.is_finished => {
                             // Check if spreading itself first (even if not finished)
                             if resolved_target_id == type_id {
-                                self.error(
+                                self.error_at(
+                                    node_id,
                                     "spread-model",
                                     "Cannot spread type within its own declaration.",
                                 );
@@ -395,7 +412,8 @@ impl Checker {
                         Some(Type::Model(target_model)) => {
                             // Check if spreading itself
                             if resolved_target_id == type_id {
-                                self.error(
+                                self.error_at(
+                                    node_id,
                                     "spread-model",
                                     "Cannot spread type within its own declaration.",
                                 );
@@ -406,7 +424,8 @@ impl Checker {
                             let is_array =
                                 type_utils::is_array_model_type(&self.type_store, &target_model);
                             if is_array {
-                                self.error(
+                                self.error_at(
+                                    node_id,
                                     "spread-model",
                                     "Cannot spread properties of non-model type.",
                                 );
@@ -438,7 +457,8 @@ impl Checker {
                                     && let Type::Model(m) = t
                                     && m.properties.contains_key(&prop_name)
                                 {
-                                    self.error(
+                                    self.error_at(
+                                        node_id,
                                         "duplicate-property",
                                         &Self::format_duplicate_property_msg(
                                             &type_name, &prop_name,
@@ -479,7 +499,8 @@ impl Checker {
                         }
                         _ => {
                             // Non-model type - report spread-model diagnostic
-                            self.error(
+                            self.error_at(
+                                node_id,
                                 "spread-model",
                                 "Cannot spread properties of non-model type.",
                             );
@@ -499,7 +520,8 @@ impl Checker {
             && type_utils::is_array_model_type(&self.type_store, m)
             && !m.properties.is_empty()
         {
-            self.error(
+            self.error_at(
+                node_id,
                 "no-array-properties",
                 "Array models cannot have any properties.",
             );
@@ -640,7 +662,8 @@ impl Checker {
         // Circular reference detection: if we're already checking this property node,
         // the property type recursively references itself.
         if self.pending_type_checks.contains(&node_id) {
-            self.error(
+            self.error_at(
+                node_id,
                 "circular-prop",
                 &format!("Property '{}' recursively references itself.", name),
             );
@@ -678,7 +701,8 @@ impl Checker {
             if !is_assignable {
                 let default_type_name = self.get_type_name_for_diagnostic(default_type_id);
                 let prop_type_name = self.get_type_name_for_diagnostic(value_type);
-                self.error(
+                self.error_at(
+                    node_id,
                     "unassignable",
                     &format!(
                         "Default value of type '{}' is not assignable to type '{}'",

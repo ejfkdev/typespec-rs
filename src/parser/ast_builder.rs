@@ -1,5 +1,6 @@
 //! AST Node Builder - Helper functions for creating AST nodes
 
+use crate::ast::node::NodeId;
 use crate::ast::token::{Position, Span};
 use crate::ast::types::*;
 use crate::scanner::TokenFlags;
@@ -103,6 +104,85 @@ pub enum AstNode {
     Modifier(Modifier),
 }
 
+impl AstNode {
+    /// Get the source span of this AST node.
+    pub fn span(&self) -> Span {
+        macro_rules! span_match {
+            ($($variant:ident),* $(,)?) => {
+                match self {
+                    $(AstNode::$variant(n) => n.span,)*
+                }
+            };
+        }
+        span_match!(
+            TypeSpecScript,
+            Identifier,
+            MemberExpression,
+            StringLiteral,
+            NumericLiteral,
+            BooleanLiteral,
+            ArrayExpression,
+            TupleExpression,
+            UnionExpression,
+            IntersectionExpression,
+            TypeReference,
+            CallExpression,
+            ModelExpression,
+            ModelProperty,
+            ModelSpreadProperty,
+            ModelDeclaration,
+            InterfaceDeclaration,
+            UnionDeclaration,
+            UnionVariant,
+            EnumDeclaration,
+            EnumMember,
+            EnumSpreadMember,
+            AliasStatement,
+            ConstStatement,
+            ScalarDeclaration,
+            ScalarConstructor,
+            OperationDeclaration,
+            OperationSignatureDeclaration,
+            OperationSignatureReference,
+            DecoratorExpression,
+            AugmentDecoratorStatement,
+            DecoratorDeclaration,
+            FunctionDeclaration,
+            FunctionParameter,
+            FunctionTypeExpression,
+            TemplateParameterDeclaration,
+            TemplateArgument,
+            DirectiveExpression,
+            ImportStatement,
+            NamespaceDeclaration,
+            UsingDeclaration,
+            ValueOfExpression,
+            TypeOfExpression,
+            VoidKeyword,
+            NeverKeyword,
+            UnknownKeyword,
+            ExternKeyword,
+            InternalKeyword,
+            EmptyStatement,
+            InvalidStatement,
+            ObjectLiteral,
+            ObjectLiteralProperty,
+            ObjectLiteralSpreadProperty,
+            ArrayLiteral,
+            StringTemplateExpression,
+            StringTemplateHead,
+            StringTemplateMiddle,
+            StringTemplateTail,
+            StringTemplateSpan,
+            Modifier,
+            LineComment,
+            BlockComment,
+            Doc,
+            DocText,
+        )
+    }
+}
+
 impl AstBuilder {
     pub fn new(source: String) -> Self {
         let line_starts = Self::compute_line_starts(&source);
@@ -128,6 +208,11 @@ impl AstBuilder {
 
     pub fn id_to_node(&self, id: u32) -> Option<&AstNode> {
         self.nodes.get(&id)
+    }
+
+    /// Get the span of a node by its ID.
+    pub fn node_span(&self, id: NodeId) -> Option<Span> {
+        self.nodes.get(&id).map(|n| n.span())
     }
 
     /// Attach directives to a declaration node

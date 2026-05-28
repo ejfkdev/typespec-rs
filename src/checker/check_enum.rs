@@ -51,7 +51,8 @@ impl Checker {
 
                     // Check for duplicate member
                     if members.contains_key(&member_name) {
-                        self.error(
+                        self.error_at(
+                            member_id,
                             "enum-member-duplicate",
                             &format!("Enum has duplicate member '{}'.", member_name),
                         );
@@ -101,7 +102,8 @@ impl Checker {
                                 {
                                     // Check for duplicate
                                     if members.contains_key(src_member_name) {
-                                        self.error(
+                                        self.error_at(
+                                            member_id,
                                             "enum-member-duplicate",
                                             &format!(
                                                 "Enum has duplicate member '{}'.",
@@ -127,7 +129,8 @@ impl Checker {
                         }
                         _ => {
                             // Spreading a non-enum type - report spread-enum diagnostic
-                            self.error(
+                            self.error_at(
+                                member_id,
                                 "spread-enum",
                                 "Cannot spread a non-enum type into an enum.",
                             );

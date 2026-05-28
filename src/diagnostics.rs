@@ -83,10 +83,14 @@ impl Diagnostic {
 pub struct SourceLocation {
     /// Source file path
     pub file: String,
-    /// Start position
+    /// Start byte offset
     pub start: usize,
-    /// End position
+    /// End byte offset
     pub end: usize,
+    /// 1-based line number (0 if not set)
+    pub line: u32,
+    /// 1-based column number (0 if not set)
+    pub column: u32,
     /// Whether this is a synthetic location
     pub is_synthetic: bool,
 }
@@ -162,6 +166,8 @@ pub fn create_synthetic_source_location(loc: &str) -> SourceLocation {
         file: loc.to_string(),
         start: 0,
         end: 0,
+        line: 0,
+        column: 0,
         is_synthetic: true,
     }
 }
@@ -503,6 +509,8 @@ mod tests {
             file: "test.tsp".to_string(),
             start: 10,
             end: 20,
+            line: 3,
+            column: 5,
             is_synthetic: false,
         };
         assert_eq!(loc.file, "test.tsp");
@@ -779,6 +787,8 @@ mod tests {
             file: "test.tsp".to_string(),
             start: 0,
             end: 10,
+            line: 1,
+            column: 0,
             is_synthetic: false,
         });
         let loc = get_source_location(&diag);

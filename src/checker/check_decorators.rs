@@ -59,7 +59,8 @@ impl Checker {
             if let Some(decl_type_id) = declaration_type_id
                 && !matches!(self.get_type(decl_type_id), Some(Type::Decorator(_)))
             {
-                self.error(
+                self.error_at(
+                    dec_id,
                     "invalid-decorator",
                     &format!("{} is not a decorator", decorator_name),
                 );
@@ -93,7 +94,8 @@ impl Checker {
                             Some(max) if min_args == max => format!("{}", min_args),
                             Some(max) => format!("{}-{}", min_args, max),
                         };
-                        self.error(
+                        self.error_at(
+                            dec_id,
                             "invalid-argument-count",
                             &format!(
                                 "Decorator '{}' expects {} argument(s), but got {}.",
@@ -125,7 +127,8 @@ impl Checker {
                     };
                     // Simple check: if target constraint is "Model" but decorated type is "Enum"
                     if target_constraint != "unknown" && target_constraint != target_type_name {
-                        self.error(
+                        self.error_at(
+                            dec_id,
                             "decorator-wrong-target",
                             &format!(
                                 "Decorator '{}' cannot be applied to {}. Expected {}.",
@@ -153,7 +156,7 @@ impl Checker {
                         if !is_assignable {
                             let arg_name = self.type_to_string(arg_type);
                             let expected_name = self.type_to_string(expected_type_id);
-                            self.error("invalid-argument", &format!("Argument of type '{}' is not assignable to parameter of type '{}'.", arg_name, expected_name));
+                            self.error_at(arg_id, "invalid-argument", &format!("Argument of type '{}' is not assignable to parameter of type '{}'.", arg_name, expected_name));
                         }
                     }
                 }

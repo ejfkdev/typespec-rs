@@ -49,7 +49,8 @@ impl Checker {
                         }
                         Some(_) => {
                             // Base is not an operation - report is-operation diagnostic
-                            self.error(
+                            self.error_at(
+                                node_id,
                                 "is-operation",
                                 "Operation 'is' must reference another operation.",
                             );

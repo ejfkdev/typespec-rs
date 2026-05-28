@@ -39,7 +39,8 @@ impl Checker {
                 let member_ast_template_count = self.get_template_param_count(member_type);
                 if !member_template_node && member_ast_template_count == 0 {
                     let prop_name = Self::get_identifier_name(&ast, node.name);
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "invalid-template-args",
                         &format!(
                             "Can't pass template arguments to non-templated type '{}'.",
@@ -110,7 +111,8 @@ impl Checker {
             if !node.arguments.is_empty() {
                 if !is_template {
                     // Template arguments on a non-templated type
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "invalid-template-args",
                         &format!(
                             "Can't pass template arguments to non-templated type '{}'.",
@@ -127,7 +129,8 @@ impl Checker {
                 };
                 let required_param_count = self.get_required_template_param_count(type_id);
                 if node.arguments.len() > template_param_count {
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "invalid-template-args",
                         &format!(
                             "Too many template arguments for '{}'. Expected at most {}, got {}.",
@@ -142,7 +145,8 @@ impl Checker {
                     // Find which required param is missing
                     let missing_param =
                         self.get_missing_template_param_name(type_id, node.arguments.len());
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "invalid-template-args",
                         &format!(
                             "Template argument '{}' is required for '{}'.",
@@ -167,7 +171,8 @@ impl Checker {
                 let required_param_count = self.get_required_template_param_count(type_id);
                 if required_param_count > 0 {
                     let missing_param = self.get_missing_template_param_name(type_id, 0);
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "invalid-template-args",
                         &format!(
                             "Template argument '{}' is required for '{}'.",
@@ -234,12 +239,12 @@ impl Checker {
             let value_type = self.get_value(value_id).map(|v| v.value_type());
             if let Some(type_id) = value_type {
                 // Emit value-in-type: a value is being used where a type is expected
-                self.error("value-in-type", &format!("Value '{}' is used in a type position. Add `extends valueof unknown` to accept any value.", name));
+                self.error_at(node_id, "value-in-type", &format!("Value '{}' is used in a type position. Add `extends valueof unknown` to accept any value.", name));
                 return type_id;
             }
         }
 
-        self.error("invalid-ref", &format!("Unknown type '{}'", name));
+        self.error_at(node_id, "invalid-ref", &format!("Unknown type '{}'", name));
         self.error_type
     }
 
@@ -566,7 +571,7 @@ impl Checker {
                     .is_some();
 
                 if !has_value_constraint {
-                    self.error("value-in-type", "Template parameter has no constraint but a value is passed. Add `extends valueof unknown` to accept any value.");
+                    self.error_at(arg_id, "value-in-type", "Template parameter has no constraint but a value is passed. Add `extends valueof unknown` to accept any value.");
                 }
             }
         }
@@ -835,7 +840,7 @@ impl Checker {
         &mut self,
         type_id: TypeId,
         member_name: &str,
-        _source_node_id: NodeId,
+        source_node_id: NodeId,
     ) -> TypeId {
         match self.get_type(type_id) {
             Some(Type::Namespace(ns)) => {
@@ -843,7 +848,8 @@ impl Checker {
                     self.check_internal_visibility(member_id);
                     member_id
                 } else {
-                    self.error(
+                    self.error_at(
+                        source_node_id,
                         "invalid-ref",
                         &format!("Namespace '{}' has no member '{}'", ns.name, member_name),
                     );
@@ -866,7 +872,8 @@ impl Checker {
                             break;
                         }
                     }
-                    self.error(
+                    self.error_at(
+                        source_node_id,
                         "invalid-ref",
                         &format!("Model '{}' has no property '{}'", m.name, member_name),
                     );
@@ -877,7 +884,8 @@ impl Checker {
                 if let Some(&member_id) = e.members.get(member_name) {
                     member_id
                 } else {
-                    self.error(
+                    self.error_at(
+                        source_node_id,
                         "invalid-ref",
                         &format!("Enum '{}' has no member '{}'", e.name, member_name),
                     );
@@ -888,7 +896,8 @@ impl Checker {
                 if let Some(&variant_id) = u.variants.get(member_name) {
                     variant_id
                 } else {
-                    self.error(
+                    self.error_at(
+                        source_node_id,
                         "invalid-ref",
                         &format!("Union '{}' has no variant '{}'", u.name, member_name),
                     );
@@ -899,7 +908,8 @@ impl Checker {
                 if let Some(&op_id) = iface.operations.get(member_name) {
                     op_id
                 } else {
-                    self.error(
+                    self.error_at(
+                        source_node_id,
                         "invalid-ref",
                         &format!(
                             "Interface '{}' has no operation '{}'",
@@ -910,7 +920,8 @@ impl Checker {
                 }
             }
             _ => {
-                self.error(
+                self.error_at(
+                    source_node_id,
                     "invalid-ref",
                     &format!("Cannot access member '{}' on this type", member_name),
                 );

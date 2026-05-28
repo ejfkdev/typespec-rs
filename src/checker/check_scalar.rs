@@ -40,13 +40,15 @@ impl Checker {
                 let resolved = self.resolve_alias_chain(extends_type);
                 match self.get_type(resolved) {
                     Some(Type::Model(_)) => {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "extend-scalar",
                             &format!("Scalar '{}' must extend another scalar, not a model.", name),
                         );
                     }
                     Some(Type::Interface(_)) => {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "extend-scalar",
                             &format!("Scalar '{}' must extend another scalar.", name),
                         );
@@ -94,7 +96,8 @@ impl Checker {
             };
 
             if constructor_names.contains_key(&ctor_name) {
-                self.error(
+                self.error_at(
+                    node_id,
                     "constructor-duplicate",
                     &format!("A constructor already exists with name {}", ctor_name),
                 );

@@ -22,7 +22,8 @@ impl Checker {
             .iter()
             .any(|(_, existing_name)| existing_name == &ns_name)
         {
-            self.error(
+            self.error_at(
+                node_id,
                 "duplicate-using",
                 &format!("Using of namespace '{}' is already declared.", ns_name),
             );
@@ -38,7 +39,11 @@ impl Checker {
                 self.using_declarations.push((node_id, ns_name));
             }
             Some(_) | None => {
-                self.error("using-invalid-ref", "Using must reference a namespace.");
+                self.error_at(
+                    node_id,
+                    "using-invalid-ref",
+                    "Using must reference a namespace.",
+                );
             }
         }
     }
@@ -157,7 +162,8 @@ impl Checker {
             if dec_target_type == self.error_type
                 && !self.diagnostics().iter().any(|d| d.code == "invalid-ref")
             {
-                self.error(
+                self.error_at(
+                    node_id,
                     "invalid-ref",
                     &format!("Unknown decorator '{}'", decorator_name),
                 );
@@ -189,7 +195,8 @@ impl Checker {
             }
 
             if found_template_instance_target {
-                self.error(
+                self.error_at(
+                    node_id,
                     "augment-decorator-target",
                     "Augment decorator cannot target a template instance.",
                 );
@@ -206,13 +213,15 @@ impl Checker {
 
         match self.get_type(resolved_type) {
             Some(Type::Model(m)) if m.name.is_empty() => {
-                self.error(
+                self.error_at(
+                    node_id,
                     "augment-decorator-target",
                     "Augment decorator cannot target a model expression.",
                 );
             }
             Some(Type::Union(u)) if u.name.is_empty() => {
-                self.error(
+                self.error_at(
+                    node_id,
                     "augment-decorator-target",
                     "Augment decorator cannot target a union expression.",
                 );
@@ -227,7 +236,8 @@ impl Checker {
         if let Some(links) = self.symbol_links.get(&node.target_type)
             && links.is_template_instantiation
         {
-            self.error(
+            self.error_at(
+                node_id,
                 "augment-decorator-target",
                 "Augment decorator cannot target a template instance.",
             );
@@ -238,7 +248,8 @@ impl Checker {
         if resolved_type != self.error_type {
             let is_template_instance = self.is_template_instance(resolved_type);
             if is_template_instance {
-                self.error(
+                self.error_at(
+                    node_id,
                     "augment-decorator-target",
                     "Augment decorator cannot target a template instance.",
                 );
@@ -264,7 +275,8 @@ impl Checker {
             if let Some(type_id) = self.resolve_declared_name(&obj_name) {
                 // Check if the object type is a template instance
                 if self.is_template_instance(type_id) {
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "augment-decorator-target",
                         "Augment decorator cannot target a member of a template instance.",
                     );
@@ -272,7 +284,8 @@ impl Checker {
                 // Check through alias chain
                 let resolved = self.resolve_alias_chain(type_id);
                 if resolved != type_id && self.is_template_instance(resolved) {
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "augment-decorator-target",
                         "Augment decorator cannot target a member of a template instance.",
                     );
@@ -284,7 +297,8 @@ impl Checker {
                     && let Some(AstNode::TypeReference(tr)) = ast.id_to_node(alias_decl.value)
                     && !tr.arguments.is_empty()
                 {
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "augment-decorator-target",
                         "Augment decorator cannot target a member of a template instance.",
                     );
@@ -303,13 +317,15 @@ impl Checker {
             {
                 match ast.id_to_node(alias_decl.value) {
                     Some(AstNode::ModelExpression(_)) => {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "augment-decorator-target",
                             "Augment decorator cannot target a model expression.",
                         );
                     }
                     Some(AstNode::UnionExpression(_)) => {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "augment-decorator-target",
                             "Augment decorator cannot target a union expression.",
                         );

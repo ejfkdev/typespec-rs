@@ -35,7 +35,8 @@ impl Checker {
                         extends.push(extends_type);
                     }
                     Some(_) => {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "extends-interface",
                             &format!("Interface '{}' can only extend other interfaces.", name),
                         );
@@ -133,7 +134,8 @@ impl Checker {
             let op_name = Self::get_identifier_name(&ast, op_node.name);
 
             if own_op_names_seen.contains(&op_name) {
-                self.error(
+                self.error_at(
+                    node_id,
                     "interface-duplicate",
                     &format!("Interface already has an operation named '{}'.", op_name),
                 );
@@ -164,7 +166,7 @@ impl Checker {
                             if let Some(&prev_source) = inherited_op_sources.get(ext_op_name)
                                 && prev_source != extends_type_id
                             {
-                                self.error("extends-interface-duplicate", &format!("Interface '{}' has duplicate member '{}' from multiple extended interfaces.", name, ext_op_name));
+                                self.error_at(node_id, "extends-interface-duplicate", &format!("Interface '{}' has duplicate member '{}' from multiple extended interfaces.", name, ext_op_name));
                                 break; // Only report once
                             } else {
                                 inherited_op_sources.insert(ext_op_name.clone(), extends_type_id);

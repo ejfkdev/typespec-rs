@@ -90,7 +90,8 @@ impl Checker {
 
         // Check for circular const reference
         if self.pending_const_checks.contains(&node_id) {
-            self.error(
+            self.error_at(
+                node_id,
                 "circular-const",
                 &format!("const '{}' recursively references itself.", name),
             );

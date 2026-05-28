@@ -33,7 +33,8 @@ impl Checker {
                 if required_param_count > 0 {
                     let base_name = Self::get_identifier_name(&ast, node.object);
                     let missing_param = self.get_missing_template_param_name(base_type, 0);
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "invalid-template-args",
                         &format!(
                             "Template argument '{}' is required for '{}'.",
@@ -65,7 +66,7 @@ impl Checker {
             let source_context = self.get_current_location_context();
             let target_context = self.get_stdlib_location_context(decl_id);
             if !is_access_allowed(&source_context, &target_context) {
-                self.error("invalid-ref", &format!("Symbol '{}' is internal and can only be accessed from within its declaring package.", full_name));
+                self.error_at(node_id,"invalid-ref", &format!("Symbol '{}' is internal and can only be accessed from within its declaring package.", full_name));
                 return self.error_type;
             }
         }
@@ -131,7 +132,8 @@ impl Checker {
                     self.check_internal_visibility(member_id);
                     return member_id;
                 }
-                self.error(
+                self.error_at(
+                    node_id,
                     "invalid-ref",
                     &format!("Namespace '{}' has no member '{}'", ns.name, prop_name),
                 );
@@ -145,7 +147,8 @@ impl Checker {
                         && let Some(prop_node) = prop.node
                         && self.pending_type_checks.contains(&prop_node)
                     {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "circular-prop",
                             &format!("Property '{}' recursively references itself.", prop_name),
                         );
@@ -165,7 +168,8 @@ impl Checker {
                         break;
                     }
                 }
-                self.error(
+                self.error_at(
+                    node_id,
                     "invalid-ref",
                     &format!("Model '{}' has no property '{}'", m.name, prop_name),
                 );
@@ -176,7 +180,8 @@ impl Checker {
                 if let Some(&member_id) = e.members.get(&prop_name) {
                     return member_id;
                 }
-                self.error(
+                self.error_at(
+                    node_id,
                     "invalid-ref",
                     &format!("Enum '{}' has no member '{}'", e.name, prop_name),
                 );
@@ -187,7 +192,8 @@ impl Checker {
                 if let Some(&variant_id) = u.variants.get(&prop_name) {
                     return variant_id;
                 }
-                self.error(
+                self.error_at(
+                    node_id,
                     "invalid-ref",
                     &format!("Union '{}' has no variant '{}'", u.name, prop_name),
                 );
@@ -198,7 +204,8 @@ impl Checker {
                 if let Some(&op_id) = iface.operations.get(&prop_name) {
                     return op_id;
                 }
-                self.error(
+                self.error_at(
+                    node_id,
                     "invalid-ref",
                     &format!(
                         "Interface '{}' has no operation '{}'",
@@ -219,7 +226,8 @@ impl Checker {
                                 if let Some(&op_id) = iface.operations.get(&prop_name) {
                                     op_id
                                 } else {
-                                    self.error(
+                                    self.error_at(
+                                        node_id,
                                         "invalid-ref",
                                         &format!(
                                             "Interface '{}' has no operation '{}'",
@@ -232,7 +240,8 @@ impl Checker {
                             Some(Type::Namespace(ns)) => match ns.lookup_member(&prop_name) {
                                 Some(id) => id,
                                 None => {
-                                    self.error(
+                                    self.error_at(
+                                        node_id,
                                         "invalid-ref",
                                         &format!(
                                             "Namespace '{}' has no member '{}'",
@@ -247,7 +256,8 @@ impl Checker {
                                 if let Some(&std_id) = self.std_types.get(&prop_name) {
                                     std_id
                                 } else {
-                                    self.error(
+                                    self.error_at(
+                                        node_id,
                                         "invalid-ref",
                                         &format!(
                                             "Cannot access member '{}' on scalar '{}'",
@@ -264,7 +274,8 @@ impl Checker {
                 if let Some(&std_id) = self.std_types.get(&prop_name) {
                     return std_id;
                 }
-                self.error(
+                self.error_at(
+                    node_id,
                     "invalid-ref",
                     &format!(
                         "Cannot access member '{}' on scalar '{}'",
@@ -274,7 +285,8 @@ impl Checker {
                 self.error_type
             }
             _ => {
-                self.error(
+                self.error_at(
+                    node_id,
                     "invalid-ref",
                     &format!("Cannot access member '{}' on this type", prop_name),
                 );
@@ -367,7 +379,7 @@ impl Checker {
         }
 
         // Name not found - report invalid-ref diagnostic
-        self.error("invalid-ref", &format!("Unknown type '{}'", name));
+        self.error_at(node_id, "invalid-ref", &format!("Unknown type '{}'", name));
         self.error_type
     }
 }

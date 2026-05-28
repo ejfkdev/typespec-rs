@@ -48,6 +48,7 @@ impl Pipeline {
 
         // 2. Type check
         let t1 = std::time::Instant::now();
+        let library_line_offset = parse_result.library_line_offset;
         let mut checker = Checker::new();
         checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
 
@@ -78,7 +79,16 @@ impl Pipeline {
             let loc = diag
                 .location
                 .as_ref()
-                .map(|l| format!(":{}:{}", l.file, l.start))
+                .map(|l| {
+                    let line = l.line.saturating_sub(library_line_offset as u32);
+                    if line == 0 {
+                        String::new()
+                    } else if l.file.is_empty() {
+                        format!(":{}:{}", line, l.column + 1)
+                    } else {
+                        format!("{}:{}:{}", l.file, line, l.column + 1)
+                    }
+                })
                 .unwrap_or_default();
             eprintln!("{}{}: {}: {}", diag.severity, loc, diag.code, diag.message);
         }

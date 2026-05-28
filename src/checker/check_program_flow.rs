@@ -133,7 +133,11 @@ impl Checker {
                                 continue;
                             }
                             let fqn = self.build_fqn(&name);
-                            self.error("duplicate-symbol", &format!("Duplicate symbol: '{}'", fqn));
+                            self.error_at(
+                                stmt_id,
+                                "duplicate-symbol",
+                                &format!("Duplicate symbol: '{}'", fqn),
+                            );
                             continue;
                         }
                         let type_id =
@@ -162,7 +166,11 @@ impl Checker {
             }
             if self.contains_declared_type_in_scope(&name) {
                 let fqn = self.build_fqn(&name);
-                self.error("duplicate-symbol", &format!("Duplicate symbol: '{}'", fqn));
+                self.error_at(
+                    stmt_id,
+                    "duplicate-symbol",
+                    &format!("Duplicate symbol: '{}'", fqn),
+                );
                 continue;
             }
 

@@ -22,7 +22,7 @@ impl Checker {
         // Check for shadowing parent template parameters
         // TS: checkTemplateParameterDeclaration → grandParentNode.locals.has(node.id.sv)
         // In our case, parent scope is the previous entry in template_param_scope stack
-        let shadow_names: Vec<String> = if self.template_param_scope.len() > 1 {
+        let shadow_params: Vec<(NodeId, String)> = if self.template_param_scope.len() > 1 {
             let parent_scope = &self.template_param_scope[self.template_param_scope.len() - 2];
             template_param_ids
                 .iter()
@@ -33,7 +33,7 @@ impl Checker {
                     };
                     let name = Self::get_identifier_name(ast, param_node.name);
                     if parent_scope.contains_key(&name) {
-                        Some(name)
+                        Some((param_id, name))
                     } else {
                         None
                     }
@@ -42,8 +42,9 @@ impl Checker {
         } else {
             vec![]
         };
-        for name in &shadow_names {
-            self.warning(
+        for &(param_id, ref name) in &shadow_params {
+            self.warning_at(
+                param_id,
                 "shadow",
                 &format!(
                     "Shadowing parent template parameter with the same name \"{}\"",
@@ -82,7 +83,7 @@ impl Checker {
                     let default_refs_invalid =
                         self.expr_references_names(ast, default_id, &invalid_names);
                     if default_refs_invalid {
-                        self.error("invalid-template-default", &format!("Template parameter '{}' default can only reference previously declared type parameters.", param_names[i]));
+                        self.error_at(param_id, "invalid-template-default", &format!("Template parameter '{}' default can only reference previously declared type parameters.", param_names[i]));
                     }
                 }
             }
@@ -101,7 +102,7 @@ impl Checker {
                 found_default = true;
             } else if found_default {
                 // Non-defaulted parameter after a defaulted one
-                self.error("default-required", &format!("Template parameter '{}' must have a default because it follows a parameter with a default.", param_names[i]));
+                self.error_at(param_id, "default-required", &format!("Template parameter '{}' must have a default because it follows a parameter with a default.", param_names[i]));
             }
         }
 

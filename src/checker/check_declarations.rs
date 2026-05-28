@@ -62,7 +62,8 @@ impl Checker {
                 let is_array_expr =
                     matches!(ast.id_to_node(type_ann), Some(AstNode::ArrayExpression(_)));
                 if !is_array_expr {
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "rest-parameter-array",
                         "A rest parameter must be of an array type.",
                     );
@@ -86,7 +87,8 @@ impl Checker {
             matches!(ast.id_to_node(mod_id), Some(AstNode::Modifier(m)) if m.kind == ModifierKind::Extern)
         });
         if has_extern {
-            self.error(
+            self.error_at(
+                node_id,
                 "missing-implementation",
                 "Extern declaration must have an implementation in JS file.",
             );
@@ -133,7 +135,8 @@ impl Checker {
         }
         let has_extern = modifier_flags.contains(ModifierFlags::Extern);
         if !has_extern {
-            self.error(
+            self.error_at(
+                node_id,
                 "invalid-modifier",
                 &format!(
                     "Function '{}' must have 'extern' modifier. Functions require external implementation.",
@@ -156,7 +159,8 @@ impl Checker {
 
             // Check for duplicate parameter names
             if !param_name.is_empty() && seen_param_names.contains(&param_name) {
-                self.error(
+                self.error_at(
+                    node_id,
                     "duplicate-parameter",
                     &format!(
                         "Duplicate parameter name '{}' in function '{}'.",
@@ -172,7 +176,8 @@ impl Checker {
                 let is_array_expr =
                     matches!(ast.id_to_node(type_ann), Some(AstNode::ArrayExpression(_)));
                 if !is_array_expr {
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "rest-parameter-array",
                         "A rest parameter must be of an array type.",
                     );

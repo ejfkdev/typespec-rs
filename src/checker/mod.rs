@@ -114,7 +114,7 @@ pub(crate) use crate::require_ast_or;
 
 use crate::ast::node::NodeId;
 use crate::ast::types::SyntaxKind;
-use crate::diagnostics::Diagnostic;
+use crate::diagnostics::{Diagnostic, SourceLocation};
 use crate::modifiers::{self, ModifierFlags};
 use crate::parser::{AstBuilder, AstNode};
 use std::collections::{HashMap, HashSet};
@@ -844,6 +844,36 @@ impl Checker {
         self.add_diagnostic(Diagnostic::warning(code, msg));
     }
 
+    /// Add an error diagnostic with source location derived from a NodeId.
+    pub(crate) fn error_at(&mut self, node_id: NodeId, code: &str, msg: &str) {
+        let mut diag = Diagnostic::error(code, msg);
+        self.populate_location_from_node(&mut diag, node_id);
+        self.add_diagnostic(diag);
+    }
+
+    /// Add a warning diagnostic with source location derived from a NodeId.
+    pub(crate) fn warning_at(&mut self, node_id: NodeId, code: &str, msg: &str) {
+        let mut diag = Diagnostic::warning(code, msg);
+        self.populate_location_from_node(&mut diag, node_id);
+        self.add_diagnostic(diag);
+    }
+
+    /// Populate a diagnostic's location from an AST node's span.
+    fn populate_location_from_node(&self, diag: &mut Diagnostic, node_id: NodeId) {
+        if let Some(ref ast) = self.ast
+            && let Some(span) = ast.node_span(node_id)
+        {
+            diag.location = Some(SourceLocation {
+                file: String::new(),
+                start: 0,
+                end: 0,
+                line: span.start.line,
+                column: span.start.column,
+                is_synthetic: false,
+            });
+        }
+    }
+
     // ========================================================================
     // Deferred validations
     // ========================================================================
@@ -1097,7 +1127,8 @@ impl Checker {
 
         // Per TS: emit experimental-feature warning for any use of 'internal' modifier
         if modifier_flags.contains(ModifierFlags::Internal) {
-            self.warning(
+            self.warning_at(
+                node_id,
                 "experimental-feature",
                 "The 'internal' modifier is an experimental feature.",
             );
@@ -1112,7 +1143,8 @@ impl Checker {
 
         // Emit invalid-modifier diagnostics for disallowed modifiers
         for invalid in &result.invalid_modifiers {
-            self.error(
+            self.error_at(
+                node_id,
                 "invalid-modifier",
                 &format!(
                     "Modifier '{}' is not allowed on {}.",
@@ -1124,7 +1156,8 @@ impl Checker {
 
         // Emit invalid-modifier diagnostics for missing required modifiers
         for missing in &result.missing_modifiers {
-            self.error(
+            self.error_at(
+                node_id,
                 "invalid-modifier",
                 &format!(
                     "Modifier '{}' is required on {}.",
@@ -1239,7 +1272,8 @@ impl Checker {
                 if !path_str.is_empty() {
                     // Check for duplicate imports
                     if self.import_paths.contains_key(&path_str) {
-                        self.warning(
+                        self.warning_at(
+                            node_id,
                             "duplicate-import",
                             &format!("Import '{}' is duplicated.", path_str),
                         );
@@ -1248,7 +1282,8 @@ impl Checker {
                     }
                     // Self-import check (file importing itself)
                     // We can't fully detect this without file path info, but we skip for now
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "import-not-found",
                         &format!("Cannot find import '{}'", path_str),
                     );

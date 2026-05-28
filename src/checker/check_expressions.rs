@@ -66,7 +66,8 @@ impl Checker {
                     Some(AstNode::FunctionTypeExpression(_))
                 )
             {
-                self.error(
+                self.error_at(
+                    node_id,
                     "fn-in-union-expression",
                     "Function types in anonymous union expressions must be parenthesized.",
                 );
@@ -150,7 +151,8 @@ impl Checker {
             let resolved = self.resolve_alias_chain(option_type);
             let is_model = matches!(self.get_type(resolved), Some(Type::Model(_)));
             if !is_model && option_type != self.error_type {
-                self.error(
+                self.error_at(
+                    node_id,
                     "intersect-non-model",
                     "Cannot intersect a non-model type. Intersection operands must be models.",
                 );
@@ -160,7 +162,8 @@ impl Checker {
             if let Some(Type::Model(m)) = self.get_type(resolved)
                 && m.indexer.is_some()
             {
-                self.error(
+                self.error_at(
+                    node_id,
                     "intersect-invalid-index",
                     "Cannot intersect an array model with a non-array model.",
                 );
@@ -384,7 +387,8 @@ impl Checker {
             Entity::Indeterminate(type_id) => *type_id,
             Entity::Type(_) => {
                 // typeof on a pure type (like int32, a model) - emit expect-value diagnostic
-                self.error(
+                self.error_at(
+                    node_id,
                     "expect-value",
                     "typeof must be used with a value, not a type.",
                 );
@@ -496,7 +500,7 @@ impl Checker {
                                     Type::String(_) | Type::Number(_) | Type::Boolean(_) => {}
                                     Type::Intrinsic(_) => {}
                                     _ => {
-                                        self.error("non-literal-string-template", "Value interpolated in this string template cannot be converted to a string. Only literal types can be automatically interpolated.");
+                                        self.error_at(node_id, "non-literal-string-template", "Value interpolated in this string template cannot be converted to a string. Only literal types can be automatically interpolated.");
                                     }
                                 }
                             }
@@ -504,7 +508,7 @@ impl Checker {
                         }
                         _ => {
                             // Non-literal types cannot be interpolated in string templates
-                            self.error("non-literal-string-template", "Value interpolated in this string template cannot be converted to a string. Only literal types can be automatically interpolated.");
+                            self.error_at(node_id, "non-literal-string-template", "Value interpolated in this string template cannot be converted to a string. Only literal types can be automatically interpolated.");
                             has_type_interp = true;
                         }
                     }
@@ -538,7 +542,8 @@ impl Checker {
 
         // Check for mixed-string-template: interpolating both values and types
         if has_value_interp && has_type_interp {
-            self.error(
+            self.error_at(
+                node_id,
                 "mixed-string-template",
                 "String template cannot interpolate both values and types.",
             );
@@ -582,7 +587,7 @@ impl Checker {
                 | Some(Type::ScalarConstructor(_))
                 | Some(Type::FunctionType(_)) => true,
                 Some(Type::TemplateParameter(_)) => {
-                    self.error("non-callable", "Template parameter is not callable. Ensure it is constrained to a function value or callable type.");
+                    self.error_at(node_id, "non-callable", "Template parameter is not callable. Ensure it is constrained to a function value or callable type.");
                     false
                 }
                 Some(Type::Intrinsic(_)) => false, // Error type — don't emit non-callable
@@ -591,7 +596,8 @@ impl Checker {
                         Some(t) => t.kind_name(),
                         None => "unknown",
                     };
-                    self.error(
+                    self.error_at(
+                        node_id,
                         "non-callable",
                         &format!("Type {} is not callable.", kind_name),
                     );
@@ -617,7 +623,8 @@ impl Checker {
                     };
 
                     if arguments.len() < min_params {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "missing-arguments",
                             &format!(
                                 "Function '{}' expects at least {} argument(s), but got {}.",
@@ -627,7 +634,8 @@ impl Checker {
                             ),
                         );
                     } else if max_params != usize::MAX && arguments.len() > max_params {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "too-many-arguments",
                             &format!(
                                 "Function '{}' expects at most {} argument(s), but got {}.",
@@ -668,10 +676,10 @@ impl Checker {
 
                     if is_primitive_or_extends {
                         if arguments.len() != 1 {
-                            self.error("invalid-primitive-init", "Instantiating scalar deriving from 'string', 'numeric' or 'boolean' can only take a single argument.");
+                            self.error_at(node_id, "invalid-primitive-init", "Instantiating scalar deriving from 'string', 'numeric' or 'boolean' can only take a single argument.");
                         }
                     } else if s.base_scalar.is_some() {
-                        self.error("named-init-required", "Only scalar deriving from 'string', 'numeric' or 'boolean' can be instantiated without a named constructor.");
+                        self.error_at(node_id, "named-init-required", "Only scalar deriving from 'string', 'numeric' or 'boolean' can be instantiated without a named constructor.");
                     }
                 }
 
@@ -749,7 +757,8 @@ impl Checker {
                             }
                         }
                     } else {
-                        self.error(
+                        self.error_at(
+                            node_id,
                             "spread-object",
                             "Cannot spread properties of non-object type.",
                         );

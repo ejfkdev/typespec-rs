@@ -67,7 +67,8 @@ impl Checker {
 
             // Check for duplicate variant
             if !variant_name.is_empty() && variants.contains_key(&variant_name) {
-                self.error(
+                self.error_at(
+                    variant_id,
                     "union-duplicate",
                     &format!("Union has duplicate variant '{}'.", variant_name),
                 );

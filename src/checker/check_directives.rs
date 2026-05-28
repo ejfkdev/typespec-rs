@@ -34,7 +34,8 @@ impl Checker {
                     match target_name.as_str() {
                         "deprecated" => {
                             if has_deprecated {
-                                self.error(
+                                self.error_at(
+                                    node_id,
                                     "duplicate-deprecation",
                                     "Duplicate #deprecated directive",
                                 );
@@ -42,7 +43,8 @@ impl Checker {
                                 has_deprecated = true;
                                 // Validate that #deprecated has a string argument
                                 if dir_expr.arguments.is_empty() {
-                                    self.error(
+                                    self.error_at(
+                                        node_id,
                                         "invalid-deprecation-argument",
                                         "#deprecated directive requires a string message argument.",
                                     );
@@ -61,7 +63,7 @@ impl Checker {
                                         self.mark_deprecated(type_id, msg);
                                     } else {
                                         // First argument is not a string literal
-                                        self.error("invalid-deprecation-argument", "#deprecated directive requires a string message argument.");
+                                        self.error_at(node_id, "invalid-deprecation-argument", "#deprecated directive requires a string message argument.");
                                     }
                                 }
                             }

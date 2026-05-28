@@ -15,6 +15,7 @@ mod tests;
 use crate::ast::token::Span;
 use crate::ast::types::*;
 use crate::scanner::{Lexer, TokenFlags, TokenKind};
+use std::rc::Rc;
 use std::sync::RwLock;
 
 /// Global library registry.
@@ -132,11 +133,14 @@ impl ParseOptions {
 #[derive(Debug)]
 pub struct ParseResult {
     pub root_id: u32,
-    pub builder: AstBuilder,
+    pub builder: Rc<AstBuilder>,
     pub diagnostics: Vec<ParseDiagnostic>,
     /// Number of lines occupied by injected library sources.
     /// Subtract this from diagnostic line numbers to get the offset in the user's original source.
     pub library_line_offset: usize,
+    /// Holds ownership of the combined source string (user source + injected libraries)
+    /// so that it is freed when ParseResult is dropped, instead of leaking permanently.
+    _source_hold: Option<Box<str>>,
 }
 
 /// Parse diagnostic
@@ -156,6 +160,10 @@ pub struct Parser<'a> {
     builder: AstBuilder,
     diagnostics: Vec<ParseDiagnostic>,
     library_line_offset: usize,
+    /// Holds ownership of the combined source Box<str> so it's not leaked.
+    /// The lexer borrows from this via a raw pointer — safe because Parser is
+    /// consumed by parse() and the Box outlives the borrow.
+    source_hold: Option<Box<str>>,
 }
 
 impl<'a> Parser<'a> {
@@ -169,11 +177,14 @@ impl<'a> Parser<'a> {
             (format!("{}\n\n{}", lib_part, source), offset)
         };
 
-        // SAFETY: We leak the combined string to get a 'a lifetime reference.
-        // This is acceptable because the parser is consumed in parse() and the
-        // string only needs to live as long as the parser.
+        // Store the combined source in a Box<str> and create a reference from it.
+        // We keep ownership in source_hold so the memory is freed when Parser is dropped.
         let combined_box = combined_source.into_boxed_str();
-        let combined_ref: &'a str = Box::leak(combined_box);
+        // SAFETY: We transmute the &str reference to 'a lifetime. This is safe because:
+        // 1. The Box<str> is stored in source_hold which lives as long as the Parser.
+        // 2. The Parser is consumed by parse(), after which the reference is no longer used.
+        // 3. The Lexer only borrows this reference during parsing.
+        let combined_ref: &'a str = unsafe { &*(&*combined_box as *const str) };
 
         let mut lexer = Lexer::new(combined_ref);
         let current_token = lexer.scan();
@@ -186,6 +197,7 @@ impl<'a> Parser<'a> {
             builder: AstBuilder::new(combined_ref.to_string()),
             diagnostics: Vec::new(),
             library_line_offset: line_offset,
+            source_hold: Some(combined_box),
         }
     }
 
@@ -195,9 +207,10 @@ impl<'a> Parser<'a> {
         let root_id = self.parse_typespec_script();
         ParseResult {
             root_id,
-            builder: self.builder,
+            builder: Rc::new(self.builder),
             diagnostics: self.diagnostics,
             library_line_offset: self.library_line_offset,
+            _source_hold: self.source_hold,
         }
     }
 

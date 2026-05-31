@@ -60,6 +60,7 @@ impl TokenFlags {
     pub const NONE: TokenFlags = TokenFlags(0);
     pub const ESCAPED: TokenFlags = TokenFlags(1 << 0);
     pub const TRIPLE_QUOTED: TokenFlags = TokenFlags(1 << 1);
+    pub const BACKTICKED: TokenFlags = TokenFlags(1 << 2);
     pub const DOC_COMMENT: TokenFlags = TokenFlags(1 << 4);
 
     pub fn contains(self, other: TokenFlags) -> bool {
@@ -554,7 +555,15 @@ impl<'a> Lexer<'a> {
                 }
                 s
             }
-            TokenKind::Identifier => text.to_string(),
+            TokenKind::Identifier => {
+                if self.current_token_flags.contains(TokenFlags::BACKTICKED) {
+                    // Strip backtick delimiters from value
+                    let inner = text.strip_prefix('`').unwrap_or(text);
+                    inner.strip_suffix('`').unwrap_or(inner).to_string()
+                } else {
+                    text.to_string()
+                }
+            }
             _ => text.to_string(),
         }
     }
@@ -1236,6 +1245,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_backticked_identifier(&mut self) -> TokenKind {
+        self.current_token_flags.insert(TokenFlags::BACKTICKED);
         loop {
             if self.eof() {
                 return self.finish_token(TokenKind::Identifier);

@@ -512,8 +512,8 @@ mod template_tests {
 
     #[test]
     fn test_parse_template_special_keywords_as_identifiers() {
-        // Template with special keywords as identifiers
-        let result = parse("model A<T> { model: T, enum: T }");
+        // Template with reserved keywords as identifiers (active keywords need string literal)
+        let result = parse(r#"model A<T> { "model": T, "enum": T }"#);
         assert!(result.diagnostics.is_empty());
     }
 

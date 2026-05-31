@@ -776,7 +776,7 @@ impl<'a> Parser<'a> {
             // String literals can also serve as variant names: "hi there": type
             // This matches TS parseIdOrValueForVariant + parseOptional(Colon)
             let (name, value) = if self.current_token() == TokenKind::Identifier
-                || self.is_reserved_identifier(self.current_token())
+                || self.current_token().is_reserved_keyword()
             {
                 // Identifier or reserved keyword used as identifier
                 let id = self.parse_identifier();
@@ -1396,11 +1396,15 @@ impl<'a> Parser<'a> {
 
     fn parse_identifier_or_member_expression(
         &mut self,
-        _allow_reserved: bool,
-        _allow_reserved_in_member: bool,
+        allow_reserved: bool,
+        allow_reserved_in_member: bool,
     ) -> u32 {
         let pos = self.token_start_position();
-        let mut base = self.parse_identifier();
+        let mut base = if allow_reserved {
+            self.parse_identifier_allow_reserved()
+        } else {
+            self.parse_identifier()
+        };
 
         while self.check_token(TokenKind::Dot) || self.check_token(TokenKind::ColonColon) {
             let selector = if self.check_token(TokenKind::Dot) {
@@ -1409,7 +1413,11 @@ impl<'a> Parser<'a> {
                 MemberSelector::DoubleColon
             };
             self.next_token();
-            let property = self.parse_identifier();
+            let property = if allow_reserved_in_member {
+                self.parse_identifier_allow_reserved()
+            } else {
+                self.parse_identifier()
+            };
             let span = self.make_span(pos, self.previous_token_end);
             base = self
                 .builder
@@ -1770,6 +1778,11 @@ impl<'a> Parser<'a> {
         self.parse_identifier_impl(true, false)
     }
 
+    /// Parse an identifier allowing reserved keywords and modifier keywords
+    fn parse_identifier_allow_reserved(&mut self) -> u32 {
+        self.parse_identifier_impl(true, false)
+    }
+
     /// Parse an identifier, optionally allowing string literals (for model property names)
     fn parse_identifier_allow_string(&mut self) -> u32 {
         self.parse_identifier_impl(true, true)
@@ -1804,44 +1817,16 @@ impl<'a> Parser<'a> {
         if token == TokenKind::Identifier {
             return true;
         }
-        if allow_reserved {
-            return self.is_reserved_identifier(token);
+        // Reserved keywords are always accepted as identifiers (with optional warning)
+        // per official TypeSpec: "reserved-identifier" warning but still consumed
+        if token.is_reserved_keyword() {
+            return true;
+        }
+        // Modifier keywords (extern, internal) accepted when allow_reserved
+        if allow_reserved && token.is_modifier() {
+            return true;
         }
         false
-    }
-
-    fn is_reserved_identifier(&self, token: TokenKind) -> bool {
-        matches!(
-            token,
-            TokenKind::ModelKeyword
-                | TokenKind::EnumKeyword
-                | TokenKind::InterfaceKeyword
-                | TokenKind::UnionKeyword
-                | TokenKind::NamespaceKeyword
-                | TokenKind::UsingKeyword
-                | TokenKind::OpKeyword
-                | TokenKind::ScalarKeyword
-                | TokenKind::AliasKeyword
-                | TokenKind::ConstKeyword
-                | TokenKind::ImportKeyword
-                | TokenKind::ExtendsKeyword
-                | TokenKind::IsKeyword
-                | TokenKind::FnKeyword
-                | TokenKind::DecKeyword
-                | TokenKind::ExternKeyword
-                | TokenKind::InternalKeyword
-                | TokenKind::InitKeyword
-                | TokenKind::ValueOfKeyword
-                | TokenKind::TypeOfKeyword
-                | TokenKind::TrueKeyword
-                | TokenKind::FalseKeyword
-                | TokenKind::VoidKeyword
-                | TokenKind::NeverKeyword
-                | TokenKind::UnknownKeyword
-                | TokenKind::SelfKeyword
-                | TokenKind::PropKeyword
-                | TokenKind::PropertyKeyword
-        )
     }
 
     fn parse_string_literal(&mut self) -> u32 {

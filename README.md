@@ -362,6 +362,7 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 - Public Checker helper API: decorator lookup, constraint accessors, type iteration, property walking, value extraction
 - `@doc`/`@summary` fields on Model, ModelProperty, EnumMember, UnionVariant, Namespace — populated from decorator evaluation
 - Standard decorator evaluation pipeline: `@doc`, `@summary`, `@minValue`, `@maxValue`, `@pattern`, `@format`, `@minLength`, `@maxLength`, `@minItems`, `@maxItems`, `@error`, `@tag`, `@discriminator`, `@encode`
+- Official-compliant keyword handling: three-tier classification (active/reserved/modifier), reserved keywords allowed as property/enum/variant names, backtick-escaped identifiers (e.g. `` `chrome-devtools-mcp` ``)
 
 What's not yet ported:
 

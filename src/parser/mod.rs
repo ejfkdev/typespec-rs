@@ -869,7 +869,7 @@ impl<'a> Parser<'a> {
                 let directives = self.parse_directive_list();
                 let decorators = self.parse_decorator_list();
                 let pos = self.token_start_position();
-                let name = self.parse_identifier();
+                let name = self.parse_identifier_allow_reserved();
 
                 let value = if self.check_token(TokenKind::Colon) {
                     self.next_token();
@@ -1075,7 +1075,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
             }
 
-            let name = self.parse_identifier();
+            let name = self.parse_identifier_allow_reserved();
             let optional = self.check_token(TokenKind::Question);
             if optional {
                 self.next_token();
@@ -1695,7 +1695,7 @@ impl<'a> Parser<'a> {
                     .create_object_literal_spread_property(target, span);
                 properties.push(spread_id);
             } else {
-                let key = self.parse_identifier();
+                let key = self.parse_identifier_allow_reserved();
                 self.expect_token(TokenKind::Colon);
                 let value = self.parse_expression();
                 let span = self.make_span(prop_pos, self.previous_token_end);
@@ -1773,12 +1773,13 @@ impl<'a> Parser<'a> {
 
     // ==================== Identifier Parsing ====================
 
-    /// Parse an identifier - allows reserved keywords (like `fn`) which is valid TypeSpec
+    /// Parse an identifier - allows reserved keywords (like `fn`, `typeof`) which is valid TypeSpec
     fn parse_identifier(&mut self) -> u32 {
-        self.parse_identifier_impl(true, false)
+        self.parse_identifier_impl(false, false)
     }
 
-    /// Parse an identifier allowing reserved keywords and modifier keywords
+    /// Parse an identifier allowing all keywords (statement, modifier, reserved) — used in
+    /// contexts where any keyword is a valid name: decorator targets, enum members, property names
     fn parse_identifier_allow_reserved(&mut self) -> u32 {
         self.parse_identifier_impl(true, false)
     }
@@ -1822,8 +1823,27 @@ impl<'a> Parser<'a> {
         if token.is_reserved_keyword() {
             return true;
         }
-        // Modifier keywords (extern, internal) accepted when allow_reserved
-        if allow_reserved && token.is_modifier() {
+        // When allow_reserved, accept all keywords as identifiers.
+        // After @, keywords like alias/const/model are valid decorator names.
+        // Also allows keyword property names in model/enum contexts,
+        // and type keywords like unknown/void/never used as member names.
+        if allow_reserved
+            && (token.is_statement_keyword()
+                || token.is_modifier()
+                || matches!(
+                    token,
+                    TokenKind::UnknownKeyword
+                        | TokenKind::VoidKeyword
+                        | TokenKind::NeverKeyword
+                        | TokenKind::TrueKeyword
+                        | TokenKind::FalseKeyword
+                        | TokenKind::ReturnKeyword
+                        | TokenKind::TypeOfKeyword
+                        | TokenKind::ValueOfKeyword
+                        | TokenKind::ExtendsKeyword
+                        | TokenKind::IsKeyword
+                ))
+        {
             return true;
         }
         false

@@ -112,83 +112,99 @@ impl Checker {
                 _ => continue,
             };
 
-            let name = param_names[i].clone();
+            // Skip the expensive constraint/default checking + type creation if the
+            // TemplateParameterType was already built on a previous pass (e.g., when
+            // the declaration is re-checked during instantiation). The scope
+            // registration below MUST still run on every pass: the scope is popped at
+            // the end of each check_template_declaration / finish_template_or_type, so
+            // failing to re-register would leave the body unable to resolve the param
+            // name (regression: "Unknown type 'T'" during instantiation).
+            let already_created = self
+                .node_type_map
+                .get(&param_id)
+                .and_then(|&tid| self.get_type(tid))
+                .is_some_and(|t| t.is_finished());
 
-            if let Some(&existing_id) = self.node_type_map.get(&param_id)
-                && let Some(t) = self.get_type(existing_id)
-                && t.is_finished()
-            {
-                continue;
+            if !already_created {
+                // Check constraint for circular references
+                // Add ALL template parameter names to pending set before checking constraint,
+                // so mutual constraints (A extends B, B extends A) are detected.
+                let (constraint, value_constraint) =
+                    if let Some(constraint_id) = param_node.constraint {
+                        // Add all param names to detect mutual circular constraints
+                        for pname in &param_names {
+                            self.pending_template_constraint_names.insert(pname.clone());
+                        }
+
+                        // Check for mixed constraint (e.g., `T extends string | valueof int32`)
+                        let (type_constraint, value_constraint) =
+                            self.check_mixed_constraint(ctx, constraint_id);
+
+                        // Remove all param names after checking
+                        for pname in &param_names {
+                            self.pending_template_constraint_names.remove(pname);
+                        }
+                        (type_constraint, value_constraint)
+                    } else {
+                        (None, None)
+                    };
+
+                let default = if let Some(default_id) = param_node.default {
+                    let default_type = self.check_node(ctx, default_id);
+                    // Check if default is assignable to constraint
+                    // Ported from TS checker.ts checkTemplateArguments()
+                    if let Some(constraint_id) = constraint
+                        && default_type != self.error_type
+                        && constraint_id != self.error_type
+                    {
+                        let (is_assignable, _) =
+                            self.is_type_assignable_to(default_type, constraint_id, param_id);
+                        if !is_assignable {
+                            self.error_unassignable("unassignable", default_type, constraint_id);
+                        }
+                    }
+                    Some(default_type)
+                } else {
+                    None
+                };
+
+                let type_id = self.create_type(Type::TemplateParameter(TemplateParameterType {
+                    id: self.next_type_id(),
+                    name: param_names[i].clone(),
+                    node: Some(param_id),
+                    constraint,
+                    value_constraint,
+                    default,
+                    is_finished: true,
+                }));
+
+                self.node_type_map.insert(param_id, type_id);
             }
 
-            // Check constraint for circular references
-            // Add ALL template parameter names to pending set before checking constraint,
-            // so mutual constraints (A extends B, B extends A) are detected.
-            let (constraint, value_constraint) = if let Some(constraint_id) = param_node.constraint
-            {
-                // Add all param names to detect mutual circular constraints
-                for pname in &param_names {
-                    self.pending_template_constraint_names.insert(pname.clone());
-                }
-
-                // Check for mixed constraint (e.g., `T extends string | valueof int32`)
-                let (type_constraint, value_constraint) =
-                    self.check_mixed_constraint(ctx, constraint_id);
-
-                // Remove all param names after checking
-                for pname in &param_names {
-                    self.pending_template_constraint_names.remove(pname);
-                }
-                (type_constraint, value_constraint)
-            } else {
-                (None, None)
-            };
-
-            let default = if let Some(default_id) = param_node.default {
-                let default_type = self.check_node(ctx, default_id);
-                // Check if default is assignable to constraint
-                // Ported from TS checker.ts checkTemplateArguments()
-                if let Some(constraint_id) = constraint
-                    && default_type != self.error_type
-                    && constraint_id != self.error_type
-                {
-                    let (is_assignable, _) =
-                        self.is_type_assignable_to(default_type, constraint_id, param_id);
-                    if !is_assignable {
-                        self.error_unassignable("unassignable", default_type, constraint_id);
-                    }
-                }
-                Some(default_type)
-            } else {
-                None
-            };
-
-            let type_id = self.create_type(Type::TemplateParameter(TemplateParameterType {
-                id: self.next_type_id(),
-                name,
-                node: Some(param_id),
-                constraint,
-                value_constraint,
-                default,
-                is_finished: true,
-            }));
-
-            self.node_type_map.insert(param_id, type_id);
-
+            // The TemplateParameterType is now guaranteed present in node_type_map.
             // Determine the effective type_id for name resolution:
             // - During template declaration (no mapper): use the TemplateParameter type
             // - During instantiation (with mapper): use the mapped argument type
+            let template_param_type = self.node_type_map[&param_id];
+            // Body name resolution happens through `template_param_scope`, not
+            // `node_type_map`, so we must NOT overwrite the entry here. The
+            // TemplateParameterType must stay in node_type_map because the
+            // default-filling and constraint logic in instantiate_template reads
+            // it expecting a TemplateParameterType with a `.default` field.
+            // Overwriting it with the mapped argument type breaks default filling,
+            // causing `Foo` (auto-filled) and `Foo<string>` (explicit) to get
+            // different cache keys → different instances.
             let effective_type_id = if let Some(ref mapper) = ctx.mapper
                 && let Some(&mapped_type_id) = mapper.map.get(&param_id)
             {
-                self.node_type_map.insert(param_id, mapped_type_id);
                 mapped_type_id
             } else {
-                type_id
+                template_param_type
             };
 
             // Register template parameter name for name resolution in template body
-            // This allows identifiers like `T` to resolve during checking
+            // This allows identifiers like `T` to resolve during checking. Runs on every
+            // pass because the scope is popped when the template body check completes.
             if let Some(scope) = self.template_param_scope.last_mut() {
                 scope.insert(param_names[i].clone(), effective_type_id);
             }

@@ -1,6 +1,7 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod template_tests {
+    use crate::checker::Checker;
     use crate::checker::Type;
     use crate::checker::test_utils::{all_diagnostics, check};
     use crate::parser::parse;
@@ -1344,6 +1345,300 @@ mod template_tests {
                 .iter()
                 .any(|d| d.code == "invalid-template-argument-name"),
             "Should report invalid-template-argument-name for T<string> as param name: {:?}",
+            diags
+        );
+    }
+
+    // ==================== Named template arguments (ported from TS templates.test.ts) ====================
+    //
+    // Named arguments bind by name regardless of position: `A<U = int32, T = string>`
+    // must bind T→string, U→int32. These tests verify the semantic resolution, not
+    // just parsing.
+
+    /// Resolve the type of a property nested inside a template instance held by
+    /// `outer_model.outer_prop`, returning a readable name (e.g. "string",
+    /// `"bar"`, "int32", "unknown"). Used by the named-argument tests below.
+    fn instance_property_type_name(
+        checker: &Checker,
+        outer_model: &str,
+        outer_prop: &str,
+        inner_prop: &str,
+    ) -> String {
+        let outer_id = checker.get_type_by_name(outer_model).unwrap();
+        let Type::Model(outer) = checker.get_type(outer_id).cloned().unwrap() else {
+            return "?".into();
+        };
+        let prop_id = *outer.properties.get(outer_prop).unwrap();
+        let Type::ModelProperty(holder) = checker.get_type(prop_id).cloned().unwrap() else {
+            return "?".into();
+        };
+        let Type::Model(instance) = checker.get_type(holder.r#type).cloned().unwrap() else {
+            return "?".into();
+        };
+        let inner_prop_id = *instance.properties.get(inner_prop).unwrap();
+        let Type::ModelProperty(inner) = checker.get_type(inner_prop_id).cloned().unwrap() else {
+            return "?".into();
+        };
+        match checker.get_type(inner.r#type).cloned().unwrap() {
+            Type::Scalar(s) => s.name.clone(),
+            Type::String(s) => format!("\"{}\"", s.value),
+            Type::Intrinsic(i) => match i.name {
+                crate::checker::IntrinsicTypeName::Unknown => "unknown".into(),
+                crate::checker::IntrinsicTypeName::Null => "null".into(),
+                crate::checker::IntrinsicTypeName::Void => "void".into(),
+                crate::checker::IntrinsicTypeName::Never => "never".into(),
+                crate::checker::IntrinsicTypeName::ErrorType => "errortype".into(),
+            },
+            other => format!("{other:?}"),
+        }
+    }
+
+    /// Ported from TS: "with named arguments"
+    #[test]
+    fn test_template_named_arg_basic() {
+        let checker = check(
+            "
+            model A<T> { a: T }
+            model B { foo: A<T = string> }
+        ",
+        );
+        assert_eq!(
+            instance_property_type_name(&checker, "B", "foo", "a"),
+            "string"
+        );
+    }
+
+    /// Ported from TS: "with named arguments out of order"
+    #[test]
+    fn test_template_named_arg_out_of_order() {
+        let checker = check(
+            "
+            model A<T, U> { a: T, b: U }
+            model B { foo: A<U = int32, T = string> }
+        ",
+        );
+        assert_eq!(
+            instance_property_type_name(&checker, "B", "foo", "a"),
+            "string"
+        );
+        assert_eq!(
+            instance_property_type_name(&checker, "B", "foo", "b"),
+            "int32"
+        );
+    }
+
+    /// Ported from TS: "with named arguments and defaults"
+    #[test]
+    fn test_template_named_arg_with_defaults() {
+        let checker = check(
+            r#"
+            model A<T = int32, U = string> { a: T, b: U }
+            model B { foo: A<U = "bar"> }
+        "#,
+        );
+        assert_eq!(
+            instance_property_type_name(&checker, "B", "foo", "a"),
+            "int32"
+        );
+        assert_eq!(
+            instance_property_type_name(&checker, "B", "foo", "b"),
+            "\"bar\""
+        );
+    }
+
+    /// Ported from TS: "with named arguments and defaults bound to other parameters"
+    #[test]
+    fn test_template_named_arg_default_bound_to_other_param() {
+        let checker = check(
+            "
+            model A<T, U = T> { a: T, b: U }
+            model B { foo: A<T = string> }
+        ",
+        );
+        assert_eq!(
+            instance_property_type_name(&checker, "B", "foo", "a"),
+            "string"
+        );
+        assert_eq!(
+            instance_property_type_name(&checker, "B", "foo", "b"),
+            "string"
+        );
+    }
+
+    /// Ported from TS: "with named and positional arguments"
+    /// `A<boolean, V = "bar">` and `A<T = boolean, V = "bar">` must both yield
+    /// a=boolean, b=int32 (default), c="bar".
+    #[test]
+    fn test_template_named_and_positional_args() {
+        let checker = check(
+            r#"
+            model A<T, U = int32, V extends string = string> { a: T, b: U, c: V }
+            model B { foo: A<boolean, V = "bar"> }
+            model C { foo: A<T = boolean, V = "bar"> }
+        "#,
+        );
+        for outer in ["B", "C"] {
+            assert_eq!(
+                instance_property_type_name(&checker, outer, "foo", "a"),
+                "boolean",
+                "a for {outer}"
+            );
+            assert_eq!(
+                instance_property_type_name(&checker, outer, "foo", "b"),
+                "int32",
+                "b for {outer}"
+            );
+            assert_eq!(
+                instance_property_type_name(&checker, outer, "foo", "c"),
+                "\"bar\"",
+                "c for {outer}"
+            );
+        }
+    }
+
+    /// Ported from TS: "cannot specify name of nonexistent parameter"
+    /// `A<string, U = "bar">` on a 1-param template must report an error AND still
+    /// bind the valid positional arg (T → string).
+    #[test]
+    fn test_template_named_arg_nonexistent_param() {
+        let diags = all_diagnostics(
+            r#"
+            model A<T> { a: T }
+            model B { foo: A<string, U = "bar"> }
+        "#,
+        );
+        assert!(
+            diags.iter().any(|d| d.code == "invalid-template-args"),
+            "Should report invalid-template-args for nonexistent param 'U': {:?}",
+            diags
+        );
+        let checker = check(
+            r#"
+            model A<T> { a: T }
+            model B { foo: A<string, U = "bar"> }
+        "#,
+        );
+        assert_eq!(
+            instance_property_type_name(&checker, "B", "foo", "a"),
+            "string"
+        );
+    }
+
+    /// Ported from TS: "cannot specify argument twice"
+    #[test]
+    fn test_template_named_arg_specified_twice_positional() {
+        let diags = all_diagnostics(
+            r#"
+            model A<T> { a: T }
+            model B { foo: A<string, T = "bar"> }
+        "#,
+        );
+        assert!(
+            diags.iter().any(|d| d.code == "invalid-template-args"),
+            "Should report invalid-template-args for argument specified twice: {:?}",
+            diags
+        );
+    }
+
+    /// Ported from TS: "cannot specify argument twice by name"
+    #[test]
+    fn test_template_named_arg_specified_twice_by_name() {
+        let diags = all_diagnostics(
+            r#"
+            model A<T> { a: T }
+            model B { foo: A<T = string, T = "bar"> }
+        "#,
+        );
+        assert!(
+            diags.iter().any(|d| d.code == "invalid-template-args"),
+            "Should report invalid-template-args for argument specified twice by name: {:?}",
+            diags
+        );
+    }
+
+    /// Ported from TS: "cannot specify positional argument after named argument"
+    /// Must emit both the positional-after-named error and the missing-required
+    /// error for U (which resolves to unknown).
+    #[test]
+    fn test_template_positional_after_named() {
+        let diags = all_diagnostics(
+            r#"
+            model A<T, U, V extends string = string> { a: T, b: U, c: V }
+            model B { foo: A<boolean, V = "bar", string> }
+        "#,
+        );
+        let messages: Vec<&str> = diags.iter().map(|d| d.message.as_str()).collect();
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.contains("Positional template arguments cannot follow named arguments")),
+            "Should report positional-after-named: {:?}",
+            diags
+        );
+        assert!(
+            messages.iter().any(|m| m.contains("'U' is required")),
+            "Should report U required: {:?}",
+            diags
+        );
+        let checker = check(
+            r#"
+            model A<T, U, V extends string = string> { a: T, b: U, c: V }
+            model B { foo: A<boolean, V = "bar", string> }
+        "#,
+        );
+        assert_eq!(
+            instance_property_type_name(&checker, "B", "foo", "b"),
+            "unknown"
+        );
+    }
+
+    // ==================== Misc template-argument diagnostics (ported from TS) ====================
+
+    /// Ported from TS: "emit diagnostics when using template params on non templated model"
+    #[test]
+    fn test_template_args_on_non_templated() {
+        let diags = all_diagnostics(
+            "
+            model A {}
+            model B { foo: A<string> }
+        ",
+        );
+        assert!(
+            diags.iter().any(|d| d.code == "invalid-template-args"),
+            "Should report invalid-template-args for args on non-templated type: {:?}",
+            diags
+        );
+    }
+
+    /// Ported from TS: "emit diagnostics when using template with too many arguments"
+    #[test]
+    fn test_template_too_many_args() {
+        let diags = all_diagnostics(
+            "
+            model A<T> {}
+            model B { foo: A<string, string> }
+        ",
+        );
+        assert!(
+            diags.iter().any(|d| d.code == "invalid-template-args"),
+            "Should report invalid-template-args for too many arguments: {:?}",
+            diags
+        );
+    }
+
+    /// Ported from TS: "emits diagnostics when passing value to template parameter without constraint"
+    #[test]
+    fn test_template_value_in_type() {
+        let diags = all_diagnostics(
+            r#"
+            model A<T> { }
+            const a = "abc";
+            alias B = A<a>;
+        "#,
+        );
+        assert!(
+            diags.iter().any(|d| d.code == "value-in-type"),
+            "Should report value-in-type when passing a value to unconstrained param: {:?}",
             diags
         );
     }

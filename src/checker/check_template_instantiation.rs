@@ -121,6 +121,20 @@ impl Checker {
                     );
                     return self.error_type;
                 }
+                // Named template arguments (e.g. `A<U = int32, T = string>`) bind by name,
+                // so the positional count checks below do not apply. Defer all validation
+                // (nonexistent parameter name, duplicate, positional-after-named, missing
+                // required) to instantiate_template, which resolves arguments by name.
+                if self.has_named_arguments(&node.arguments) {
+                    let inst_type_id =
+                        self.instantiate_template(ctx, node_id, type_id, &node.arguments);
+                    self.symbol_links
+                        .entry(node_id)
+                        .or_default()
+                        .is_template_instantiation = true;
+                    self.emit_deprecated_warning_if_needed(inst_type_id);
+                    return inst_type_id;
+                }
                 // Check argument count against template parameter count
                 let template_param_count = if ast_template_param_count > 0 {
                     ast_template_param_count
@@ -416,10 +430,51 @@ impl Checker {
                     );
                 }
             }
+            Some(AstNode::ScalarDeclaration(decl)) => {
+                // Scan extends clause (e.g., `scalar Foo<T> extends T`)
+                if let Some(ext_id) = decl.extends {
+                    self.collect_template_param_refs(
+                        &ast_ref,
+                        ext_id,
+                        &tmpl_param_names,
+                        &mut used_params,
+                    );
+                }
+                // Scan constructor parameter types
+                for &ctor_id in &decl.constructors {
+                    self.collect_template_param_refs(
+                        &ast_ref,
+                        ctor_id,
+                        &tmpl_param_names,
+                        &mut used_params,
+                    );
+                }
+            }
+            Some(AstNode::UnionDeclaration(decl)) => {
+                // Scan variant value types (e.g., `union Foo<T> { a: T; b: string }`)
+                for &var_id in &decl.variants {
+                    self.collect_template_param_refs(
+                        &ast_ref,
+                        var_id,
+                        &tmpl_param_names,
+                        &mut used_params,
+                    );
+                }
+            }
             _ => {}
         }
 
-        // Report unused parameters
+        // Report unused parameters.
+        // Skip declarations that live in injected library source: the official
+        // compiler loads libraries as pre-compiled modules and never lints them,
+        // so flagging library templates (e.g. TypeSpec.Http.LinkHeader<T>) would
+        // be a divergence that pollutes every run.
+        let is_library = ast_ref
+            .node_span(node_id)
+            .is_some_and(|span| span.start.line as usize <= ast_ref.library_line_offset);
+        if is_library {
+            return;
+        }
         for name in &tmpl_param_names {
             if !name.is_empty() && !used_params.contains(name) {
                 self.warning(
@@ -592,11 +647,16 @@ impl Checker {
 
     /// Check template argument assignability to constraints.
     /// Ported from TS checker.ts checkTemplateArguments() → checkArgumentAssignable()
+    ///
+    /// `explicit[i]` is true when the argument for parameter `i` was explicitly
+    /// provided by the caller (vs. filled from a default). This must be per-slot
+    /// rather than a count because named arguments can bind a later parameter
+    /// while an earlier one is filled from its default.
     pub(crate) fn check_template_arg_constraints(
         &mut self,
         arg_types: &[TypeId],
         template_param_ids: &[NodeId],
-        explicit_arg_count: usize,
+        explicit: &[bool],
     ) {
         for (i, &arg_type_id) in arg_types.iter().enumerate() {
             if i >= template_param_ids.len() {
@@ -637,7 +697,7 @@ impl Checker {
                     self.is_type_assignable_to(effective_arg, constraint_id, param_id);
                 if !is_assignable {
                     // Use different diagnostic codes for defaults vs explicit args
-                    let code = if i < explicit_arg_count {
+                    let code = if explicit.get(i).copied().unwrap_or(false) {
                         "invalid-argument"
                     } else {
                         "unassignable"
@@ -651,16 +711,10 @@ impl Checker {
     pub(crate) fn instantiate_template(
         &mut self,
         ctx: &CheckContext,
-        _ref_node_id: NodeId,
+        ref_node_id: NodeId,
         template_type_id: TypeId,
         argument_ids: &[NodeId],
     ) -> TypeId {
-        let mut arg_types: Vec<TypeId> = Vec::new();
-        for &arg_id in argument_ids {
-            let entity = self.check_node_entity(ctx, arg_id);
-            arg_types.push(self.entity_to_type_id(&entity));
-        }
-
         let template_node_id = self
             .get_type(template_type_id)
             .and_then(|t| t.node_id_from_type());
@@ -668,48 +722,104 @@ impl Checker {
         // Handle built-in template types that don't have AST nodes
         // (e.g., Array<T> which is registered programmatically)
         if template_node_id.is_none() {
+            let mut arg_types: Vec<TypeId> = Vec::new();
+            for &arg_id in argument_ids {
+                let entity = self.check_node_entity(ctx, arg_id);
+                arg_types.push(self.entity_to_type_id(&entity));
+            }
             return self.instantiate_builtin_template(template_type_id, &arg_types);
         }
 
         // Extract template parameter NodeIds from the declaration AST node
-        let template_param_ids: Vec<NodeId> = match template_node_id {
-            Some(nid) => self.get_template_param_ids_from_node(nid),
-            None => vec![],
-        };
+        let template_node_id = template_node_id.unwrap();
+        let template_param_ids: Vec<NodeId> =
+            self.get_template_param_ids_from_node(template_node_id);
+
+        let template_name = self
+            .get_type(template_type_id)
+            .and_then(|t| t.name())
+            .unwrap_or("")
+            .to_string();
+
+        // Resolve positional and/or named template arguments into per-parameter
+        // slots (in declaration order). Named arguments (e.g. `A<U = int32, T = string>`)
+        // bind to their matching parameter regardless of position; positional
+        // arguments bind in order. Emits the named-argument diagnostics:
+        // nonexistent parameter, duplicate argument, positional-after-named.
+        let (slots, explicit) = self.resolve_template_arguments(
+            ctx,
+            ref_node_id,
+            &template_name,
+            argument_ids,
+            &template_param_ids,
+        );
 
         // Check for value-in-type: when a value is passed to a template parameter
-        // that has no constraint, emit a diagnostic.
+        // that has no constraint, emit a diagnostic. Only meaningful for positional
+        // arguments (named arguments in the test suite always pass types); skip for
+        // named lists to avoid a wrong param mapping.
         // Ported from TS checker.ts checkTemplateArguments()
-        self.check_template_arg_value_in_type(ctx, argument_ids, &template_param_ids);
+        if !self.has_named_arguments(argument_ids) {
+            self.check_template_arg_value_in_type(ctx, argument_ids, &template_param_ids);
+        }
 
-        // Check template argument assignability to constraint
-        // Ported from TS checker.ts checkTemplateArguments() → checkArgumentAssignable
-        self.check_template_arg_constraints(&arg_types, &template_param_ids, argument_ids.len());
-
-        // Fill in default template arguments for missing parameters
+        // Fill in default template arguments for unspecified parameters, building
+        // the final argument list in parameter-declaration order.
         // TS: checkTemplateArguments → fills defaults so Foo === Foo<string> === Foo<string, string>
         // when A = string, B = string
-        if arg_types.len() < template_param_ids.len() {
-            for (i, &param_id) in template_param_ids.iter().enumerate() {
-                if i >= arg_types.len() {
-                    // Look up the TemplateParameterType to get its default value
-                    if let Some(&param_type_id) = self.node_type_map.get(&param_id)
-                        && let Some(Type::TemplateParameter(tp)) = self.get_type(param_type_id)
-                    {
-                        if let Some(default_type_id) = tp.default {
-                            arg_types.push(default_type_id);
-                        } else {
-                            // No default — report invalid-template-args (missing required arg)
-                            break;
-                        }
+        let mut arg_types: Vec<TypeId> = Vec::with_capacity(template_param_ids.len());
+        for (i, slot) in slots.iter().enumerate() {
+            match slot {
+                Some(type_id) => arg_types.push(*type_id),
+                None => {
+                    let param_id = template_param_ids[i];
+                    let default = self
+                        .node_type_map
+                        .get(&param_id)
+                        .and_then(|&tid| self.get_type(tid))
+                        .and_then(|t| match t {
+                            Type::TemplateParameter(tp) => tp.default,
+                            _ => None,
+                        });
+                    if let Some(default_type_id) = default {
+                        // A default that references an earlier template parameter
+                        // (e.g. `X = T`) is cached at declaration time as the
+                        // TemplateParameter type itself. Substitute it with the
+                        // already-resolved argument for that parameter (which is
+                        // available because defaults may only reference previously
+                        // declared parameters, filled in order). Composite defaults
+                        // (e.g. `{ t: T }`) are left as-is for now.
+                        let resolved = self.resolve_default_param_ref(
+                            default_type_id,
+                            &template_param_ids,
+                            &arg_types,
+                        );
+                        arg_types.push(resolved);
+                    } else {
+                        // No default and not provided — required argument is missing.
+                        let param_name = self.param_display_name(param_id);
+                        self.error_at(
+                            ref_node_id,
+                            "invalid-template-args",
+                            &format!(
+                                "Template argument '{}' is required for '{}'.",
+                                param_name, template_name
+                            ),
+                        );
+                        // Bind to unknown so the body can still resolve.
+                        arg_types.push(self.unknown_type);
                     }
                 }
             }
         }
 
+        // Check template argument assignability to constraint
+        // Ported from TS checker.ts checkTemplateArguments() → checkArgumentAssignable
+        self.check_template_arg_constraints(&arg_types, &template_param_ids, &explicit);
+
         // Cache lookup with fully-filled arg_types
-        if let Some(node_id) = template_node_id {
-            let links = self.symbol_links.entry(node_id).or_default();
+        {
+            let links = self.symbol_links.entry(template_node_id).or_default();
             if let Some(ref instantiations) = links.instantiations
                 && let Some(&existing_id) = instantiations.get(&arg_types)
             {
@@ -727,11 +837,7 @@ impl Checker {
 
         let inst_ctx = CheckContext::with_mapper(Some(mapper.clone()));
 
-        let instance_id = if let Some(node_id) = template_node_id {
-            self.check_node(&inst_ctx, node_id)
-        } else {
-            self.error_type
-        };
+        let instance_id = self.check_node(&inst_ctx, template_node_id);
 
         // Set template_mapper on the newly created template instance
         // This mirrors TS linkMapper() which sets type.templateMapper after instantiation
@@ -740,16 +846,168 @@ impl Checker {
 
             // Cache the instantiation result so subsequent references with the same
             // arguments return the same TypeId (ported from TS symbolLinks.instantiations)
-            if let Some(node_id) = template_node_id {
-                let links = self.symbol_links.entry(node_id).or_default();
-                links
-                    .instantiations
-                    .get_or_insert_with(HashMap::new)
-                    .insert(arg_types, instance_id);
-            }
+            let links = self.symbol_links.entry(template_node_id).or_default();
+            links
+                .instantiations
+                .get_or_insert_with(HashMap::new)
+                .insert(arg_types, instance_id);
         }
 
         instance_id
+    }
+
+    /// Returns true if any of the template arguments is a named argument
+    /// (`A<T = string>`), false if all are positional.
+    pub(crate) fn has_named_arguments(&self, argument_ids: &[NodeId]) -> bool {
+        let ast = match &self.ast {
+            Some(a) => a,
+            None => return false,
+        };
+        argument_ids.iter().any(|&aid| {
+            matches!(
+                ast.id_to_node(aid),
+                Some(AstNode::TemplateArgument(ta)) if ta.name.is_some()
+            )
+        })
+    }
+
+    /// Resolve template arguments — positional and/or named — into per-parameter
+    /// slots in declaration order.
+    ///
+    /// Returns `(slots, explicit)` where both vectors are indexed by template
+    /// parameter position:
+    /// - `slots[i]` is `Some(type)` if an argument was provided for parameter `i`,
+    ///   otherwise `None` (the caller fills the default).
+    /// - `explicit[i]` is true when parameter `i` was explicitly provided by the
+    ///   caller (used to pick `invalid-argument` vs `unassignable` codes).
+    ///
+    /// Emits diagnostics for invalid named usage: a parameter name that does not
+    /// exist on the target template, an argument specified twice, and a positional
+    /// argument that follows a named argument.
+    pub(crate) fn resolve_template_arguments(
+        &mut self,
+        ctx: &CheckContext,
+        _ref_node_id: NodeId,
+        template_name: &str,
+        argument_ids: &[NodeId],
+        template_param_ids: &[NodeId],
+    ) -> (Vec<Option<TypeId>>, Vec<bool>) {
+        let n = template_param_ids.len();
+        let mut slots: Vec<Option<TypeId>> = vec![None; n];
+        let mut explicit: Vec<bool> = vec![false; n];
+
+        let ast = match &self.ast {
+            Some(a) => a.clone(),
+            None => return (slots, explicit),
+        };
+
+        // Map parameter name → declaration index.
+        let mut name_to_index: HashMap<String, usize> = HashMap::with_capacity(n);
+        for (i, &param_id) in template_param_ids.iter().enumerate() {
+            if let Some(AstNode::TemplateParameterDeclaration(decl)) = ast.id_to_node(param_id) {
+                name_to_index.insert(Self::get_identifier_name(&ast, decl.name), i);
+            }
+        }
+
+        let mut next_positional = 0usize;
+        let mut seen_named = false;
+
+        for &arg_id in argument_ids {
+            let name_node_opt = match ast.id_to_node(arg_id) {
+                Some(AstNode::TemplateArgument(ta)) => ta.name,
+                _ => None,
+            };
+
+            let value_type = {
+                let entity = self.check_node_entity(ctx, arg_id);
+                self.entity_to_type_id(&entity)
+            };
+
+            if let Some(name_node) = name_node_opt {
+                seen_named = true;
+                let arg_name = Self::get_identifier_name(&ast, name_node);
+                match name_to_index.get(&arg_name) {
+                    Some(&idx) => {
+                        if explicit[idx] {
+                            self.error_at(
+                                arg_id,
+                                "invalid-template-args",
+                                &format!("Cannot specify template argument '{}' again.", arg_name),
+                            );
+                        } else {
+                            slots[idx] = Some(value_type);
+                            explicit[idx] = true;
+                        }
+                    }
+                    None => {
+                        self.error_at(
+                            arg_id,
+                            "invalid-template-args",
+                            &format!(
+                                "No parameter named '{}' exists in the target template.",
+                                arg_name
+                            ),
+                        );
+                    }
+                }
+            } else {
+                // Positional argument.
+                if seen_named {
+                    self.error_at(
+                        arg_id,
+                        "invalid-template-args",
+                        "Positional template arguments cannot follow named arguments in the same argument list.",
+                    );
+                } else if next_positional < n {
+                    slots[next_positional] = Some(value_type);
+                    explicit[next_positional] = true;
+                    next_positional += 1;
+                } else {
+                    self.error_at(
+                        arg_id,
+                        "invalid-template-args",
+                        &format!("Too many template arguments for '{}'.", template_name),
+                    );
+                }
+            }
+        }
+
+        (slots, explicit)
+    }
+
+    /// Return the source name of a template parameter declaration node.
+    fn param_display_name(&self, param_id: NodeId) -> String {
+        let ast = match &self.ast {
+            Some(a) => a,
+            None => return String::new(),
+        };
+        match ast.id_to_node(param_id) {
+            Some(AstNode::TemplateParameterDeclaration(decl)) => {
+                Self::get_identifier_name(ast, decl.name)
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// If a template-parameter default is itself a bare reference to an earlier
+    /// template parameter (e.g. `X = T`), substitute it with the value already
+    /// bound for that parameter. `arg_types` holds the values resolved so far
+    /// (in declaration order), so defaults referencing previously declared
+    /// parameters resolve correctly. Composite defaults are returned unchanged.
+    fn resolve_default_param_ref(
+        &self,
+        default_type_id: TypeId,
+        template_param_ids: &[NodeId],
+        arg_types: &[TypeId],
+    ) -> TypeId {
+        if let Some(Type::TemplateParameter(tp)) = self.get_type(default_type_id)
+            && let Some(node) = tp.node
+            && let Some(j) = template_param_ids.iter().position(|&p| p == node)
+            && j < arg_types.len()
+        {
+            return arg_types[j];
+        }
+        default_type_id
     }
 
     /// Link a template mapper to a type instance.

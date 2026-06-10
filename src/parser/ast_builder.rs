@@ -32,6 +32,11 @@ pub struct AstBuilder {
     pub source: String,
     /// Map from declaration node ID to its directive nodes (e.g., #deprecated, #suppress)
     pub directives_map: HashMap<u32, Vec<u32>>,
+    /// Line number where user source begins (after injected library sources).
+    /// Lines <= this value belong to injected libraries. The official compiler
+    /// loads libraries as pre-compiled modules and never lints them, so linter-style
+    /// checks (e.g. unused-template-parameter) should skip nodes in this region.
+    pub library_line_offset: usize,
     /// Cached byte offsets of the start of each line (line 1 = offset 0, etc.)
     line_starts: Vec<usize>,
 }
@@ -191,6 +196,7 @@ impl AstBuilder {
             nodes: HashMap::new(),
             source,
             directives_map: HashMap::new(),
+            library_line_offset: 0,
             line_starts,
         }
     }

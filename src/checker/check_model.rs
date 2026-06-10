@@ -758,6 +758,11 @@ impl Checker {
             Some(AstNode::ModelSpreadProperty(ms)) => {
                 self.collect_template_param_refs(ast, ms.target, param_names, used);
             }
+            Some(AstNode::ScalarConstructor(sc)) => {
+                for &param_id in &sc.parameters {
+                    self.collect_template_param_refs(ast, param_id, param_names, used);
+                }
+            }
             Some(AstNode::UnionExpression(ue)) => {
                 for &opt_id in &ue.options {
                     self.collect_template_param_refs(ast, opt_id, param_names, used);

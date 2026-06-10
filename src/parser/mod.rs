@@ -189,12 +189,14 @@ impl<'a> Parser<'a> {
         let mut lexer = Lexer::new(combined_ref);
         let current_token = lexer.scan();
         let token_start = lexer.token_start_offset();
+        let mut builder = AstBuilder::new(combined_ref.to_string());
+        builder.library_line_offset = line_offset;
         Parser {
             lexer,
             current_token,
             token_start,
             previous_token_end: 0,
-            builder: AstBuilder::new(combined_ref.to_string()),
+            builder,
             diagnostics: Vec::new(),
             library_line_offset: line_offset,
             source_hold: Some(combined_box),

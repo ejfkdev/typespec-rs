@@ -56,17 +56,24 @@ mod namespace_tests {
 
     #[test]
     fn test_parse_namespace_blockless_multiple() {
+        // Upstream: "Cannot use multiple blockless namespaces." A second
+        // blockless namespace in the same file is a parse error
+        // (microsoft/typespec#11552 infrastructure).
         let result = parse(
             r#"
         namespace N;
         model X { x: int32 }
-        namespace N;
+        namespace M;
         model Y { y: int32 }
     "#,
         );
         assert!(
-            result.diagnostics.is_empty(),
-            "Should parse multiple blockless namespaces"
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "multiple-blockless-namespace"),
+            "Multiple blockless namespaces should be an error: {:?}",
+            result.diagnostics
         );
     }
 
@@ -1084,10 +1091,13 @@ mod namespace_tests {
     /// a blockless Top namespace.
     #[test]
     fn test_blockless_namespace_nested_resolution() {
+        // Under blockless file-namespace semantics (microsoft/typespec#11552),
+        // declarations after `namespace Top;` are scoped inside Top. A nested
+        // block namespace with a simple name becomes a direct child of Top.
         let checker = check(
             "
             namespace Top;
-            namespace Top.B {
+            namespace B {
                 model A { x: string; }
             }
         ",
@@ -1109,7 +1119,7 @@ mod namespace_tests {
             }
             _ => panic!("Expected Namespace type for Top"),
         }
-        // A should be declared (either in B's namespace or globally)
+        // A should be declared inside Top.B
         assert!(
             checker.get_type_by_name("A").is_some(),
             "Model A should be declared"

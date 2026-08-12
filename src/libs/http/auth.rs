@@ -137,6 +137,9 @@ pub struct OpenIdConnectAuth {
     pub base: HttpAuthBase,
     /// OpenID Connect discovery URL
     pub open_id_connect_url: String,
+    /// Scope names required for operations that use this scheme
+    /// (microsoft/typespec#11153).
+    pub scopes: Vec<String>,
 }
 
 /// No authentication scheme.
@@ -167,6 +170,10 @@ pub enum HttpAuthRef {
 /// Ported from TS `interface AnyHttpAuthRef`.
 #[derive(Debug, Clone)]
 pub struct AnyHttpAuthRef {
+    /// Scope names required for this scheme in the containing auth option.
+    /// Empty for schemes that do not carry scopes; populated for
+    /// `openIdConnect` (microsoft/typespec#11153).
+    pub scopes: Vec<String>,
     /// The referenced auth scheme
     pub auth: HttpAuth,
 }
@@ -356,6 +363,7 @@ mod tests {
                     description: None,
                 },
             }),
+            scopes: vec![],
         });
         match auth_ref {
             HttpAuthRef::Any(r) => assert!(matches!(r.auth, HttpAuth::Basic(_))),
@@ -379,6 +387,46 @@ mod tests {
             HttpAuthRef::Oauth2(r) => assert_eq!(r.scopes, vec!["read", "write"]),
             _ => panic!("Expected Oauth2 variant"),
         }
+    }
+
+    /// Ported from TS (microsoft/typespec#11153): the scheme-agnostic `any`
+    /// auth ref carries the requirement scopes for openIdConnect schemes.
+    #[test]
+    fn test_any_auth_ref_carries_openid_connect_scopes() {
+        let auth_ref = HttpAuthRef::Any(AnyHttpAuthRef {
+            auth: HttpAuth::OpenIdConnect(OpenIdConnectAuth {
+                base: HttpAuthBase {
+                    id: "oidc".to_string(),
+                    description: None,
+                },
+                open_id_connect_url: "https://example.org/.well-known/openid-configuration"
+                    .to_string(),
+                scopes: vec![],
+            }),
+            scopes: vec!["read".to_string(), "write".to_string()],
+        });
+        match auth_ref {
+            HttpAuthRef::Any(r) => {
+                assert!(matches!(r.auth, HttpAuth::OpenIdConnect(_)));
+                assert_eq!(r.scopes, vec!["read", "write"]);
+            }
+            _ => panic!("Expected Any variant"),
+        }
+    }
+
+    /// Ported from TS (microsoft/typespec#11153): the OpenIdConnectAuth
+    /// scheme accepts scope names.
+    #[test]
+    fn test_openid_connect_auth_scopes_field() {
+        let auth = OpenIdConnectAuth {
+            base: HttpAuthBase {
+                id: "oidc".to_string(),
+                description: None,
+            },
+            open_id_connect_url: "https://example.org/connect".to_string(),
+            scopes: vec!["openid".to_string(), "profile".to_string()],
+        };
+        assert_eq!(auth.scopes, vec!["openid", "profile"]);
     }
 
     #[test]

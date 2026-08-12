@@ -81,12 +81,28 @@ impl Checker {
             });
         }
 
-        // Extern decorator must have a JS implementation
-        // Only emit this for extern-modified declarations
+        // Determine the declaration kind: `auto dec` or `extern dec`
+        // (microsoft/typespec#10197).
         let has_extern = node.modifiers.iter().any(|&mod_id| {
             matches!(ast.id_to_node(mod_id), Some(AstNode::Modifier(m)) if m.kind == ModifierKind::Extern)
         });
-        if has_extern {
+        let is_auto = node.modifiers.iter().any(|&mod_id| {
+            matches!(ast.id_to_node(mod_id), Some(AstNode::Modifier(m)) if m.kind == ModifierKind::Auto)
+        });
+
+        if is_auto && !self.is_compiler_feature_enabled("auto-decorators", Some(node_id)) {
+            self.error_at(
+                node_id,
+                "auto-decorator-disabled",
+                "Auto decorator declarations require the 'auto-decorators' feature to be enabled. Add 'auto-decorators' to the 'features' list in your tspconfig.yaml.",
+            );
+        }
+
+        if is_auto {
+            // Auto decorators get a compiler-generated implementation that
+            // stores their arguments — no external implementation needed.
+        } else if has_extern {
+            // Extern decorator must have a JS implementation
             self.error_at(
                 node_id,
                 "missing-implementation",
@@ -102,11 +118,20 @@ impl Checker {
             target,
             target_type: target_type_name,
             parameters,
+            declaration_kind: if is_auto {
+                DecoratorDeclarationKind::Auto
+            } else {
+                DecoratorDeclarationKind::Extern
+            },
             is_finished: true,
         }));
 
         self.node_type_map.insert(node_id, type_id);
         if !name.is_empty() {
+            // Record the decorator's FQN for auto decorator state keys
+            // (microsoft/typespec#10197).
+            let fqn = self.build_fqn(&name);
+            self.decorator_fqns.insert(type_id, fqn);
             self.register_declared_type(&name, type_id);
         }
 
@@ -126,22 +151,25 @@ impl Checker {
 
         let name = Self::get_identifier_name(&ast, node.name);
 
-        // Check modifiers — extern is required on fn declarations (matching upstream)
+        // Check modifiers — extern is required on fn declarations, auto is
+        // not allowed (handled by check_modifiers_and_report, which mirrors
+        // upstream SYNTAX_MODIFIERS for FunctionDeclarationStatement).
         let mut modifier_flags = ModifierFlags::None;
         for &mod_id in &node.modifiers {
             if let Some(AstNode::Modifier(m)) = ast.id_to_node(mod_id) {
                 modifier_flags = modifier_flags | modifiers::modifier_to_flag(m.kind);
             }
         }
-        let has_extern = modifier_flags.contains(ModifierFlags::Extern);
-        if !has_extern {
-            self.error_at(
+        let _has_extern = modifier_flags.contains(ModifierFlags::Extern);
+
+        // Function declarations are gated behind the "function-declarations"
+        // compiler feature (microsoft/typespec#10826). Without it, emit the
+        // experimental-feature warning (TS messageId: functionDeclarations).
+        if !self.is_compiler_feature_enabled("function-declarations", Some(node_id)) {
+            self.warning_at(
                 node_id,
-                "invalid-modifier",
-                &format!(
-                    "Function '{}' must have 'extern' modifier. Functions require external implementation.",
-                    name
-                ),
+                "experimental-feature",
+                "Function declarations are an experimental feature that may change in the future. Use with caution and consider providing feedback to the TypeSpec team.",
             );
         }
 

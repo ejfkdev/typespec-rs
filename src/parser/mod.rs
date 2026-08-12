@@ -22,7 +22,7 @@ use std::sync::RwLock;
 ///
 /// Stores named TypeSpec library sources that are automatically injected
 /// by `ParseOptions::default()` and `parse()`.
-static LIBRARY_REGISTRY: RwLock<Vec<(String, String)>> = RwLock::new(Vec::new());
+static LIBRARY_REGISTRY: RwLock<Vec<(String, String, Vec<String>)>> = RwLock::new(Vec::new());
 
 /// Register a named library source into the global registry.
 ///
@@ -40,10 +40,18 @@ static LIBRARY_REGISTRY: RwLock<Vec<(String, String)>> = RwLock::new(Vec::new())
 /// let result = typespec_rs::parser::parse(source);
 /// ```
 pub fn register_library(name: &str, source: String) {
+    register_library_with_features(name, source, Vec::new());
+}
+
+/// Register a named library source with compiler feature flags enabled for
+/// the library's own code (microsoft/typespec#11235). Upstream, a library
+/// enables features via its own `tspconfig.yaml`; in the Rust port the
+/// features are declared at registration.
+pub fn register_library_with_features(name: &str, source: String, features: Vec<String>) {
     if let Ok(mut registry) = LIBRARY_REGISTRY.write()
-        && !registry.iter().any(|(n, _)| n == name)
+        && !registry.iter().any(|(n, _, _)| n == name)
     {
-        registry.push((name.to_string(), source));
+        registry.push((name.to_string(), source, features));
     }
 }
 
@@ -62,18 +70,24 @@ pub fn register_library(name: &str, source: String) {
 pub fn register_libraries(libs: Vec<(&str, String)>) {
     if let Ok(mut registry) = LIBRARY_REGISTRY.write() {
         for (name, src) in libs {
-            if !registry.iter().any(|(n, _)| n == name) {
-                registry.push((name.to_string(), src));
+            if !registry.iter().any(|(n, _, _)| n == name) {
+                registry.push((name.to_string(), src, Vec::new()));
             }
         }
     }
 }
 
-/// Returns the globally registered library sources (in registration order).
-fn get_registered_libraries() -> Vec<String> {
+/// Returns the globally registered library sources and their feature lists
+/// (in registration order).
+fn get_registered_libraries() -> (Vec<String>, Vec<Vec<String>>) {
     LIBRARY_REGISTRY
         .read()
-        .map(|registry| registry.iter().map(|(_, src)| src.clone()).collect())
+        .map(|registry| {
+            (
+                registry.iter().map(|(_, src, _)| src.clone()).collect(),
+                registry.iter().map(|(_, _, f)| f.clone()).collect(),
+            )
+        })
         .unwrap_or_default()
 }
 
@@ -89,12 +103,19 @@ pub struct ParseOptions {
     /// By default, this includes all globally registered libraries
     /// (see [`register_libraries`]).
     pub libraries: Vec<String>,
+    /// Compiler feature flags each injected library enabled for its own code
+    /// (parallel to [`Self::libraries`]). Libraries without an entry have no
+    /// features. Ported from per-library tspconfig features
+    /// (microsoft/typespec#11235).
+    pub library_features: Vec<Vec<String>>,
 }
 
 impl Default for ParseOptions {
     fn default() -> Self {
+        let (libraries, library_features) = get_registered_libraries();
         Self {
-            libraries: get_registered_libraries(),
+            libraries,
+            library_features,
         }
     }
 }
@@ -102,7 +123,19 @@ impl Default for ParseOptions {
 impl ParseOptions {
     /// Create options with specific libraries, bypassing the global registry.
     pub fn new(libraries: Vec<String>) -> Self {
-        Self { libraries }
+        Self {
+            libraries,
+            library_features: Vec::new(),
+        }
+    }
+
+    /// Create options with libraries and their feature lists, bypassing the
+    /// global registry (microsoft/typespec#11235).
+    pub fn new_with_features(libraries: Vec<(String, Vec<String>)>) -> Self {
+        Self {
+            library_features: libraries.iter().map(|(_, f)| f.clone()).collect(),
+            libraries: libraries.into_iter().map(|(src, _)| src).collect(),
+        }
     }
 
     /// Create options with the HTTP library pre-loaded.
@@ -138,6 +171,9 @@ pub struct ParseResult {
     /// Number of lines occupied by injected library sources.
     /// Subtract this from diagnostic line numbers to get the offset in the user's original source.
     pub library_line_offset: usize,
+    /// Per-injected-library line ranges with their feature flags
+    /// (microsoft/typespec#11235).
+    pub library_feature_ranges: Vec<crate::parser::ast_builder::LibraryFeatureRange>,
     /// Holds ownership of the combined source string (user source + injected libraries)
     /// so that it is freed when ParseResult is dropped, instead of leaking permanently.
     _source_hold: Option<Box<str>>,
@@ -169,12 +205,35 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     /// Create a new parser for the given source
     pub fn new(source: &'a str, options: ParseOptions) -> Self {
-        let (combined_source, line_offset) = if options.libraries.is_empty() {
-            (source.to_string(), 0)
+        let (combined_source, line_offset, feature_ranges) = if options.libraries.is_empty() {
+            (source.to_string(), 0, Vec::new())
         } else {
             let lib_part = options.libraries.join("\n\n");
             let offset = lib_part.lines().count() + 2; // +2 for the separator blank lines
-            (format!("{}\n\n{}", lib_part, source), offset)
+
+            // Compute each library's line range within the combined source so
+            // the checker can resolve per-library feature flags
+            // (microsoft/typespec#11235).
+            let mut ranges = Vec::new();
+            let mut cursor = 0usize;
+            for (i, lib) in options.libraries.iter().enumerate() {
+                let start_byte = cursor;
+                let end_byte = cursor + lib.len();
+                let start_line = 1 + lib_part[..start_byte].matches('\n').count();
+                let end_line = if end_byte > start_byte {
+                    1 + lib_part[..end_byte - 1].matches('\n').count()
+                } else {
+                    start_line
+                };
+                ranges.push(crate::parser::ast_builder::LibraryFeatureRange {
+                    start_line: start_line as u32,
+                    end_line: end_line as u32,
+                    features: options.library_features.get(i).cloned().unwrap_or_default(),
+                });
+                cursor = end_byte + 2; // "\n\n" separator
+            }
+
+            (format!("{}\n\n{}", lib_part, source), offset, ranges)
         };
 
         // Store the combined source in a Box<str> and create a reference from it.
@@ -191,6 +250,7 @@ impl<'a> Parser<'a> {
         let token_start = lexer.token_start_offset();
         let mut builder = AstBuilder::new(combined_ref.to_string());
         builder.library_line_offset = line_offset;
+        builder.library_feature_ranges = feature_ranges.clone();
         Parser {
             lexer,
             current_token,
@@ -209,6 +269,7 @@ impl<'a> Parser<'a> {
         let root_id = self.parse_typespec_script();
         ParseResult {
             root_id,
+            library_feature_ranges: self.builder.library_feature_ranges.clone(),
             builder: Rc::new(self.builder),
             diagnostics: self.diagnostics,
             library_line_offset: self.library_line_offset,
@@ -273,6 +334,28 @@ impl<'a> Parser<'a> {
 
     fn parse_script_item_list(&mut self) -> Vec<u32> {
         let mut statements = Vec::new();
+        // Blockless namespace (`namespace Foo;`) support: statements that
+        // follow it belong to that namespace (upstream scopes them via the
+        // binder's inScopeNamespaces; the Rust port absorbs them into the
+        // namespace node's statement list instead).
+        //
+        // Injected library sources and the main source are concatenated into
+        // one string, so each library boundary acts as a virtual file
+        // boundary: a new blockless scope starts after it, and the
+        // single-blockless-per-file diagnostics only apply within the main
+        // source region.
+        let mut absorb_ns: Option<u32> = None;
+        let mut main_seen_decl = false;
+        let mut main_seen_blockless = false;
+        let main_start_line = (self.builder.library_line_offset + 1) as u32;
+        // End lines of each injected library segment (virtual file boundaries).
+        let segment_ends: Vec<u32> = self
+            .builder
+            .library_feature_ranges
+            .iter()
+            .map(|r| r.end_line)
+            .collect();
+        let mut segment_idx = 0usize;
 
         while self.current_token() != TokenKind::EndOfFile {
             self.skip_trivia();
@@ -285,6 +368,7 @@ impl<'a> Parser<'a> {
             let directives = self.parse_directive_list();
             let decorators = self.parse_decorator_list();
             let pos = self.token_start_position();
+            let tok = self.current_token();
 
             let stmt_id = self.parse_statement_item(
                 pos,
@@ -293,7 +377,53 @@ impl<'a> Parser<'a> {
                 &directives,
                 /* top_level */ true,
             );
-            statements.push(stmt_id);
+
+            let stmt_line = self.builder.offset_to_line(pos);
+            let in_main = stmt_line >= main_start_line;
+
+            // Crossed a library segment boundary -> new virtual file: the
+            // previous blockless namespace stops absorbing.
+            while segment_idx < segment_ends.len() && stmt_line > segment_ends[segment_idx] {
+                segment_idx += 1;
+                absorb_ns = None;
+            }
+
+            let is_blockless_ns = matches!(
+                self.builder.nodes.get(&stmt_id),
+                Some(AstNode::NamespaceDeclaration(ns)) if ns.blockless
+            );
+
+            if is_blockless_ns {
+                if in_main {
+                    if main_seen_blockless {
+                        self.error(
+                            "multiple-blockless-namespace",
+                            "Cannot use multiple blockless namespaces.",
+                        );
+                    }
+                    if main_seen_decl {
+                        self.error(
+                            "blockless-namespace-first",
+                            "Blockless namespaces can't follow other declarations.",
+                        );
+                    }
+                    main_seen_blockless = true;
+                }
+                // Each blockless namespace starts a fresh absorption scope
+                // (concatenated library sources may contain several, one per
+                // original file).
+                absorb_ns = Some(stmt_id);
+                statements.push(stmt_id);
+            } else {
+                if in_main && tok != TokenKind::ImportKeyword && tok != TokenKind::UsingKeyword {
+                    main_seen_decl = true;
+                }
+                if let Some(ns_id) = absorb_ns {
+                    Self::append_namespace_statement(&mut self.builder, ns_id, stmt_id);
+                } else {
+                    statements.push(stmt_id);
+                }
+            }
 
             // Prevent infinite loop: if no progress was made, skip a token
             if self.token_start_position() == prev_pos
@@ -304,6 +434,14 @@ impl<'a> Parser<'a> {
         }
 
         statements
+    }
+
+    /// Append a statement to a namespace declaration node (used to absorb
+    /// statements following a blockless namespace).
+    fn append_namespace_statement(builder: &mut AstBuilder, ns_id: u32, stmt_id: u32) {
+        if let Some(AstNode::NamespaceDeclaration(ns)) = builder.nodes.get_mut(&ns_id) {
+            ns.statements.push(stmt_id);
+        }
     }
 
     /// Parse a single statement item, shared by both script-level and namespace-body parsing.
@@ -339,7 +477,7 @@ impl<'a> Parser<'a> {
             TokenKind::EnumKeyword => self.parse_enum_statement(pos, decorators, modifiers),
             TokenKind::AliasKeyword => self.parse_alias_statement(pos, modifiers),
             TokenKind::ConstKeyword => self.parse_const_statement(pos, modifiers),
-            TokenKind::ExternKeyword | TokenKind::InternalKeyword => {
+            TokenKind::ExternKeyword | TokenKind::InternalKeyword | TokenKind::AutoKeyword => {
                 let mods = self.parse_modifiers();
                 self.parse_declaration(pos, decorators, mods)
             }
@@ -423,19 +561,19 @@ impl<'a> Parser<'a> {
         self.expect_token(TokenKind::NamespaceKeyword);
         let name = self.parse_identifier_or_member_expression(false, false);
 
-        let statements = if self.check_token(TokenKind::OpenBrace) {
+        let (statements, blockless) = if self.check_token(TokenKind::OpenBrace) {
             self.expect_token(TokenKind::OpenBrace);
             let stmts = self.parse_statement_list();
             self.expect_token(TokenKind::CloseBrace);
-            stmts
+            (stmts, false)
         } else {
             self.expect_token(TokenKind::Semicolon);
-            vec![]
+            (vec![], true)
         };
 
         let span = self.make_span(pos, self.previous_token_end);
         self.builder
-            .create_namespace_declaration(name, statements, decorators, modifiers, span)
+            .create_namespace_declaration(name, statements, decorators, modifiers, blockless, span)
     }
 
     fn parse_statement_list(&mut self) -> Vec<u32> {
@@ -458,6 +596,18 @@ impl<'a> Parser<'a> {
                 &directives,
                 /* top_level */ false,
             );
+
+            // Blockless namespaces are only allowed at the top level.
+            if matches!(
+                self.builder.nodes.get(&stmt_id),
+                Some(AstNode::NamespaceDeclaration(ns)) if ns.blockless
+            ) {
+                self.error(
+                    "blockless-namespace-first",
+                    "Blockless namespace can only be top-level.",
+                );
+            }
+
             statements.push(stmt_id);
 
             // Prevent infinite loop: if no progress was made, skip a token
@@ -1976,6 +2126,11 @@ impl<'a> Parser<'a> {
                     self.next_token();
                     modifiers.push(self.builder.create_modifier(ModifierKind::Internal, span));
                 }
+                TokenKind::AutoKeyword => {
+                    let span = self.make_span(self.token_start_position(), self.previous_token_end);
+                    self.next_token();
+                    modifiers.push(self.builder.create_modifier(ModifierKind::Auto, span));
+                }
                 _ => break,
             }
         }
@@ -2015,4 +2170,10 @@ pub fn parse(source: &str) -> ParseResult {
 /// repeatedly with the same libraries, prefer [`register_libraries`] at startup.
 pub fn parse_with_libraries(source: &str, libraries: Vec<String>) -> ParseResult {
     Parser::new(source, ParseOptions::new(libraries)).parse()
+}
+
+/// Parse TypeSpec source with explicit parse options (libraries, per-library
+/// feature flags, ...), bypassing the global registry.
+pub fn parse_with_options(source: &str, options: ParseOptions) -> ParseResult {
+    Parser::new(source, options).parse()
 }

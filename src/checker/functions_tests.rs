@@ -132,18 +132,69 @@ fn test_function_call_with_arguments() {
 
 #[test]
 fn test_function_too_few_args() {
-    // Calling a function with too few arguments should report missing-arguments
+    // Ported from TS: "errors if not enough args" (diagnostic code and
+    // call-site targeting per microsoft/typespec#10880)
     let checker = check(
         r#"
-        namespace FnTest {
-            extern fn greet(name: string): string;
+        extern fn testFn(a: valueof string, b: valueof string): valueof string;
+        model Observer {
+            p: unknown = testFn("one");
         }
     "#,
     );
-    // Declaration is valid
+    let diag = checker
+        .diagnostics()
+        .iter()
+        .find(|d| d.code == "invalid-argument-count");
     assert!(
-        !has_diagnostic(&checker, "invalid-modifier"),
-        "Should not report invalid-modifier for extern fn: {:?}",
+        diag.is_some(),
+        "Should report invalid-argument-count for too few args: {:?}",
+        checker.diagnostics()
+    );
+    assert_eq!(
+        diag.unwrap().message,
+        "Expected at least 2 arguments, but got 1."
+    );
+}
+
+#[test]
+fn test_function_too_many_args() {
+    // Ported from TS: "errors if too many args" (microsoft/typespec#10880)
+    let checker = check(
+        r#"
+        extern fn testFn(a: valueof string): valueof string;
+        model Observer {
+            p: unknown = testFn("one", "two");
+        }
+    "#,
+    );
+    let diag = checker
+        .diagnostics()
+        .iter()
+        .find(|d| d.code == "invalid-argument-count");
+    assert!(
+        diag.is_some(),
+        "Should report invalid-argument-count for too many args: {:?}",
+        checker.diagnostics()
+    );
+    assert_eq!(diag.unwrap().message, "Expected 1 arguments, but got 2.");
+}
+
+#[test]
+fn test_function_rest_argument_type_mismatch() {
+    // Ported from TS: "errors if rest argument type mismatches"
+    // (microsoft/typespec#10880)
+    let checker = check(
+        r#"
+        extern fn testFn(a: string, ...rest: string[]): string;
+        model Observer {
+            p: unknown = testFn("a", 123);
+        }
+    "#,
+    );
+    assert!(
+        has_diagnostic(&checker, "unassignable"),
+        "Should report unassignable for rest argument type mismatch: {:?}",
         checker.diagnostics()
     );
 }
@@ -464,4 +515,56 @@ fn test_ambiguous_scalar_type_message_content() {
             d.message
         );
     }
+}
+
+// ============================================================================
+// Feature flag gating (microsoft/typespec#10826)
+// ============================================================================
+
+/// Function declarations are experimental without the "function-declarations"
+/// compiler feature enabled.
+#[test]
+fn test_fn_declaration_experimental_without_feature() {
+    let checker = check("extern fn myFunc(a: string): void;");
+    assert!(
+        has_diagnostic(&checker, "experimental-feature"),
+        "Should report experimental-feature for fn without feature flag: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Enabling the "function-declarations" feature silences the warning.
+#[test]
+fn test_fn_declaration_no_warning_with_feature() {
+    let result = crate::parser::parse("extern fn myFunc(a: string): void;");
+    let options = crate::diagnostics::CompilerOptions {
+        features: vec!["function-declarations".to_string()],
+        ..crate::diagnostics::CompilerOptions::default()
+    };
+    let mut checker = crate::checker::Checker::with_options(options);
+    checker.set_parse_result(result.root_id, result.builder);
+    checker.check_program();
+    assert!(
+        !has_diagnostic(&checker, "experimental-feature"),
+        "Should NOT report experimental-feature when feature is enabled: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Unknown feature names do not enable the gate.
+#[test]
+fn test_fn_declaration_unknown_feature_still_warns() {
+    let result = crate::parser::parse("extern fn myFunc(a: string): void;");
+    let options = crate::diagnostics::CompilerOptions {
+        features: vec!["not-a-real-feature".to_string()],
+        ..crate::diagnostics::CompilerOptions::default()
+    };
+    let mut checker = crate::checker::Checker::with_options(options);
+    checker.set_parse_result(result.root_id, result.builder);
+    checker.check_program();
+    assert!(
+        has_diagnostic(&checker, "experimental-feature"),
+        "Unknown feature should not silence the warning: {:?}",
+        checker.diagnostics()
+    );
 }

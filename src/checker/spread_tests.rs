@@ -193,6 +193,24 @@ fn test_spread_self_via_alias_detected() {
 }
 
 #[test]
+fn test_spread_mutual_cycle_detected() {
+    // Ported from: "emit diagnostic if models spread each other"
+    // (https://github.com/microsoft/typespec/issues/7956, microsoft/typespec#10684)
+    let checker = check(
+        "
+        model Foo { ...Bar }
+        model Bar { ...Foo }
+    ",
+    );
+    let diags = checker.diagnostics();
+    assert!(
+        diags.iter().any(|d| d.code == "spread-model"),
+        "Should report spread-model for mutual spread cycle: {:?}",
+        diags
+    );
+}
+
+#[test]
 fn test_spread_valid_model_no_error() {
     // No diagnostic when spreading a valid model
     let checker = check("model A { x: string; } model B { ...A; }");

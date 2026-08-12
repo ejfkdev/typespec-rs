@@ -64,12 +64,18 @@ pub mod charcode;
 #[doc(hidden)]
 pub mod deprecation;
 #[doc(hidden)]
+pub mod diagnostic_code;
+#[doc(hidden)]
+pub mod features;
+#[doc(hidden)]
 pub mod helpers;
 #[doc(hidden)]
 pub mod intrinsic_type_state;
 pub mod libs;
 #[doc(hidden)]
 pub mod loader;
+#[doc(hidden)]
+pub mod messages;
 #[doc(hidden)]
 pub mod modifiers;
 #[doc(hidden)]

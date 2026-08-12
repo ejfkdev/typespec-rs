@@ -943,3 +943,58 @@ fn test_invalid_ref_not_non_literal_string_template() {
         diags
     );
 }
+
+// ============================================================================
+// Interpolating a function call referencing a template parameter
+// (microsoft/typespec#11056)
+// ============================================================================
+
+/// Check source with the `function-declarations` feature enabled so fn
+/// declarations don't emit the experimental warning.
+fn check_with_fn_feature(source: &str) -> crate::checker::Checker {
+    crate::checker::test_utils::check_with_feature(source, "function-declarations")
+}
+
+/// Ported from TS: "does not crash when used on a template declaration"
+#[test]
+fn test_fn_call_interp_template_decl_no_crash() {
+    let checker = check_with_fn_feature(
+        r#"
+        extern fn getName(type: unknown): valueof string;
+
+        @doc("${getName(T)}")
+        model Crud<T extends Model> {}
+    "#,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "expected no diagnostics, got: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "resolves the function call when the template is
+/// instantiated". The Rust port has no JS runtime to execute the function,
+/// but checking the instantiation must not emit template diagnostics.
+#[test]
+fn test_fn_call_interp_template_instantiation() {
+    let checker = check_with_fn_feature(
+        r#"
+        extern fn getName(type: unknown): valueof string;
+
+        @doc("${getName(T)}")
+        model Crud<T extends Model> {}
+
+        model Foo {}
+
+        model Holder {
+            p: Crud<Foo>;
+        }
+    "#,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "expected no diagnostics, got: {:?}",
+        checker.diagnostics()
+    );
+}

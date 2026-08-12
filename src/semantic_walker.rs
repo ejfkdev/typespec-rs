@@ -635,10 +635,7 @@ pub fn get_property(checker: &Checker, model_id: TypeId, property_name: &str) ->
             if let Some(&prop_id) = model.properties.get(property_name) {
                 return Some(prop_id);
             }
-            match model.base_model {
-                Some(base_id) => current_id = base_id,
-                None => return None,
-            }
+            current_id = model.base_model?;
         } else {
             return None;
         }

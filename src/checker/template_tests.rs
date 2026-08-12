@@ -1642,4 +1642,80 @@ mod template_tests {
             diags
         );
     }
+
+    // ========================================================================
+    // Template parameter defaults used in operation templates
+    // (microsoft/typespec#11477, regression #11454)
+    // ========================================================================
+
+    /// Ported from TS: "does not run decorators with unresolved template
+    /// parameter arguments when a decorated template is used as a template
+    /// parameter default". The Rust port has no JS decorator runtime; the
+    /// equivalent guarantees are that the ARM tags-update pattern checks
+    /// without spurious diagnostics (no shadow warnings from re-checked
+    /// parameter declarations during instantiation).
+    #[test]
+    fn test_template_param_default_in_op_no_spurious_diagnostics() {
+        let checker = check(
+            r#"
+            model TagsUpdateModel<Resource extends Model> {
+                resource: Resource;
+            }
+
+            op armTagsPatch<
+                Resource extends Model,
+                Properties extends Model = TagsUpdateModel<Resource>
+            >(body: Properties): void;
+
+            model FooResource { id: string; }
+
+            op patch is armTagsPatch<FooResource>;
+        "#,
+        );
+        assert!(
+            !checker.diagnostics().iter().any(|d| d.code == "shadow"),
+            "no shadow warning expected during instantiation: {:?}",
+            checker.diagnostics()
+        );
+        assert!(
+            !checker
+                .diagnostics()
+                .iter()
+                .any(|d| d.code == "unused-template-parameter"),
+            "Resource is used in the default and model body: {:?}",
+            checker.diagnostics()
+        );
+        assert!(
+            checker.diagnostics().is_empty(),
+            "expected clean check, got: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    /// A template parameter used only in another parameter's default counts
+    /// as used.
+    #[test]
+    fn test_template_param_used_in_default_is_not_unused() {
+        let checker = check(
+            r#"
+            model Wrap<T> { value: T; }
+
+            model A<Resource extends Model, Props extends Model = Wrap<Resource>> {
+                props: Props;
+            }
+
+            model R { id: string; }
+
+            model Use { a: A<R>; }
+        "#,
+        );
+        assert!(
+            !checker
+                .diagnostics()
+                .iter()
+                .any(|d| d.code == "unused-template-parameter"),
+            "Resource is referenced from Props default: {:?}",
+            checker.diagnostics()
+        );
+    }
 }

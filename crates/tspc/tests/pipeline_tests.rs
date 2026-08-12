@@ -1,7 +1,7 @@
 //! Integration tests for tspc compilation pipeline
 
+use typespec_rs::checker::Checker;
 use typespec_rs::checker::types::Type;
-use typespec_rs::checker::{Checker, CustomDecoratorDef};
 use typespec_rs::diagnostics::DiagnosticSeverity;
 use typespec_rs::parser;
 

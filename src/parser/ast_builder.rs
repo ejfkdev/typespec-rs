@@ -37,8 +37,27 @@ pub struct AstBuilder {
     /// loads libraries as pre-compiled modules and never lints them, so linter-style
     /// checks (e.g. unused-template-parameter) should skip nodes in this region.
     pub library_line_offset: usize,
+    /// Per-injected-library line ranges and the compiler feature flags each
+    /// library enabled for its own code (microsoft/typespec#11235; upstream
+    /// resolves these from each library's tspconfig.yaml).
+    pub library_feature_ranges: Vec<LibraryFeatureRange>,
     /// Cached byte offsets of the start of each line (line 1 = offset 0, etc.)
     line_starts: Vec<usize>,
+}
+
+/// Line range of one injected library source and the compiler features the
+/// library enabled for its own code.
+///
+/// Ported from the per-library `features` carried on the "library" location
+/// context upstream (microsoft/typespec#11235).
+#[derive(Debug, Clone, Default)]
+pub struct LibraryFeatureRange {
+    /// First line of the library source (1-based, inclusive).
+    pub start_line: u32,
+    /// Last line of the library source (1-based, inclusive).
+    pub end_line: u32,
+    /// Compiler feature names the library enabled for its own code.
+    pub features: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -197,6 +216,7 @@ impl AstBuilder {
             source,
             directives_map: HashMap::new(),
             library_line_offset: 0,
+            library_feature_ranges: Vec::new(),
             line_starts,
         }
     }
@@ -240,10 +260,15 @@ impl AstBuilder {
         Span { start, end }
     }
 
+    /// Convert a byte offset in the source to its 1-based line number.
+    pub fn offset_to_line(&self, offset: usize) -> u32 {
+        self.offset_to_position(offset).line
+    }
+
     /// Convert a byte offset in the source to a line:column Position.
     /// Line numbers are 1-based, column numbers are 0-based (matching TS convention).
     /// Uses binary search on the pre-computed line_starts table for O(log n) lookup.
-    fn offset_to_position(&self, offset: usize) -> Position {
+    pub fn offset_to_position(&self, offset: usize) -> Position {
         if offset == 0 || self.line_starts.is_empty() {
             return Position { line: 1, column: 0 };
         }
@@ -455,6 +480,7 @@ impl AstBuilder {
         statements: Vec<u32>,
         decorators: Vec<u32>,
         modifiers: Vec<u32>,
+        blockless: bool,
         span: Span,
     ) -> u32 {
         let id = self.node_id_gen.next();
@@ -465,6 +491,7 @@ impl AstBuilder {
             statements,
             decorators,
             modifiers,
+            blockless,
         });
         self.nodes.insert(id, node);
         id

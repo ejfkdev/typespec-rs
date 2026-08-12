@@ -4,6 +4,14 @@
 
 use super::*;
 
+/// A suppressed diagnostic code together with the `#suppress` directive node
+/// that declared it (so the suppression tracker can mark it used).
+#[derive(Debug, Clone)]
+pub struct SuppressedCode {
+    pub code: String,
+    pub directive_node: NodeId,
+}
+
 impl Checker {
     /// Process directives attached to a declaration node (e.g., #deprecated, #suppress).
     /// This reads directives from the AST builder's directives_map and applies them
@@ -83,7 +91,12 @@ impl Checker {
                                 self.suppressed_diagnostics
                                     .entry(node_id)
                                     .or_default()
-                                    .extend(suppressed_codes);
+                                    .extend(suppressed_codes.into_iter().map(|code| {
+                                        SuppressedCode {
+                                            code,
+                                            directive_node: dir_id,
+                                        }
+                                    }));
                             }
                         }
                         _ => {}
@@ -113,8 +126,10 @@ impl Checker {
             return;
         }
 
-        // Don't emit if "deprecated" is suppressed on any currently pending declaration
-        if self.is_suppressed("deprecated") {
+        // Don't emit if "deprecated" is suppressed on any currently pending
+        // declaration; mark the suppression as used.
+        if let Some(dir_node) = self.find_suppressing_directive("deprecated") {
+            self.suppression_tracker.mark_used(dir_node);
             return;
         }
 
@@ -135,16 +150,72 @@ impl Checker {
         );
     }
 
-    /// Check if a diagnostic code is suppressed on any currently pending declaration node.
-    pub(crate) fn is_suppressed(&self, code: &str) -> bool {
-        for &node_id in &self.pending_type_checks {
-            if let Some(codes) = self.suppressed_diagnostics.get(&node_id)
-                && codes.iter().any(|c| c == code)
-            {
-                return true;
+    /// Find the `#suppress` directive node suppressing the given diagnostic
+    /// code on any currently pending declaration node.
+    ///
+    /// Ported from TS `findDirectiveSuppressingOnNode`, adapted to the Rust
+    /// port's pending-declaration model (the set of declarations currently
+    /// being checked stands in for the target-node ancestor walk).
+    pub(crate) fn find_suppressing_directive(&mut self, code: &str) -> Option<NodeId> {
+        // Short diagnostic codes are normalized through the code resolver when
+        // available (microsoft/typespec#11209).
+        let resolved_code = self.resolve_diagnostic_code(code);
+        let pending: Vec<NodeId> = self.pending_type_checks.iter().copied().collect();
+        for node_id in pending {
+            self.ensure_suppressions_collected(node_id);
+            if let Some(entries) = self.suppressed_diagnostics.get(&node_id) {
+                for entry in entries {
+                    if self.resolve_diagnostic_code(&entry.code) == resolved_code {
+                        return Some(entry.directive_node);
+                    }
+                }
             }
         }
-        false
+        None
+    }
+
+    /// Normalize a diagnostic code through the code resolver when present
+    /// (short library names resolve to their full `${package}/${code}` form).
+    pub(crate) fn resolve_diagnostic_code(&self, code: &str) -> String {
+        match &self.diagnostic_code_resolver {
+            Some(resolver) => resolver.resolve_code(code),
+            None => code.to_string(),
+        }
+    }
+
+    /// Lazily collect `#suppress` directives attached to a node into
+    /// `suppressed_diagnostics` (idempotent).
+    ///
+    /// Declarations run `process_directives` eagerly, but directives can also
+    /// appear on members (model properties, enum members, ...) which are not
+    /// declaration-checked; upstream's suppression lookup walks the target
+    /// node's ancestors, so any pending node may carry suppressions.
+    fn ensure_suppressions_collected(&mut self, node_id: NodeId) {
+        if !self.suppression_scanned.insert(node_id) {
+            return;
+        }
+        let Some(ast) = self.require_ast() else {
+            return;
+        };
+        let Some(directive_ids) = ast.get_directives(node_id).cloned() else {
+            return;
+        };
+        for dir_id in directive_ids {
+            let Some(AstNode::DirectiveExpression(dir_expr)) = ast.id_to_node(dir_id) else {
+                continue;
+            };
+            if let Some(suppression_tracking::ParsedDirective::Suppress(directive)) =
+                suppression_tracking::parse_directive(dir_expr, &ast)
+            {
+                self.suppressed_diagnostics
+                    .entry(node_id)
+                    .or_default()
+                    .push(SuppressedCode {
+                        code: directive.code,
+                        directive_node: dir_id,
+                    });
+            }
+        }
     }
 
     /// Check if we're currently inside a deprecated context (i.e., checking

@@ -23,6 +23,10 @@ impl Checker {
         // Track by name so check_type_reference/check_identifier can detect circular references
         if !name.is_empty() {
             self.pending_type_names.insert(name.clone());
+            // Record the value node so recursive references through model
+            // expressions can resolve to the in-progress model type
+            // (microsoft/typespec#10684).
+            self.pending_alias_values.insert(name.clone(), node.value);
         }
 
         self.check_template_declaration(ctx, &ast, &node.template_parameters);
@@ -32,6 +36,7 @@ impl Checker {
         self.pending_type_checks.remove(&node_id);
         if !name.is_empty() {
             self.pending_type_names.remove(&name);
+            self.pending_alias_values.remove(&name);
         }
 
         // If target_type is error_type, a circular reference was already reported

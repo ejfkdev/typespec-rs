@@ -42,15 +42,21 @@ impl Checker {
         } else {
             vec![]
         };
-        for &(param_id, ref name) in &shadow_params {
-            self.warning_at(
-                param_id,
-                "shadow",
-                &format!(
-                    "Shadowing parent template parameter with the same name \"{}\"",
-                    name
-                ),
-            );
+        // During template instantiation (mapper present) the declaration is
+        // re-checked and its parameter declarations are artifacts of that
+        // re-check, not new declarations — skip the shadow diagnostic
+        // (microsoft/typespec#11477).
+        if ctx.mapper.is_none() {
+            for &(param_id, ref name) in &shadow_params {
+                self.warning_at(
+                    param_id,
+                    "shadow",
+                    &format!(
+                        "Shadowing parent template parameter with the same name \"{}\"",
+                        name
+                    ),
+                );
+            }
         }
 
         // Collect parameter names first for circular constraint and invalid default detection

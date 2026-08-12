@@ -63,8 +63,20 @@ pub struct Contact {
 pub struct License {
     /// The license name used for the API.
     pub name: String,
-    /// A URL to the license used for the API.
+    /// A URL to the license used for the API. Mutually exclusive with
+    /// `identifier` (microsoft/typespec#11309).
     pub url: Option<String>,
+    /// An SPDX license expression for the API. Mutually exclusive with `url`.
+    /// Only supported in OpenAPI 3.1+; for OpenAPI 3.0 this is emitted as
+    /// `x-oai-license-identifier` (microsoft/typespec#11309).
+    pub identifier: Option<String>,
+}
+
+/// Validate license info: `url` and `identifier` are mutually exclusive.
+/// Returns true when valid. Ported from the $info validation added in
+/// microsoft/typespec#11309.
+pub fn is_license_valid(license: &License) -> bool {
+    !(license.url.is_some() && license.identifier.is_some())
 }
 
 /// OpenAPI additional information.
@@ -120,6 +132,12 @@ pub fn create_openapi_library() -> DiagnosticMap {
         (
             "invalid-extension-key".to_string(),
             DiagnosticDefinition::error("OpenAPI extension must start with 'x-' but was '{value}'"),
+        ),
+        (
+            "license-url-identifier-conflict".to_string(),
+            DiagnosticDefinition::error(
+                "License 'url' and 'identifier' are mutually exclusive. Specify only one of them.",
+            ),
         ),
         (
             "duplicate-type-name".to_string(),
@@ -473,8 +491,11 @@ model License {
   /** The license name used for the API. */
   name: string;
 
-  /** A URL to the license used for the API. */
+  /** A URL to the license used for the API. Mutually exclusive with `identifier`. */
   url?: url;
+
+  /** An SPDX license expression for the API. Mutually exclusive with `url`. Only supported in OpenAPI 3.1+. For OpenAPI 3.0, this will be emitted as `x-oai-license-identifier`. */
+  identifier?: string;
 
   ...Record<unknown>;
 }
@@ -620,6 +641,7 @@ mod tests {
             license: Some(License {
                 name: "MIT".to_string(),
                 url: None,
+                identifier: None,
             }),
         };
         assert_eq!(info.title.as_deref(), Some("Pet Store API"));
@@ -659,6 +681,32 @@ mod tests {
         assert_eq!(info.title.as_deref(), Some("Pet Store API"));
         assert_eq!(info.version.as_deref(), Some("1.0.0"));
         assert!(info.description.is_none());
+    }
+
+    /// Ported from TS (microsoft/typespec#11309): license `url` and
+    /// `identifier` are mutually exclusive.
+    #[test]
+    fn test_license_url_identifier_mutually_exclusive() {
+        let both = License {
+            name: "MIT".to_string(),
+            url: Some("https://opensource.org/licenses/MIT".to_string()),
+            identifier: Some("MIT".to_string()),
+        };
+        assert!(!is_license_valid(&both));
+
+        let url_only = License {
+            name: "MIT".to_string(),
+            url: Some("https://opensource.org/licenses/MIT".to_string()),
+            identifier: None,
+        };
+        assert!(is_license_valid(&url_only));
+
+        let identifier_only = License {
+            name: "MIT".to_string(),
+            url: None,
+            identifier: Some("MIT".to_string()),
+        };
+        assert!(is_license_valid(&identifier_only));
     }
 
     #[test]

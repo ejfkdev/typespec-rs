@@ -87,6 +87,32 @@ impl Checker {
         }
     }
 
+    /// If the given name refers to an alias currently being checked whose value
+    /// is a model expression that already produced an in-progress type, return
+    /// that type. Such recursive references are safe because model types are
+    /// created and linked before their properties resolve.
+    ///
+    /// Ported from microsoft/typespec#10684 (TS: checkAliasStatement
+    /// re-entrancy handling for ModelExpression values).
+    pub(crate) fn resolve_pending_alias_model_expression(&self, name: &str) -> Option<TypeId> {
+        if !self.pending_type_names.contains(name) {
+            return None;
+        }
+        let value_node = self.pending_alias_values.get(name)?;
+        let ast = self.ast.as_ref()?;
+        if !matches!(
+            ast.id_to_node(*value_node),
+            Some(AstNode::ModelExpression(_))
+        ) {
+            return None;
+        }
+        // The model type is linked into symbol links before its properties
+        // resolve (see check_model register_type).
+        self.symbol_links
+            .get(value_node)
+            .and_then(|links| links.declared_type)
+    }
+
     /// Check for circular references on the given name.
     /// Returns `Some(error_type)` if a circular reference is detected, `None` otherwise.
     pub(crate) fn check_circular_reference(&mut self, name: &str) -> Option<TypeId> {

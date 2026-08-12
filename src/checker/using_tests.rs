@@ -346,3 +346,193 @@ fn test_using_in_global_scope() {
         checker.diagnostics()
     );
 }
+
+// ============================================================================
+// using relative to the file namespace (microsoft/typespec#11552)
+//
+// Upstream tests use multi-file imports; the Rust port injects the other
+// file's namespaces as a library source instead.
+// ============================================================================
+
+/// Ported from TS: "using declared before the file namespace resolves from
+/// the global namespace"
+#[test]
+fn test_using_before_file_namespace_resolves_global() {
+    let checker = crate::checker::test_utils::check_with_library(
+        "namespace Global.Sub { model X { x: int32 } }",
+        r#"
+        using Global.Sub;
+        namespace Outer.Global.Foo;
+        model Y { ... X }
+        "#,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+    let y = checker.get_type_by_name("Y").expect("Y should exist");
+    if let Some(crate::checker::Type::Model(m)) = checker.get_type(y) {
+        assert_eq!(m.properties.len(), 1, "Y should have spread X's property");
+    }
+}
+
+/// Ported from TS: "using declared before the file namespace picks the
+/// global namespace over the file namespace sibling"
+#[test]
+fn test_using_before_file_namespace_prefers_global() {
+    let checker = crate::checker::test_utils::check_with_library(
+        r#"
+        namespace A { model G { g: int32 } }
+        namespace Outer.A { model L { l: int32 } }
+        "#,
+        r#"
+        using A;
+        namespace Outer.Svc;
+        model Y { ... G }
+        "#,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+    let y = checker.get_type_by_name("Y").expect("Y should exist");
+    if let Some(crate::checker::Type::Model(m)) = checker.get_type(y) {
+        assert!(
+            m.properties.contains_key("g"),
+            "Y should spread G (global A.G), not Outer.A.L: {:?}",
+            m.properties.keys()
+        );
+    }
+}
+
+/// Ported from TS: "using declared after the file namespace still resolves
+/// relative to it"
+#[test]
+fn test_using_after_file_namespace_resolves_relative() {
+    let checker = crate::checker::test_utils::check_with_library(
+        "namespace MyOrg.Models { model X { x: int32 } }",
+        r#"
+        namespace MyOrg.Svc;
+        using Models;
+        model Y { ... X }
+        "#,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+    let y = checker.get_type_by_name("Y").expect("Y should exist");
+    if let Some(crate::checker::Type::Model(m)) = checker.get_type(y) {
+        assert_eq!(m.properties.len(), 1, "Y should have spread X's property");
+    }
+}
+
+/// Ported from TS: "reports an unknown identifier when a using before the
+/// file namespace only resolves relatively"
+#[test]
+fn test_using_before_file_namespace_relative_only_unknown() {
+    let checker = crate::checker::test_utils::check_with_library(
+        "namespace MyOrg.Models { model X { } }",
+        r#"
+        using Models;
+        namespace MyOrg.Svc;
+        "#,
+    );
+    assert!(
+        has_diagnostic(&checker, "invalid-ref"),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "using inside a block namespace keeps resolving relative
+/// to it"
+#[test]
+fn test_using_inside_block_namespace_relative() {
+    let checker = crate::checker::test_utils::check_with_library(
+        "namespace MyOrg.Models { model X { x: int32 } }",
+        r#"
+        namespace MyOrg.Svc {
+            using Models;
+            model Y { ... X }
+        }
+        "#,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+// ============================================================================
+// Blockless namespace parsing diagnostics (microsoft/typespec#11552 infra)
+// ============================================================================
+
+/// Ported from TS parser: "Cannot use multiple blockless namespaces."
+#[test]
+fn test_multiple_blockless_namespaces_error() {
+    let result = crate::parser::parse(
+        r#"
+        namespace A;
+        model X {}
+        namespace B;
+        model Y {}
+    "#,
+    );
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "multiple-blockless-namespace"),
+        "parse diagnostics: {:?}",
+        result.diagnostics
+    );
+}
+
+/// Ported from TS parser: "Blockless namespaces can't follow other
+/// declarations."
+#[test]
+fn test_blockless_namespace_after_declaration_error() {
+    let result = crate::parser::parse(
+        r#"
+        model X {}
+        namespace A;
+        model Y {}
+    "#,
+    );
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "blockless-namespace-first"),
+        "parse diagnostics: {:?}",
+        result.diagnostics
+    );
+}
+
+/// Blockless namespace scopes the following declarations.
+#[test]
+fn test_blockless_namespace_membership() {
+    let checker = check(
+        r#"
+        namespace MyOrg.Svc;
+        model Y { x: string }
+    "#,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+    let y = checker.get_type_by_name("Y").expect("Y should exist");
+    let ns_name = checker
+        .get_type(y)
+        .and_then(|t| t.namespace())
+        .and_then(|ns| checker.get_type(ns))
+        .and_then(|t| t.name().map(|s| s.to_string()));
+    assert_eq!(ns_name.as_deref(), Some("MyOrg.Svc"));
+}

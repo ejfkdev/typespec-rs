@@ -20,7 +20,7 @@ impl Checker {
         if self
             .using_declarations
             .iter()
-            .any(|(_, existing_name)| existing_name == &ns_name)
+            .any(|(_, existing_name, _)| existing_name == &ns_name)
         {
             self.error_at(
                 node_id,
@@ -35,8 +35,19 @@ impl Checker {
 
         match self.get_type(target_type) {
             Some(Type::Namespace(_)) => {
-                // Record this using declaration for unused-using detection
-                self.using_declarations.push((node_id, ns_name));
+                // Record this using declaration for unused-using detection.
+                // Store the resolved namespace TypeId: the target is bound in
+                // the using's declaration context (microsoft/typespec#11552),
+                // not re-resolved from each reference site.
+                self.using_declarations
+                    .push((node_id, ns_name, Some(target_type)));
+            }
+            Some(Type::Intrinsic(i))
+                if i.name == crate::checker::types::IntrinsicTypeName::ErrorType =>
+            {
+                // Unresolved reference: the identifier check already reported
+                // invalid-ref. Upstream reports only invalid-ref for
+                // `using NotDefined;` (no extra using-invalid-ref).
             }
             Some(_) | None => {
                 self.error_at(
@@ -52,8 +63,8 @@ impl Checker {
     /// Looks for the name in all using'd namespaces and returns the TypeId if found.
     /// Ported from TS name-resolver.ts resolveIdentifierInScope.
     pub(crate) fn resolve_via_using(&self, name: &str) -> Option<TypeId> {
-        for (_, using_ns_name) in &self.using_declarations {
-            let ns_id = self.resolve_namespace_by_name(using_ns_name);
+        for (_, using_ns_name, resolved_ns) in &self.using_declarations {
+            let ns_id = resolved_ns.or_else(|| self.resolve_namespace_by_name(using_ns_name));
             if let Some(ns_id) = ns_id
                 && let Some(Type::Namespace(ns)) = self.get_type(ns_id)
             {
@@ -75,8 +86,10 @@ impl Checker {
 
         // For each using'd namespace, check if the type's namespace is the same
         // or a descendant of the using'd namespace (walk up the parent chain).
-        for (_, using_ns_name) in &self.using_declarations {
-            if let Some(using_ns_id) = self.resolve_namespace_by_name(using_ns_name) {
+        for (_, using_ns_name, resolved_ns) in &self.using_declarations {
+            let using_ns_opt =
+                resolved_ns.or_else(|| self.resolve_namespace_by_name(using_ns_name));
+            if let Some(using_ns_id) = using_ns_opt {
                 let mut check_id = Some(ns_id);
                 while let Some(cid) = check_id {
                     if cid == using_ns_id {
@@ -103,8 +116,8 @@ impl Checker {
         let unused: Vec<(NodeId, String)> = self
             .using_declarations
             .iter()
-            .filter(|(_, ns_name)| !self.used_using_names.contains(ns_name))
-            .cloned()
+            .filter(|(_, ns_name, _)| !self.used_using_names.contains(ns_name))
+            .map(|(node_id, ns_name, _)| (*node_id, ns_name.clone()))
             .collect();
 
         for (_node_id, ns_name) in unused {

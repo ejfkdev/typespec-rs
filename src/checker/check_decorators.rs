@@ -206,6 +206,232 @@ impl Checker {
         // Evaluate well-known decorators: apply their side effects to
         // StateAccessors and Type.doc/summary fields.
         self.evaluate_std_decorators(type_id);
+
+        // Evaluate auto decorators: store their arguments in the auto
+        // decorator state (microsoft/typespec#10197).
+        self.evaluate_auto_decorators(type_id);
+    }
+
+    /// Store the arguments of auto decorators applied to a type.
+    ///
+    /// Ported from the behavior of the implementations built by TS
+    /// `createAutoDecoratorImplementation` (microsoft/typespec#10197): the
+    /// stored value is always a record keyed by parameter name, rest
+    /// parameters collect the remaining arguments into an array, missing
+    /// optional arguments store Null, and duplicate application warns once
+    /// per application but still stores (last-write-wins).
+    /// Get a type's simple (unqualified) name for diagnostics. Upstream
+    /// encode diagnostics use `getTypeName`, which renders std scalars without
+    /// the `TypeSpec.` prefix.
+    fn simple_type_name(&self, type_id: TypeId) -> String {
+        self.get_type(type_id)
+            .and_then(|t| t.name().map(|s| s.to_string()))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| self.get_type_name_for_diagnostic(type_id))
+    }
+
+    /// Validate @encode data against the target type.
+    ///
+    /// Ported from TS `validateEncodeData` (lib/decorators.ts). The encoding
+    /// determines which target types and serialized types are valid; when the
+    /// encoding is `None` (i.e. `@encode(string)`), numeric **and boolean**
+    /// targets may be encoded as string (microsoft/typespec#10875).
+    fn validate_encode_data(
+        &mut self,
+        target: TypeId,
+        encoding: Option<&str>,
+        encode_type: TypeId,
+    ) {
+        let (valid_targets, valid_encode_types): (&[&str], &[&str]) = match encoding {
+            Some("rfc3339") | Some("rfc7231") => (&["utcDateTime", "offsetDateTime"], &["string"]),
+            Some("unixTimestamp") => (&["utcDateTime"], &["integer"]),
+            Some("seconds") | Some("milliseconds") => (&["duration"], &["numeric"]),
+            Some("base64") | Some("base64url") => (&["bytes"], &["string"]),
+            // Unknown encoding names are not validated (TS switch has no default).
+            Some(_) => return,
+            None => (&["numeric", "boolean"], &["string"]),
+        };
+
+        // The checked target is the property's type when @encode is applied
+        // to a model property (TS getPropertyType).
+        let target_type = decorator_utils::get_property_type(&self.type_store, target);
+
+        // Union targets are valid if any variant matches (TS isTypeIn).
+        let candidate_types: Vec<TypeId> = match self.get_type(target_type).cloned() {
+            Some(Type::Union(u)) => u
+                .variants
+                .values()
+                .map(|&variant_id| match self.get_type(variant_id).cloned() {
+                    Some(Type::UnionVariant(v)) => v.r#type,
+                    _ => variant_id,
+                })
+                .collect(),
+            _ => vec![target_type],
+        };
+
+        let is_target_valid = candidate_types.iter().any(|&ty| {
+            valid_targets.iter().any(|valid_name| {
+                self.std_types
+                    .get(*valid_name)
+                    .copied()
+                    .is_some_and(|std_id| self.is_type_assignable_to(ty, std_id, target).0)
+            })
+        });
+
+        let encoding_label = encoding.unwrap_or("string");
+        let target_name = self.simple_type_name(target_type);
+        if !is_target_valid {
+            self.error(
+                "invalid-encode",
+                &format!(
+                    "Encoding '{}' cannot be used on type '{}'. Expected: {}.",
+                    encoding_label,
+                    target_name,
+                    valid_targets.join(", ")
+                ),
+            );
+        }
+
+        let is_encoding_type_valid = valid_encode_types.iter().any(|valid_name| {
+            self.std_types
+                .get(*valid_name)
+                .copied()
+                .is_some_and(|std_id| self.is_type_assignable_to(encode_type, std_id, target).0)
+        });
+
+        if !is_encoding_type_valid {
+            let actual = self.simple_type_name(encode_type);
+            let message = if matches!(
+                encoding,
+                Some("unixTimestamp") | Some("seconds") | Some("milliseconds")
+            ) {
+                format!(
+                    "Encoding '{}' on type '{}' is expected to be serialized as '{}' but got '{}'. Set '@encode' 2nd parameter to be of type {}. e.g. '@encode(\"{}\", int32)'",
+                    encoding_label,
+                    target_name,
+                    valid_encode_types.join(", "),
+                    actual,
+                    valid_encode_types.join(", "),
+                    encoding_label
+                )
+            } else {
+                format!(
+                    "Encoding '{}' on type '{}' is expected to be serialized as '{}' but got '{}'.",
+                    encoding_label,
+                    target_name,
+                    valid_encode_types.join(", "),
+                    actual
+                )
+            };
+            self.error("invalid-encode", &message);
+        }
+    }
+
+    fn evaluate_auto_decorators(&mut self, type_id: TypeId) {
+        let apps: Vec<DecoratorApplication> = match self.get_type(type_id) {
+            Some(t) => match t.decorators() {
+                Some(decs) => decs.clone(),
+                None => return,
+            },
+            None => return,
+        };
+
+        // Count applications per decorator definition so duplicates can be
+        // warned about (TS validateDecoratorUniqueOnNode warns per
+        // application when the decorator appears more than once).
+        let mut app_counts: HashMap<TypeId, usize> = HashMap::new();
+        for app in &apps {
+            if let Some(def_id) = app.definition
+                && matches!(
+                    self.get_type(def_id),
+                    Some(Type::Decorator(d)) if d.declaration_kind == DecoratorDeclarationKind::Auto
+                )
+            {
+                *app_counts.entry(def_id).or_default() += 1;
+            }
+        }
+
+        // Collect auto decorator applications with their records:
+        // (fqn, name, node, is_duplicate, record).
+        type PendingAutoApp = (
+            String,
+            String,
+            Option<NodeId>,
+            bool,
+            Vec<(String, auto_decorator::AutoDecoratorValue)>,
+        );
+        let mut applications: Vec<PendingAutoApp> = Vec::new();
+
+        for app in &apps {
+            let Some(def_id) = app.definition else {
+                continue;
+            };
+            let dec_type = match self.get_type(def_id) {
+                Some(Type::Decorator(d))
+                    if d.declaration_kind == DecoratorDeclarationKind::Auto =>
+                {
+                    d.clone()
+                }
+                _ => continue,
+            };
+            let Some(fqn) = self.decorator_fqns.get(&def_id).cloned() else {
+                continue;
+            };
+
+            // Build the { paramName: value } record from the declared
+            // parameters and the provided arguments.
+            let mut record: Vec<(String, auto_decorator::AutoDecoratorValue)> = Vec::new();
+            for (i, param) in dec_type.parameters.iter().enumerate() {
+                if param.rest {
+                    // Rest parameter collects all remaining arguments.
+                    let rest_values: Vec<DecoratorMarshalledValue> = app.args[i..]
+                        .iter()
+                        .map(|a| a.js_value.clone().unwrap_or(DecoratorMarshalledValue::Null))
+                        .collect();
+                    record.push((
+                        param.name.clone(),
+                        auto_decorator::AutoDecoratorValue::Array(rest_values),
+                    ));
+                    break;
+                }
+                let value = app
+                    .args
+                    .get(i)
+                    .and_then(|a| a.js_value.clone())
+                    .unwrap_or(DecoratorMarshalledValue::Null);
+                record.push((
+                    param.name.clone(),
+                    auto_decorator::AutoDecoratorValue::Value(value),
+                ));
+            }
+
+            let is_duplicate = app_counts.get(&def_id).copied().unwrap_or(0) > 1;
+            applications.push((fqn, dec_type.name.clone(), app.node, is_duplicate, record));
+        }
+
+        for (fqn, name, node, is_duplicate, record) in applications {
+            if is_duplicate {
+                if let Some(n) = node {
+                    self.warning_at(
+                        n,
+                        "duplicate-decorator",
+                        &format!(
+                            "Decorator @{} cannot be used twice on the same declaration.",
+                            name
+                        ),
+                    );
+                } else {
+                    self.warning(
+                        "duplicate-decorator",
+                        &format!(
+                            "Decorator @{} cannot be used twice on the same declaration.",
+                            name
+                        ),
+                    );
+                }
+            }
+            self.apply_auto_decorator(&fqn, type_id, record);
+        }
     }
 
     /// Evaluate well-known TypeSpec decorators after they're stored on a type.
@@ -413,14 +639,49 @@ impl Checker {
                     }
                 }
                 "encode" => {
-                    if let Some(arg) = args.first()
-                        && let Some(DecoratorMarshalledValue::String(e)) = &arg.js_value
+                    // Ported from TS $encode (lib/decorators.ts): compute the
+                    // encode data, validate it, then store it
+                    // (microsoft/typespec#10875).
+                    let str_type = self.std_types.get("string").copied();
+                    let encode_as: Option<TypeId> =
+                        match args.get(1).and_then(|a| a.js_value.as_ref()) {
+                            Some(DecoratorMarshalledValue::Type(t))
+                            | Some(DecoratorMarshalledValue::Value(t)) => Some(*t),
+                            _ => str_type,
+                        };
+
+                    let encode_data: Option<(Option<String>, TypeId)> = match args
+                        .first()
+                        .and_then(|a| a.js_value.as_ref())
                     {
+                        Some(DecoratorMarshalledValue::String(e)) => {
+                            Some((Some(e.clone()), encode_as.unwrap_or(self.error_type)))
+                        }
+                        Some(DecoratorMarshalledValue::Type(t))
+                        | Some(DecoratorMarshalledValue::Value(t)) => {
+                            // First argument is a scalar type: only the
+                            // string type is allowed (used to encode
+                            // numeric or boolean values as string).
+                            if str_type == Some(*t) {
+                                Some((None, *t))
+                            } else {
+                                self.error(
+                                        "invalid-encode",
+                                        "First argument of \"@encode\" must be the encoding name or the string type when encoding numeric or boolean types.",
+                                    );
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
+
+                    if let Some((encoding, encode_type)) = encode_data {
+                        self.validate_encode_data(type_id, encoding.as_deref(), encode_type);
                         crate::libs::compiler::apply_encode(
                             &mut self.state_accessors,
                             type_id,
-                            Some(e),
-                            None,
+                            encoding.as_deref(),
+                            Some(encode_type),
                         );
                     }
                 }

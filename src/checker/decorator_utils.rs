@@ -541,6 +541,7 @@ mod tests {
             target: None,
             target_type: "unknown".to_string(),
             parameters: vec![],
+            declaration_kind: crate::checker::types::DecoratorDeclarationKind::Extern,
             is_finished: true,
         }));
         let model = store.add(Type::Model({
@@ -568,6 +569,7 @@ mod tests {
             target: None,
             target_type: "unknown".to_string(),
             parameters: vec![],
+            declaration_kind: crate::checker::types::DecoratorDeclarationKind::Extern,
             is_finished: true,
         }));
         let model = store.add(Type::Model({
@@ -609,6 +611,7 @@ mod tests {
             target: None,
             target_type: "unknown".to_string(),
             parameters: vec![],
+            declaration_kind: crate::checker::types::DecoratorDeclarationKind::Extern,
             is_finished: true,
         }));
         // Model without the bad decorator
@@ -631,6 +634,7 @@ mod tests {
             target: None,
             target_type: "unknown".to_string(),
             parameters: vec![],
+            declaration_kind: crate::checker::types::DecoratorDeclarationKind::Extern,
             is_finished: true,
         }));
         let model = store.add(Type::Model({
@@ -660,6 +664,7 @@ mod tests {
             target: None,
             target_type: "unknown".to_string(),
             parameters: vec![],
+            declaration_kind: crate::checker::types::DecoratorDeclarationKind::Extern,
             is_finished: true,
         }));
         // Base model has the decorator
@@ -697,6 +702,7 @@ mod tests {
             target: None,
             target_type: "unknown".to_string(),
             parameters: vec![],
+            declaration_kind: crate::checker::types::DecoratorDeclarationKind::Extern,
             is_finished: true,
         }));
         // Base scalar has the decorator

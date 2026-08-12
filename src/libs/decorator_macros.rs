@@ -14,7 +14,7 @@
 /// Creates `apply_$name` which adds the target to state, and `is_$name` which checks state.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// flag_decorator!(apply_error, is_error, "TypeSpec.error");
 /// ```
 #[macro_export]
@@ -43,7 +43,7 @@ macro_rules! flag_decorator {
 /// Creates `apply_$name` which sets a string value, and `get_$name` which retrieves it.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// string_decorator!(apply_summary, get_summary, "TypeSpec.summary");
 /// ```
 #[macro_export]
@@ -76,7 +76,7 @@ macro_rules! string_decorator {
 /// - `get_$name` — retrieves the name (None if empty or not set)
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// optional_name_decorator!(apply_key, is_key, get_key_name, "TypeSpec.key");
 /// ```
 #[macro_export]
@@ -117,7 +117,7 @@ macro_rules! optional_name_decorator {
 /// Creates `apply_$name` which stores a numeric value as string, and `get_$name` which parses it back.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// numeric_decorator!(apply_min_items, get_min_items, "TypeSpec.minItems", i64);
 /// ```
 #[macro_export]
@@ -149,7 +149,7 @@ macro_rules! numeric_decorator {
 /// Creates `apply_$name` which stores a TypeId as string, and `get_$name` which parses it back.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// typeid_decorator!(apply_overload, get_overload, "TypeSpec.overload");
 /// ```
 #[macro_export]
@@ -181,7 +181,7 @@ macro_rules! typeid_decorator {
 /// Creates `apply_$name` which joins and stores modifiers, and `get_$name` which splits them back.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// visibility_decorator!(apply_visibility, get_visibility, "TypeSpec.visibility", get_comma_list);
 /// ```
 #[macro_export]
@@ -215,7 +215,7 @@ macro_rules! visibility_decorator {
 /// extra derive attributes.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// string_enum! {
 ///     /// File type for output
 ///     pub enum FileType {

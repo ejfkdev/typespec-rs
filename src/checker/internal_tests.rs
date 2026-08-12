@@ -20,80 +20,96 @@ use crate::checker::test_utils::{check, has_diagnostic};
 
 #[test]
 fn test_internal_on_model() {
+    // Ported from TS: "allows 'internal' on model declaration"
+    // (microsoft/typespec#10855 removed the experimental warning)
     let checker = check("internal model Foo {}");
     assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature for internal model: {:?}",
+        checker.diagnostics().is_empty(),
+        "internal on model should not diagnose: {:?}",
         checker.diagnostics()
     );
 }
 
 #[test]
 fn test_internal_on_scalar() {
+    // Ported from TS: "allows 'internal' on scalar declaration"
+    // (microsoft/typespec#10855 removed the experimental warning)
     let checker = check("internal scalar Foo;");
     assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature for internal scalar: {:?}",
+        checker.diagnostics().is_empty(),
+        "internal on scalar should not diagnose: {:?}",
         checker.diagnostics()
     );
 }
 
 #[test]
 fn test_internal_on_interface() {
+    // Ported from TS: "allows 'internal' on interface declaration"
+    // (microsoft/typespec#10855 removed the experimental warning)
     let checker = check("internal interface Foo {}");
     assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature for internal interface: {:?}",
+        checker.diagnostics().is_empty(),
+        "internal on interface should not diagnose: {:?}",
         checker.diagnostics()
     );
 }
 
 #[test]
 fn test_internal_on_union() {
+    // Ported from TS: "allows 'internal' on union declaration"
+    // (microsoft/typespec#10855 removed the experimental warning)
     let checker = check("internal union Foo {}");
     assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature for internal union: {:?}",
+        checker.diagnostics().is_empty(),
+        "internal on union should not diagnose: {:?}",
         checker.diagnostics()
     );
 }
 
 #[test]
 fn test_internal_on_operation() {
+    // Ported from TS: "allows 'internal' on operation declaration"
+    // (microsoft/typespec#10855 removed the experimental warning)
     let checker = check("internal op foo(): void;");
     assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature for internal op: {:?}",
+        checker.diagnostics().is_empty(),
+        "internal on operation should not diagnose: {:?}",
         checker.diagnostics()
     );
 }
 
 #[test]
 fn test_internal_on_enum() {
+    // Ported from TS: "allows 'internal' on enum declaration"
+    // (microsoft/typespec#10855 removed the experimental warning)
     let checker = check("internal enum Foo {}");
     assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature for internal enum: {:?}",
+        checker.diagnostics().is_empty(),
+        "internal on enum should not diagnose: {:?}",
         checker.diagnostics()
     );
 }
 
 #[test]
 fn test_internal_on_alias() {
+    // Ported from TS: "allows 'internal' on alias declaration"
+    // (microsoft/typespec#10855 removed the experimental warning)
     let checker = check("internal alias Foo = string;");
     assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature for internal alias: {:?}",
+        checker.diagnostics().is_empty(),
+        "internal on alias should not diagnose: {:?}",
         checker.diagnostics()
     );
 }
 
 #[test]
 fn test_internal_on_const() {
+    // Ported from TS: "allows 'internal' on const declaration"
+    // (microsoft/typespec#10855 removed the experimental warning)
     let checker = check("internal const foo = 1;");
     assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature for internal const: {:?}",
+        checker.diagnostics().is_empty(),
+        "internal on const should not diagnose: {:?}",
         checker.diagnostics()
     );
 }
@@ -192,15 +208,11 @@ fn test_internal_model_accessible_in_same_project() {
         model Consumer { x: Secret }
     "#,
     );
-    // Should only have experimental-feature warning, no invalid-ref
+    // No diagnostics: internal is stable (microsoft/typespec#10855) and
+    // same-project access is allowed.
     assert!(
-        !has_diagnostic(&checker, "invalid-ref"),
-        "Should NOT report invalid-ref for internal model in same project: {:?}",
-        checker.diagnostics()
-    );
-    assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature: {:?}",
+        checker.diagnostics().is_empty(),
+        "Should not diagnose internal model access in same project: {:?}",
         checker.diagnostics()
     );
 }
@@ -393,7 +405,8 @@ fn test_internal_model_in_namespace_not_visible_from_other_namespace() {
 }
 
 /// Ported from TS: "rejects access to internal model via 'using' from another package"
-/// Simplified: test using statement doesn't bypass internal visibility
+/// Simplified: same-project variant — cross-package rejection requires library
+/// resolution (not yet implemented), and within one project the access is allowed.
 #[test]
 fn test_internal_model_not_visible_via_using() {
     let checker = check(
@@ -405,14 +418,13 @@ fn test_internal_model_not_visible_via_using() {
         model Consumer { x: Secret }
     "#,
     );
-    // Should report invalid-ref because Secret is internal to MyLib
-    let diags = checker.diagnostics();
-    let has_access_error = diags.iter().any(|d| d.code == "invalid-ref");
-    // If using doesn't resolve the internal type, it might show as invalid-ref
+    // Same project → access allowed; nothing to diagnose
+    // (microsoft/typespec#10855 removed the experimental warning that used
+    // to appear here).
     assert!(
-        has_access_error || !diags.is_empty(),
-        "Should report some diagnostic for accessing internal via using: {:?}",
-        diags
+        checker.diagnostics().is_empty(),
+        "Same-project access via using should not diagnose: {:?}",
+        checker.diagnostics()
     );
 }
 
@@ -504,11 +516,6 @@ fn test_internal_with_extern_on_function() {
     assert!(
         !has_diagnostic(&checker, "invalid-modifier"),
         "Should NOT report invalid-modifier for internal extern fn: {:?}",
-        checker.diagnostics()
-    );
-    assert!(
-        has_diagnostic(&checker, "experimental-feature"),
-        "Should report experimental-feature for internal fn: {:?}",
         checker.diagnostics()
     );
 }

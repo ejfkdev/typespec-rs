@@ -60,6 +60,12 @@ impl Checker {
             return std_id;
         }
 
+        // Recursive alias through a model expression resolves to the
+        // in-progress model type instead of erroring (microsoft/typespec#10684).
+        if let Some(in_progress) = self.resolve_pending_alias_model_expression(&name) {
+            return in_progress;
+        }
+
         // Check if this name is currently being resolved (circular reference detection)
         if let Some(error) = self.check_circular_reference(&name) {
             return error;
@@ -359,6 +365,30 @@ impl Checker {
         // Scan decorator arguments
         for &dec_id in decorators {
             self.collect_template_param_refs(&ast_ref, dec_id, &tmpl_param_names, &mut used_params);
+        }
+
+        // Scan template parameter constraints and defaults — a parameter used
+        // in another parameter's default (e.g. `Properties extends Model =
+        // TagsUpdateModel<Resource>`, microsoft/typespec#11477) counts as used.
+        for &param_id in template_param_ids {
+            if let Some(AstNode::TemplateParameterDeclaration(d)) = ast_ref.id_to_node(param_id) {
+                if let Some(constraint) = d.constraint {
+                    self.collect_template_param_refs(
+                        &ast_ref,
+                        constraint,
+                        &tmpl_param_names,
+                        &mut used_params,
+                    );
+                }
+                if let Some(default) = d.default {
+                    self.collect_template_param_refs(
+                        &ast_ref,
+                        default,
+                        &tmpl_param_names,
+                        &mut used_params,
+                    );
+                }
+            }
         }
 
         // Scan declaration-specific AST subtrees

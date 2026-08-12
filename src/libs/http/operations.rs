@@ -999,7 +999,25 @@ fn process_envelope_response(
 /// - Verb inference (POST if body exists, else GET)
 /// - Response resolution with union variant flattening
 /// - Authentication resolution
+// Cache key for resolved HTTP operations (microsoft/typespec#11318).
+const HTTP_OPERATION_CACHE_KEY: &str = "@typespec/http.httpOperationCache";
+
 pub fn get_http_operation(
+    checker: &Checker,
+    state: &StateAccessors,
+    operation_id: TypeId,
+) -> Option<HttpOperation> {
+    let is_finished = checker
+        .get_type(operation_id)
+        .is_some_and(|t| t.is_finished());
+    // Resolution is cached at the program level from the "validating" stage
+    // onward (microsoft/typespec#11318).
+    checker.use_cache(HTTP_OPERATION_CACHE_KEY, operation_id, is_finished, || {
+        get_http_operation_internal(checker, state, operation_id)
+    })
+}
+
+fn get_http_operation_internal(
     checker: &Checker,
     state: &StateAccessors,
     operation_id: TypeId,
@@ -1958,6 +1976,76 @@ mod tests {
             join_path_segments(&["".to_string(), "bar".to_string()]),
             "/bar"
         );
+    }
+
+    // ---- use_cache semantics (microsoft/typespec#11318) ----
+
+    /// Ported from TS cache.test.ts: values are cached from the validating
+    /// stage onward for finished types.
+    #[test]
+    fn test_use_cache_caches_after_check() {
+        let checker = crate::checker::test_utils::check(
+            r#"
+            model Foo { x: string }
+        "#,
+        );
+        let foo = checker.get_type_by_name("Foo").unwrap();
+        // After check_program the stage is "emitting", so caching is active.
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let calls1 = calls.clone();
+        let v1: u32 = checker.use_cache("test-key", foo, true, move || {
+            calls1.set(calls1.get() + 1);
+            42
+        });
+        let calls2 = calls.clone();
+        let v2: u32 = checker.use_cache("test-key", foo, true, move || {
+            calls2.set(calls2.get() + 1);
+            43
+        });
+        assert_eq!(v1, 42);
+        assert_eq!(v2, 42, "second call should return the cached value");
+        assert_eq!(calls.get(), 1, "compute should run only once");
+    }
+
+    /// Ported from TS cache.test.ts: unfinished types are never cached.
+    #[test]
+    fn test_use_cache_skips_unfinished_types() {
+        let checker = crate::checker::test_utils::check("model Foo { x: string }");
+        let foo = checker.get_type_by_name("Foo").unwrap();
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let calls1 = calls.clone();
+        let _: u32 = checker.use_cache("unf-key", foo, false, move || {
+            calls1.set(calls1.get() + 1);
+            1
+        });
+        let calls2 = calls.clone();
+        let _: u32 = checker.use_cache("unf-key", foo, false, move || {
+            calls2.set(calls2.get() + 1);
+            2
+        });
+        assert_eq!(calls.get(), 2, "unfinished types are never cached");
+    }
+
+    /// Ported from TS cache.test.ts: no caching during the checking stage.
+    #[test]
+    fn test_use_cache_inactive_during_checking() {
+        use crate::checker::CompilationStage;
+        let checker = crate::checker::test_utils::check("model Foo { x: string }");
+        let foo = checker.get_type_by_name("Foo").unwrap();
+        // Simulate the checking stage.
+        checker.current_stage.set(CompilationStage::Checking);
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let calls1 = calls.clone();
+        let _: u32 = checker.use_cache("chk-key", foo, true, move || {
+            calls1.set(calls1.get() + 1);
+            1
+        });
+        let calls2 = calls.clone();
+        let _: u32 = checker.use_cache("chk-key", foo, true, move || {
+            calls2.set(calls2.get() + 1);
+            2
+        });
+        assert_eq!(calls.get(), 2, "no caching during checking stage");
     }
 
     // ---- get_http_operation full pipeline tests (from parameters.test.ts) ----

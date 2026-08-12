@@ -127,14 +127,12 @@ impl Checker {
                 // Navigate into namespace
                 if i == 0 {
                     current_ns_id = self.resolve_declared_name(part);
-                } else if let Some(ns_id) = current_ns_id {
-                    if let Some(Type::Namespace(ns)) = self.get_type(ns_id) {
-                        current_ns_id = ns.namespaces.get(*part).copied();
-                    } else {
-                        return None;
-                    }
                 } else {
-                    return None;
+                    let ns_id = current_ns_id?;
+                    let Some(Type::Namespace(ns)) = self.get_type(ns_id) else {
+                        return None;
+                    };
+                    current_ns_id = ns.namespaces.get(*part).copied();
                 }
             }
         }
@@ -145,8 +143,9 @@ impl Checker {
     /// Resolve a decorator name via using declarations.
     /// Looks in each using'd namespace's decorator_declarations.
     fn resolve_decorator_via_using(&self, name: &str) -> Option<TypeId> {
-        for (_, using_ns_name) in &self.using_declarations {
-            if let Some(ns_id) = self.resolve_namespace_by_name(using_ns_name)
+        for (_, using_ns_name, resolved_ns) in &self.using_declarations {
+            let ns_opt = resolved_ns.or_else(|| self.resolve_namespace_by_name(using_ns_name));
+            if let Some(ns_id) = ns_opt
                 && let Some(Type::Namespace(ns)) = self.get_type(ns_id)
                 && let Some(&dec_id) = ns.decorator_declarations.get(name)
             {

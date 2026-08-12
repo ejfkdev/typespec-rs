@@ -198,9 +198,10 @@ model Oauth2Auth<flows extends OAuth2Flow[]> {
   flows: flows;
 }
 
-model OpenIDConnectAuth<openIdConnectUrl extends string> {
+model OpenIdConnectAuth<ConnectUrl extends string, Scopes extends string[] = []> {
   type: "openIdConnect";
-  openIdConnectUrl: openIdConnectUrl;
+  openIdConnectUrl: ConnectUrl;
+  scopes: Scopes;
 }
 
 model NoAuth {
@@ -212,7 +213,7 @@ union Auth {
   BearerAuth,
   ApiKeyAuth<"header" | "query" | "cookie", string>,
   Oauth2Auth<OAuth2Flow[]>,
-  OpenIDConnectAuth<string>,
+  OpenIdConnectAuth<string>,
   NoAuth,
 }
 

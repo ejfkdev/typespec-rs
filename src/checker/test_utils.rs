@@ -45,6 +45,37 @@ pub fn check_with_decorators(source: &str, decorators: Vec<(&str, &str, &str)>) 
     checker
 }
 
+/// Parse source code with compiler feature flags enabled, run the checker,
+/// and return the Checker instance.
+pub fn check_with_features(source: &str, features: &[&str]) -> Checker {
+    let result = parse(source);
+    let options = crate::diagnostics::CompilerOptions {
+        features: features.iter().map(|f| f.to_string()).collect(),
+        ..crate::diagnostics::CompilerOptions::default()
+    };
+    let mut checker = Checker::with_options(options);
+    checker.set_parse_result(result.root_id, result.builder);
+    checker.check_program();
+    checker
+}
+
+/// Parse source code with a single compiler feature flag enabled.
+pub fn check_with_feature(source: &str, feature: &str) -> Checker {
+    check_with_features(source, &[feature])
+}
+
+/// Parse main source with an injected library source (a separate virtual
+/// file) and return the Checker instance. Used to test multi-file semantics
+/// without npm package resolution.
+pub fn check_with_library(lib: &str, main: &str) -> Checker {
+    let options = crate::parser::ParseOptions::new(vec![lib.to_string()]);
+    let result = crate::parser::parse_with_options(main, options);
+    let mut checker = Checker::new();
+    checker.set_parse_result(result.root_id, result.builder);
+    checker.check_program();
+    checker
+}
+
 /// Get all diagnostics (parse + checker) as a single Vec.
 pub fn all_diagnostics(source: &str) -> Vec<Diagnostic> {
     let (checker, mut parse_diags) = check_with_parse_diagnostics(source);

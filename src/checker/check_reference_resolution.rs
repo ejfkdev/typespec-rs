@@ -313,6 +313,12 @@ impl Checker {
             return std_id;
         }
 
+        // Recursive alias through a model expression resolves to the
+        // in-progress model type instead of erroring (microsoft/typespec#10684).
+        if let Some(in_progress) = self.resolve_pending_alias_model_expression(&name) {
+            return in_progress;
+        }
+
         // Check if this name is currently being resolved (circular reference detection)
         if let Some(error) = self.check_circular_reference(&name) {
             return error;

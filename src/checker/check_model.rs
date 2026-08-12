@@ -378,6 +378,34 @@ impl Checker {
                     let resolved_target_id = self.resolve_alias_chain(target_type_id);
                     let target_type = self.get_type(resolved_target_id).cloned();
 
+                    // Transitive spread cycle detection (microsoft/typespec#10684):
+                    // if the target model was already spread by an ancestor of this
+                    // model, spreading it again forms a cycle.
+                    // TS: spreadResolutionAncestors bookkeeping in checkSpreadTarget.
+                    if matches!(target_type, Some(Type::Model(_))) {
+                        let model_ancestors = self
+                            .spread_resolution_ancestors
+                            .get(&type_id)
+                            .cloned()
+                            .unwrap_or_default();
+                        if model_ancestors.contains(&resolved_target_id) {
+                            if ctx.mapper.is_none() {
+                                self.error_at(
+                                    node_id,
+                                    "spread-model",
+                                    "Cannot spread type within its own declaration.",
+                                );
+                            }
+                            continue;
+                        }
+                        let target_ancestors = self
+                            .spread_resolution_ancestors
+                            .entry(resolved_target_id)
+                            .or_default();
+                        target_ancestors.insert(type_id);
+                        target_ancestors.extend(model_ancestors.iter().copied());
+                    }
+
                     let is_error_type = matches!(&target_type, Some(Type::Intrinsic(i)) if i.name == IntrinsicTypeName::ErrorType);
 
                     match target_type {
@@ -789,6 +817,20 @@ impl Checker {
             }
             Some(AstNode::DecoratorExpression(de)) => {
                 for &arg_id in &de.arguments {
+                    self.collect_template_param_refs(ast, arg_id, param_names, used);
+                }
+            }
+            Some(AstNode::StringTemplateExpression(st)) => {
+                for &span_id in &st.spans {
+                    self.collect_template_param_refs(ast, span_id, param_names, used);
+                }
+            }
+            Some(AstNode::StringTemplateSpan(span)) => {
+                self.collect_template_param_refs(ast, span.expression, param_names, used);
+            }
+            Some(AstNode::CallExpression(call)) => {
+                self.collect_template_param_refs(ast, call.target, param_names, used);
+                for &arg_id in &call.arguments {
                     self.collect_template_param_refs(ast, arg_id, param_names, used);
                 }
             }

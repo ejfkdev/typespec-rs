@@ -252,6 +252,7 @@ impl Checker {
                 target: None,
                 target_type: "unknown".to_string(),
                 parameters: Vec::new(),
+                declaration_kind: crate::checker::types::DecoratorDeclarationKind::Extern,
                 is_finished: true,
             }));
 
@@ -325,6 +326,7 @@ impl Checker {
                 target: None,
                 target_type: def.target_type.clone(),
                 parameters: params,
+                declaration_kind: crate::checker::types::DecoratorDeclarationKind::Extern,
                 is_finished: true,
             }));
 

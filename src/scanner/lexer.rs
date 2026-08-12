@@ -252,10 +252,14 @@ impl TokenKind {
         )
     }
 
-    /// Check if this token is a modifier keyword (extern, internal).
-    /// Ported from TS scanner.ts isModifier().
+    /// Check if this token is a modifier keyword (extern, internal, auto).
+    /// Ported from TS scanner.ts isModifier(). `auto` moved from the reserved
+    /// keywords to the modifiers in microsoft/typespec#10197.
     pub fn is_modifier(&self) -> bool {
-        matches!(self, TokenKind::ExternKeyword | TokenKind::InternalKeyword)
+        matches!(
+            self,
+            TokenKind::ExternKeyword | TokenKind::InternalKeyword | TokenKind::AutoKeyword
+        )
     }
 
     /// Check if this token is a statement-level keyword (import, model, namespace, etc.).
@@ -318,7 +322,6 @@ impl TokenKind {
                 | TokenKind::ImplKeyword
                 | TokenKind::SatisfiesKeyword
                 | TokenKind::FlagKeyword
-                | TokenKind::AutoKeyword
                 | TokenKind::PartialKeyword
                 | TokenKind::PrivateKeyword
                 | TokenKind::PublicKeyword

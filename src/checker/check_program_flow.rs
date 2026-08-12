@@ -23,16 +23,23 @@ impl Checker {
         self.initialize_custom_decorators();
 
         // 4. Check all source files
+        self.current_stage.set(CompilationStage::Checking);
         self.check_source_file(self.root_id);
 
         // 5. Validate internal decorator usage
+        self.current_stage.set(CompilationStage::Validating);
         self.internal_decorator_validation();
 
         // 6. Report unused using declarations
+        self.current_stage.set(CompilationStage::Linting);
         self.report_unused_usings();
 
         // 7. Run deferred validations
         self.run_deferred_validations();
+
+        // Checking complete: downstream consumers (emitters, etc.) observe the
+        // "emitting" stage so per-type caches are active.
+        self.current_stage.set(CompilationStage::Emitting);
     }
 
     /// Check a single source file (TypeSpecScript node)

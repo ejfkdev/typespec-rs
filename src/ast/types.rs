@@ -505,6 +505,9 @@ pub struct NamespaceDeclaration {
     pub statements: Vec<NodeId>,
     pub decorators: Vec<NodeId>,
     pub modifiers: Vec<NodeId>,
+    /// Blockless form (`namespace Foo;`): all following top-level statements
+    /// belong to this namespace.
+    pub blockless: bool,
 }
 
 /// Using declaration - `using Foo;`
@@ -773,4 +776,6 @@ pub struct Modifier {
 pub enum ModifierKind {
     Extern,
     Internal,
+    /// `auto` modifier on decorator declarations (microsoft/typespec#10197)
+    Auto,
 }

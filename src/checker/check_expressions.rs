@@ -31,6 +31,18 @@ impl Checker {
         type_id
     }
 
+    /// Get the element type of an array model type (its indexer value type).
+    /// Returns `None` if the type is not an array model.
+    pub(crate) fn get_array_element_type(&self, array_type_id: TypeId) -> Option<TypeId> {
+        let resolved = self.resolve_alias_chain(array_type_id);
+        match self.get_type(resolved)? {
+            Type::Model(m) if type_utils::is_array_model_type(&self.type_store, m) => {
+                Some(m.indexer?.1)
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn check_tuple_expression(&mut self, ctx: &CheckContext, node_id: NodeId) -> TypeId {
         let (_, node) = require_ast_node!(self, node_id, TupleExpression, self.error_type);
 
@@ -447,6 +459,16 @@ impl Checker {
                 // Check the interpolated expression
                 let expr_type_id = self.check_node(&ctx, span.expression);
 
+                // Function call interpolations are deferred to template
+                // instantiation (microsoft/typespec#11056): the call cannot
+                // be evaluated while the template declaration is checked, so
+                // no serializability diagnostic is emitted here — the call is
+                // re-evaluated when the template is instantiated.
+                let is_deferred_call = matches!(
+                    ast.id_to_node(span.expression),
+                    Some(AstNode::CallExpression(_))
+                );
+
                 // Determine if this interpolation is a value or a type
                 // Check the expression node to determine its nature
                 let expr_name = match ast.id_to_node(span.expression) {
@@ -500,7 +522,9 @@ impl Checker {
                                     Type::String(_) | Type::Number(_) | Type::Boolean(_) => {}
                                     Type::Intrinsic(_) => {}
                                     _ => {
-                                        self.error_at(node_id, "non-literal-string-template", "Value interpolated in this string template cannot be converted to a string. Only literal types can be automatically interpolated.");
+                                        if !is_deferred_call {
+                                            self.error_at(node_id, "non-literal-string-template", "Value interpolated in this string template cannot be converted to a string. Only literal types can be automatically interpolated.");
+                                        }
                                     }
                                 }
                             }
@@ -508,7 +532,10 @@ impl Checker {
                         }
                         _ => {
                             // Non-literal types cannot be interpolated in string templates
-                            self.error_at(node_id, "non-literal-string-template", "Value interpolated in this string template cannot be converted to a string. Only literal types can be automatically interpolated.");
+                            // (deferred function calls are exempt, see above).
+                            if !is_deferred_call {
+                                self.error_at(node_id, "non-literal-string-template", "Value interpolated in this string template cannot be converted to a string. Only literal types can be automatically interpolated.");
+                            }
                             has_type_interp = true;
                         }
                     }
@@ -573,10 +600,25 @@ impl Checker {
     }
 
     pub(crate) fn check_call_expression(&mut self, ctx: &CheckContext, node_id: NodeId) -> TypeId {
-        let (_, call_node) = require_ast_node!(self, node_id, CallExpression, self.error_type);
+        let (ast, call_node) = require_ast_node!(self, node_id, CallExpression, self.error_type);
         let (target_id, arguments) = (call_node.target, call_node.arguments.clone());
 
-        let target_type = self.check_node(ctx, target_id);
+        // Resolve the call target. Function declarations are valid call
+        // targets even though they are not valid type references, so resolve
+        // identifier targets directly before falling back to the type-checking
+        // path (which would reject them with invalid-type-ref).
+        let target_type = if matches!(ast.id_to_node(target_id), Some(AstNode::Identifier(_))) {
+            let name = Self::get_identifier_name(&ast, target_id);
+            match self
+                .resolve_declared_name(&name)
+                .filter(|&tid| matches!(self.get_type(tid), Some(Type::FunctionType(_))))
+            {
+                Some(tid) => tid,
+                None => self.check_node(ctx, target_id),
+            }
+        } else {
+            self.check_node(ctx, target_id)
+        };
 
         // Ported from TS checker.ts:4543-4586 — checkCallExpression
         // Validate that the target is callable (Scalar, ScalarConstructor, or FunctionType)
@@ -615,20 +657,25 @@ impl Checker {
                     }
 
                     // Validate argument count against function parameters
-                    let min_params = ft.parameters.iter().filter(|p| !p.optional).count();
+                    let min_params = ft
+                        .parameters
+                        .iter()
+                        .filter(|p| !p.optional && !p.rest)
+                        .count();
                     let max_params = if ft.parameters.iter().any(|p| p.rest) {
                         usize::MAX
                     } else {
                         ft.parameters.len()
                     };
 
+                    // TS: invalid-argument-count diagnostics target the call
+                    // expression (microsoft/typespec#10880).
                     if arguments.len() < min_params {
                         self.error_at(
                             node_id,
-                            "missing-arguments",
+                            "invalid-argument-count",
                             &format!(
-                                "Function '{}' expects at least {} argument(s), but got {}.",
-                                ft.name,
+                                "Expected at least {} arguments, but got {}.",
                                 min_params,
                                 arguments.len()
                             ),
@@ -636,10 +683,9 @@ impl Checker {
                     } else if max_params != usize::MAX && arguments.len() > max_params {
                         self.error_at(
                             node_id,
-                            "too-many-arguments",
+                            "invalid-argument-count",
                             &format!(
-                                "Function '{}' expects at most {} argument(s), but got {}.",
-                                ft.name,
+                                "Expected {} arguments, but got {}.",
                                 max_params,
                                 arguments.len()
                             ),
@@ -647,8 +693,10 @@ impl Checker {
                     }
 
                     // Validate argument types against parameter types
+                    let rest_param = ft.parameters.iter().find(|p| p.rest).cloned();
                     for (i, &arg_id) in arguments.iter().enumerate() {
-                        if let Some(param) = ft.parameters.get(i)
+                        let fixed_param = ft.parameters.get(i).filter(|p| !p.rest);
+                        if let Some(param) = fixed_param
                             && let Some(param_type_id) = param.r#type
                             && let Some(&arg_type_id) = self.node_type_map.get(&arg_id)
                         {
@@ -656,6 +704,20 @@ impl Checker {
                                 self.is_type_assignable_to(arg_type_id, param_type_id, arg_id);
                             if !is_assignable {
                                 self.error_unassignable("unassignable", arg_type_id, param_type_id);
+                            }
+                        } else if let Some(rest) = &rest_param
+                            && let Some(rest_type_id) = rest.r#type
+                            && let Some(&arg_type_id) = self.node_type_map.get(&arg_id)
+                        {
+                            // Rest argument: validate against the rest parameter's
+                            // element constraint (microsoft/typespec#10880).
+                            let element_type = self
+                                .get_array_element_type(rest_type_id)
+                                .unwrap_or(rest_type_id);
+                            let (is_assignable, _) =
+                                self.is_type_assignable_to(arg_type_id, element_type, arg_id);
+                            if !is_assignable {
+                                self.error_unassignable("unassignable", arg_type_id, element_type);
                             }
                         }
                     }

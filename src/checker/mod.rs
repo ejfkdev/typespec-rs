@@ -9,6 +9,7 @@
 //! - Value vs Type distinction
 
 // Module declarations
+pub mod auto_decorator;
 mod check_alias;
 mod check_augment;
 mod check_clone;
@@ -35,6 +36,7 @@ mod check_union;
 mod check_visibility;
 pub mod decorator_utils;
 mod helpers;
+pub mod suppression_tracking;
 pub mod type_relation;
 pub mod type_utils;
 pub mod types;
@@ -361,6 +363,20 @@ pub struct DeferredValidation {
 // ============================================================================
 
 /// The main checker struct
+/// The current stage of the compilation pipeline.
+/// Stages progress in order: parsing → checking → validating → linting → emitting.
+///
+/// Ported from TS `CompilationStage` (microsoft/typespec#11318).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CompilationStage {
+    #[default]
+    Parsing,
+    Checking,
+    Validating,
+    Linting,
+    Emitting,
+}
+
 pub struct Checker {
     // ---- Type/Value stores ----
     /// Type store for all created types
@@ -373,6 +389,11 @@ pub struct Checker {
     ast: Option<Rc<AstBuilder>>,
     /// Root node ID from parse result
     pub root_id: NodeId,
+
+    // ---- Compilation options ----
+    /// Compiler options for this compilation (feature flags, etc.).
+    /// Ported from TS `program.compilerOptions`.
+    pub options: crate::diagnostics::CompilerOptions,
 
     // ---- Well-known types ----
     /// ErrorType intrinsic TypeId
@@ -428,8 +449,16 @@ pub struct Checker {
     pub pending_type_names: HashSet<String>,
     /// Names of operations currently being checked for circular `is` references
     pub pending_op_signature_names: HashSet<String>,
-    /// Template parameter names currently being checked (for circular constraint detection)
+    /// Names of template parameters currently being checked (for circular constraint detection)
     pub pending_template_constraint_names: HashSet<String>,
+    /// For each model, the set of models that (transitively) spread it.
+    /// Used to detect model-to-model spread cycles.
+    /// Ported from TS `spreadResolutionAncestors` (microsoft/typespec#10684).
+    pub spread_resolution_ancestors: HashMap<TypeId, HashSet<TypeId>>,
+    /// Value node of each alias currently being checked, keyed by alias name.
+    /// Lets reference resolution return the in-progress model type for
+    /// recursive aliases through model expressions (microsoft/typespec#10684).
+    pub pending_alias_values: HashMap<String, NodeId>,
     /// Recursion depth counter for safety
     pub check_depth: u32,
 
@@ -442,7 +471,46 @@ pub struct Checker {
     pub deprecation_tracker: crate::deprecation::DeprecationTracker,
 
     /// Map from declaration NodeId to diagnostic codes suppressed by #suppress directives
-    pub suppressed_diagnostics: HashMap<NodeId, Vec<String>>,
+    pub suppressed_diagnostics: HashMap<NodeId, Vec<check_directives::SuppressedCode>>,
+
+    /// Nodes whose directives have been scanned for #suppress entries
+    /// (lazy collection for non-declaration nodes such as model properties).
+    pub suppression_scanned: HashSet<NodeId>,
+
+    /// Tracks #suppress directives and which were actually used
+    /// (ported from TS suppressionTracker, microsoft/typespec#10805)
+    pub suppression_tracker: suppression_tracking::SuppressionTracker,
+
+    /// FQN of each decorator declaration, keyed by decorator TypeId
+    /// (populated when the declaration is checked). Used for auto decorator
+    /// state keys (microsoft/typespec#10197).
+    pub decorator_fqns: HashMap<TypeId, String>,
+
+    /// Auto decorator state: state key (`dec:<fqn>`) -> target TypeId ->
+    /// record of (parameter name, value).
+    /// Ported from TS `program.stateMap(getAutoDecoratorStateKey(fqn))`.
+    pub auto_decorator_state:
+        HashMap<String, HashMap<TypeId, Vec<(String, auto_decorator::AutoDecoratorValue)>>>,
+
+    /// Resolver for short/full diagnostic and linter rule codes
+    /// (microsoft/typespec#11209). Built from loaded library names unless
+    /// explicitly set.
+    pub diagnostic_code_resolver: Option<crate::diagnostic_code::DiagnosticCodeResolver>,
+
+    /// Current stage of the compilation pipeline
+    /// (microsoft/typespec#11318).
+    pub current_stage: std::cell::Cell<CompilationStage>,
+
+    /// Experimental per-type cache, active from the "validating" stage onward
+    /// (microsoft/typespec#11318). Port of TS `useCache` keyed by
+    /// (namespace key, type).
+    experimental_cache:
+        std::cell::RefCell<HashMap<(String, TypeId), std::rc::Rc<dyn std::any::Any>>>,
+
+    /// Names of loaded libraries, used to decide whether a suppressed
+    /// diagnostic code is "available" for unused-suppression reporting
+    /// (mirrors TS `sourceResolution.loadedLibraries`).
+    pub loaded_library_names: Vec<String>,
 
     /// Set of NodeIds for which directives have already been processed
     pub directives_processed: HashSet<NodeId>,
@@ -461,7 +529,7 @@ pub struct Checker {
 
     // ---- Unused using tracking ----
     /// List of (NodeId, namespace_name) for all using declarations
-    pub using_declarations: Vec<(NodeId, String)>,
+    pub using_declarations: Vec<(NodeId, String, Option<TypeId>)>,
     /// Set of namespace names that have been used (referenced during type resolution)
     pub used_using_names: HashSet<String>,
 
@@ -602,6 +670,7 @@ impl Checker {
             value_store,
             ast: None,
             root_id: 0,
+            options: crate::diagnostics::CompilerOptions::default(),
             error_type,
             void_type,
             never_type,
@@ -622,10 +691,20 @@ impl Checker {
             pending_type_names: HashSet::with_capacity(8),
             pending_op_signature_names: HashSet::with_capacity(8),
             pending_template_constraint_names: HashSet::with_capacity(4),
+            spread_resolution_ancestors: HashMap::new(),
+            pending_alias_values: HashMap::new(),
             check_depth: 0,
             type_relation: TypeRelationChecker::new(),
             deprecation_tracker: crate::deprecation::DeprecationTracker::new(),
             suppressed_diagnostics: HashMap::new(),
+            suppression_scanned: HashSet::new(),
+            suppression_tracker: suppression_tracking::SuppressionTracker::new(),
+            decorator_fqns: HashMap::new(),
+            auto_decorator_state: HashMap::new(),
+            diagnostic_code_resolver: None,
+            current_stage: std::cell::Cell::new(CompilationStage::default()),
+            experimental_cache: std::cell::RefCell::new(HashMap::new()),
+            loaded_library_names: Vec::new(),
             directives_processed: HashSet::with_capacity(8),
             value_exact_types: HashMap::with_capacity(16),
             internal_declarations: HashSet::with_capacity(8),
@@ -649,7 +728,142 @@ impl Checker {
     /// Set the parse result from the parser
     pub fn set_parse_result(&mut self, root_id: NodeId, builder: Rc<AstBuilder>) {
         self.root_id = root_id;
+        // Collect #suppress directives for unused-suppression tracking
+        // (TS creates the tracker after source resolution, before checking).
+        self.suppression_tracker =
+            suppression_tracking::SuppressionTracker::collect_from_ast(&builder);
+        // Warn on duplicate #suppress directives for the same code on one
+        // node (microsoft/typespec#11113). TS reports these right after
+        // creating the suppression tracker.
+        for directive in suppression_tracking::find_duplicate_suppressions(&builder) {
+            self.warning_at(
+                directive.node,
+                "duplicate-suppression",
+                &format!(
+                    "Diagnostic \"{}\" is already suppressed on this node.",
+                    directive.code
+                ),
+            );
+        }
+        // Build the diagnostic code resolver from loaded library names when it
+        // was not set explicitly, then warn on suppressions that use an
+        // ambiguous short name (microsoft/typespec#11209).
+        if self.diagnostic_code_resolver.is_none() {
+            let library_infos: Vec<crate::diagnostic_code::LibraryNameInfo> = self
+                .loaded_library_names
+                .iter()
+                .map(|name| crate::diagnostic_code::LibraryNameInfo {
+                    name: name.clone(),
+                    alias: None,
+                })
+                .collect();
+            self.diagnostic_code_resolver = Some(
+                crate::diagnostic_code::create_diagnostic_code_resolver(library_infos),
+            );
+        }
+        if let Some(resolver) = self.diagnostic_code_resolver.as_ref() {
+            for (directive, conflict) in
+                suppression_tracking::find_ambiguous_suppressions(&builder, Some(resolver))
+            {
+                self.warning_at(
+                    directive.node,
+                    "ambiguous-short-name",
+                    &format!(
+                        "Short name \"{}\" is ambiguous. It could refer to {}. Use the full name instead.",
+                        conflict.short_name,
+                        crate::diagnostic_code::format_short_name_candidates(&conflict.candidates)
+                    ),
+                );
+            }
+        }
         self.ast = Some(builder);
+    }
+
+    /// Create a new checker with the given compiler options.
+    pub fn with_options(options: crate::diagnostics::CompilerOptions) -> Self {
+        let mut checker = Self::new();
+        checker.options = options;
+        checker
+    }
+
+    /// Set the compiler options (feature flags, etc.) for this compilation.
+    pub fn set_options(&mut self, options: crate::diagnostics::CompilerOptions) {
+        self.options = options;
+    }
+
+    /// Get a cached value for the given key, computing it if not already
+    /// cached.
+    ///
+    /// Caching is only active from the "validating" stage onward and only for
+    /// finished types. During "parsing" and "checking", decorators are still
+    /// being applied. Unfinished types (during decorator application or inside
+    /// mutators) are never cached because the type graph may not yet be in a
+    /// stable state.
+    ///
+    /// Ported from TS `useCache` (experimental/cache.ts,
+    /// microsoft/typespec#11318).
+    pub fn use_cache<T: Clone + 'static>(
+        &self,
+        key: &str,
+        type_id: TypeId,
+        type_is_finished: bool,
+        compute: impl FnOnce() -> T,
+    ) -> T {
+        let stage = self.current_stage.get();
+        // Only cache from "validating" onward.
+        if !matches!(
+            stage,
+            CompilationStage::Validating | CompilationStage::Linting | CompilationStage::Emitting
+        ) {
+            return compute();
+        }
+        // Don't cache results for unfinished types.
+        if !type_is_finished {
+            return compute();
+        }
+        let cache_key = (key.to_string(), type_id);
+        if let Ok(cache) = self.experimental_cache.try_borrow()
+            && let Some(existing) = cache.get(&cache_key)
+            && let Ok(v) = existing.clone().downcast::<T>()
+        {
+            return (*v).clone();
+        }
+        let value = compute();
+        if let Ok(mut cache) = self.experimental_cache.try_borrow_mut() {
+            cache.insert(cache_key, std::rc::Rc::new(value.clone()));
+        }
+        value
+    }
+
+    /// Whether a compiler feature is enabled for the given declaration node.
+    ///
+    /// Ported from TS `isCompilerFeatureEnabled` (features.ts), including
+    /// microsoft/typespec#11235: features are scoped per package. Project
+    /// code consults the compilation's `features` list; injected library
+    /// source consults the features the library enabled for its own code
+    /// (upstream: the library's own tspconfig.yaml). A feature enabled for
+    /// the consuming project does not enable it for library code.
+    pub fn is_compiler_feature_enabled(&self, feature: &str, node_id: Option<NodeId>) -> bool {
+        // Without a node, fall back to the project config.
+        let Some(node_id) = node_id else {
+            return self.options.features.iter().any(|f| f == feature);
+        };
+        let Some(ast) = &self.ast else {
+            return self.options.features.iter().any(|f| f == feature);
+        };
+        let Some(span) = ast.node_span(node_id) else {
+            return self.options.features.iter().any(|f| f == feature);
+        };
+        let line = span.start.line;
+        if (line as usize) <= ast.library_line_offset {
+            // Library region: use the owning library's own feature list.
+            return ast
+                .library_feature_ranges
+                .iter()
+                .find(|r| line >= r.start_line && line <= r.end_line)
+                .is_some_and(|r| r.features.iter().any(|f| f == feature));
+        }
+        self.options.features.iter().any(|f| f == feature)
     }
 
     // ========================================================================
@@ -806,32 +1020,54 @@ impl Checker {
     ///
     /// Anonymous (empty-name) namespaces are skipped in the chain.
     pub(crate) fn resolve_declared_name(&self, name: &str) -> Option<TypeId> {
-        let mut ns_chain = Vec::new();
+        // Walk enclosing namespaces innermost-first, trying each one's full
+        // dotted prefix. Namespace names may themselves be dotted (blockless
+        // `namespace A.B;` declarations store the full name), so each level's
+        // prefix is computed by walking to the root (microsoft/typespec#11552).
+        let mut tried: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut ns_id = self.current_namespace;
         while let Some(id) = ns_id {
-            if let Some(Type::Namespace(ns)) = self.get_type(id) {
-                if !ns.name.is_empty() {
-                    ns_chain.push(ns.name.clone());
-                }
-                ns_id = ns.namespace;
-            } else {
-                break;
-            }
-        }
-        for prefix_len in (0..=ns_chain.len()).rev() {
-            let fqn = if prefix_len == 0 {
-                name.to_string()
-            } else {
-                let mut parts: Vec<&str> =
-                    ns_chain[..prefix_len].iter().map(|s| s.as_str()).collect();
-                parts.push(name);
-                parts.join(".")
+            let next = match self.get_type(id) {
+                Some(Type::Namespace(ns)) => ns.namespace,
+                _ => break,
             };
-            if let Some(&type_id) = self.declared_types.get(&fqn) {
-                return Some(type_id);
+            let prefix = self.full_namespace_prefix(id);
+            if !prefix.is_empty() && tried.insert(prefix.clone()) {
+                let fqn = format!("{}.{}", prefix, name);
+                if let Some(&type_id) = self.declared_types.get(&fqn) {
+                    return Some(type_id);
+                }
+            }
+            ns_id = next;
+        }
+        self.declared_types.get(name).copied()
+    }
+
+    /// Compute the full dotted name of a namespace by walking to the root.
+    /// A namespace whose stored name is already dotted (blockless declaration)
+    /// already contains its full path.
+    fn full_namespace_prefix(&self, ns_id: TypeId) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        let mut id = Some(ns_id);
+        while let Some(nid) = id {
+            match self.get_type(nid) {
+                Some(Type::Namespace(ns)) => {
+                    if ns.name.is_empty() {
+                        id = ns.namespace;
+                        continue;
+                    }
+                    parts.push(ns.name.clone());
+                    // Dotted names already carry the full path from the root.
+                    if ns.name.contains('.') {
+                        break;
+                    }
+                    id = ns.namespace;
+                }
+                _ => break,
             }
         }
-        None
+        parts.reverse();
+        parts.join(".")
     }
 
     /// Add an error diagnostic (convenience shorthand)
@@ -845,17 +1081,68 @@ impl Checker {
     }
 
     /// Add an error diagnostic with source location derived from a NodeId.
+    ///
+    /// Errors cannot be suppressed (upstream `suppressDiagnostic`): when a
+    /// `#suppress` directive matches, a `suppress-error` diagnostic is
+    /// reported at the directive location and the original error is kept.
     pub(crate) fn error_at(&mut self, node_id: NodeId, code: &str, msg: &str) {
+        if let Some(dir_node) = self.find_suppressing_directive(code) {
+            self.suppression_tracker.mark_used(dir_node);
+            let mut suppress_diag =
+                Diagnostic::error("suppress-error", "Errors cannot be suppressed.");
+            self.populate_location_from_node(&mut suppress_diag, dir_node);
+            self.diagnostics_list.push(suppress_diag);
+        }
         let mut diag = Diagnostic::error(code, msg);
         self.populate_location_from_node(&mut diag, node_id);
         self.add_diagnostic(diag);
     }
 
     /// Add a warning diagnostic with source location derived from a NodeId.
+    ///
+    /// Warnings are dropped when a matching `#suppress` directive is in scope
+    /// (the directive is then marked as used).
     pub(crate) fn warning_at(&mut self, node_id: NodeId, code: &str, msg: &str) {
+        if let Some(dir_node) = self.find_suppressing_directive(code) {
+            self.suppression_tracker.mark_used(dir_node);
+            return;
+        }
         let mut diag = Diagnostic::warning(code, msg);
         self.populate_location_from_node(&mut diag, node_id);
         self.add_diagnostic(diag);
+    }
+
+    /// Whether a diagnostic code comes from an available diagnostic source:
+    /// the compiler itself, the built-in linter, or a loaded library.
+    ///
+    /// Ported from TS `getSuppressionSourceAvailability`.
+    pub fn is_diagnostic_source_available(&self, code: &str) -> bool {
+        if crate::messages::compiler_diagnostic_codes().contains(code) {
+            return true;
+        }
+        if code.starts_with(&format!(
+            "{}/",
+            suppression_tracking::BUILT_IN_LINTER_LIBRARY_NAME
+        )) {
+            return true;
+        }
+        self.loaded_library_names
+            .iter()
+            .any(|lib| code.starts_with(&format!("{lib}/")))
+    }
+
+    /// Return all `#suppress` directives that never suppressed a diagnostic
+    /// and whose code is available from a known source.
+    ///
+    /// Ported from TS `program.suppressionTracker.getUnusedSuppressions()`.
+    pub fn unused_suppressions(&self) -> Vec<suppression_tracking::UnusedSuppression> {
+        self.suppression_tracker
+            .get_unused_suppressions(|code| self.is_diagnostic_source_available(code))
+    }
+
+    /// Set the names of loaded libraries (for unused-suppression availability).
+    pub fn set_loaded_library_names(&mut self, names: Vec<String>) {
+        self.loaded_library_names = names;
     }
 
     /// Populate a diagnostic's location from an AST node's span.
@@ -1125,46 +1412,74 @@ impl Checker {
             }
         }
 
-        // Per TS: emit experimental-feature warning for any use of 'internal' modifier
-        if modifier_flags.contains(ModifierFlags::Internal) {
-            self.warning_at(
-                node_id,
-                "experimental-feature",
-                "The 'internal' modifier is an experimental feature.",
-            );
-            // Track this declaration as internal for visibility checking
-            if let Some(&type_id) = self.node_type_map.get(&node_id) {
-                self.internal_declarations.insert(type_id);
-            }
+        // Track declarations marked `internal` for visibility checking.
+        // Note: upstream removed the experimental-feature warning for
+        // `internal` in microsoft/typespec#10855 — the modifier is stable.
+        if modifier_flags.contains(ModifierFlags::Internal)
+            && let Some(&type_id) = self.node_type_map.get(&node_id)
+        {
+            self.internal_declarations.insert(type_id);
         }
 
         // Check modifier validity using the shared check_modifiers function
         let result = modifiers::check_modifiers(modifier_flags, kind);
 
-        // Emit invalid-modifier diagnostics for disallowed modifiers
-        for invalid in &result.invalid_modifiers {
-            self.error_at(
-                node_id,
-                "invalid-modifier",
-                &format!(
-                    "Modifier '{}' is not allowed on {}.",
-                    invalid,
-                    modifiers::get_declaration_kind_text(kind)
-                ),
-            );
-        }
-
-        // Emit invalid-modifier diagnostics for missing required modifiers
-        for missing in &result.missing_modifiers {
-            self.error_at(
-                node_id,
-                "invalid-modifier",
-                &format!(
-                    "Modifier '{}' is required on {}.",
-                    missing,
-                    modifiers::get_declaration_kind_text(kind)
-                ),
-            );
+        // Emit invalid-modifier diagnostics (messages ported from TS
+        // modifiers.ts / messages.ts invalid-modifier entries).
+        for problem in &result.problems {
+            match problem {
+                modifiers::ModifierProblem::NotAllowed { modifier } => {
+                    self.error_at(
+                        node_id,
+                        "invalid-modifier",
+                        &format!(
+                            "Modifier '{}' cannot be used on declarations of type '{}'.",
+                            modifier,
+                            modifiers::get_declaration_kind_text(kind)
+                        ),
+                    );
+                }
+                modifiers::ModifierProblem::MissingRequired { modifier } => {
+                    self.error_at(
+                        node_id,
+                        "invalid-modifier",
+                        &format!(
+                            "Declaration of type '{}' is missing required modifier '{}'.",
+                            modifiers::get_declaration_kind_text(kind),
+                            modifier
+                        ),
+                    );
+                }
+                modifiers::ModifierProblem::MissingRequiredOneOf { modifiers: names } => {
+                    let joined = names
+                        .iter()
+                        .map(|n| format!("'{}'", n))
+                        .collect::<Vec<_>>()
+                        .join(" or ");
+                    self.error_at(
+                        node_id,
+                        "invalid-modifier",
+                        &format!(
+                            "Declaration of type '{}' is missing one of the required modifiers: {}.",
+                            modifiers::get_declaration_kind_text(kind),
+                            joined
+                        ),
+                    );
+                }
+                modifiers::ModifierProblem::MutuallyExclusive {
+                    modifier_a,
+                    modifier_b,
+                } => {
+                    self.error_at(
+                        node_id,
+                        "invalid-modifier",
+                        &format!(
+                            "Modifiers '{}' and '{}' cannot be used together.",
+                            modifier_a, modifier_b
+                        ),
+                    );
+                }
+            }
         }
     }
 
@@ -1367,6 +1682,47 @@ impl Checker {
                 .unwrap_or(self.error_type),
             Entity::Indeterminate(id) => *id,
             Entity::MixedConstraint(mc) => mc.type_constraint.unwrap_or(self.error_type),
+        }
+    }
+
+    /// Resolve the most relevant AST node for a diagnostic target entity.
+    ///
+    /// Ported from TS `getNodeForTarget` (diagnostics.ts), including the
+    /// value-entity handling added in microsoft/typespec#10921:
+    /// - Types: the node associated with the type
+    /// - Values: the value's own node for compound/function values, falling
+    ///   back to the value's type node (primitive values don't retain a
+    ///   direct node upstream)
+    /// - Mixed constraints: the explicit node, else the type side, else the
+    ///   value side
+    /// - Indeterminate: the inner type's node
+    pub fn get_node_for_target(&self, entity: &Entity) -> Option<NodeId> {
+        match entity {
+            Entity::Type(id) => self.get_type(*id).and_then(|t| t.node_id_from_type()),
+            Entity::Value(value_id) => {
+                let value = self.get_value(*value_id)?;
+                let value_node = match value {
+                    Value::ObjectValue(v) => v.node,
+                    Value::ArrayValue(v) => v.node,
+                    Value::FunctionValue(v) => v.node,
+                    _ => None,
+                };
+                value_node.or_else(|| {
+                    self.get_type(value.value_type())
+                        .and_then(|t| t.node_id_from_type())
+                })
+            }
+            Entity::MixedConstraint(mc) => mc
+                .node
+                .or_else(|| {
+                    mc.type_constraint
+                        .and_then(|id| self.get_type(id).and_then(|t| t.node_id_from_type()))
+                })
+                .or_else(|| {
+                    mc.value_constraint
+                        .and_then(|id| self.get_type(id).and_then(|t| t.node_id_from_type()))
+                }),
+            Entity::Indeterminate(id) => self.get_type(*id).and_then(|t| t.node_id_from_type()),
         }
     }
 
@@ -2148,6 +2504,10 @@ mod alias_tests;
 #[cfg(test)]
 mod augment_decorator_tests;
 #[cfg(test)]
+mod auto_decorator_library_tests;
+#[cfg(test)]
+mod auto_decorator_tests;
+#[cfg(test)]
 mod check_parse_errors_tests;
 #[cfg(test)]
 mod circular_ref_tests;
@@ -2167,6 +2527,8 @@ mod doc_comment_tests;
 mod duplicate_ids_tests;
 #[cfg(test)]
 mod effective_type_tests;
+#[cfg(test)]
+mod encode_tests;
 #[cfg(test)]
 mod enum_tests;
 #[cfg(test)]
@@ -2201,6 +2563,8 @@ mod scalar_tests;
 mod spread_tests;
 #[cfg(test)]
 mod string_template_tests;
+#[cfg(test)]
+mod suppression_tests;
 #[cfg(test)]
 mod template_tests;
 #[cfg(test)]

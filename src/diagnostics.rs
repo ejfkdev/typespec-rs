@@ -440,6 +440,11 @@ pub struct CompilerOptions {
     pub design_time_build: bool,
     /// Trace areas to enable
     pub trace: Option<Vec<String>>,
+    /// Compiler feature flags enabled for this compilation (e.g.
+    /// "function-declarations", "auto-decorators"). Ported from the
+    /// project-scoped `features` list in tspconfig.yaml
+    /// (microsoft/typespec#10826).
+    pub features: Vec<String>,
 }
 
 #[cfg(test)]

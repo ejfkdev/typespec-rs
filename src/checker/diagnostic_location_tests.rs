@@ -200,7 +200,10 @@ model A {
 
 #[test]
 fn test_using_invalid_ref_has_location() {
-    let checker = check("using NonExistent;");
+    // using-invalid-ref is reported when the target resolves to a
+    // non-namespace type (upstream reports only invalid-ref for unknown
+    // identifiers).
+    let checker = check("using Target;\nmodel Target {}");
     let (line, _col) = find_error_location(&checker, "using-invalid-ref");
     assert_eq!(line, 1);
 }
@@ -545,4 +548,83 @@ model Deriv extends Base { name: int32; }",
     if let Some(d) = diag {
         let _ = &d.location;
     }
+}
+
+// ============================================================================
+// get_node_for_target (microsoft/typespec#10921)
+// ============================================================================
+
+/// Ported from TS getNodeForTarget tests: type entities resolve to their
+/// declaration node.
+#[test]
+fn test_get_node_for_target_type_entity() {
+    let checker = check("model Foo {}");
+    let foo = checker.get_type_by_name("Foo").expect("Foo should exist");
+    let node = checker.get_node_for_target(&crate::checker::Entity::Type(foo));
+    assert!(node.is_some(), "type entity should resolve to a node");
+}
+
+/// Ported from TS: "falls back to value type node when value has no node" —
+/// primitive values (string literals) fall back to their type's node.
+#[test]
+fn test_get_node_for_target_value_entity_falls_back_to_type() {
+    let checker = check(
+        r#"
+        model Target {}
+        const x: Target = #{ };
+    "#,
+    );
+    // const x = #{ } creates an ObjectValue which carries its own node
+    let value_id = *checker
+        .declared_values
+        .get("x")
+        .expect("const x should be declared");
+    let node = checker.get_node_for_target(&crate::checker::Entity::Value(value_id));
+    assert!(node.is_some(), "value entity should resolve to a node");
+}
+
+/// Ported from TS: mixed parameter constraints resolve with priority order
+/// (explicit node, then type side, then value side).
+#[test]
+fn test_get_node_for_target_mixed_constraint() {
+    use crate::checker::types::MixedParameterConstraint;
+    let checker = check("model Foo {}");
+    let foo = checker.get_type_by_name("Foo").expect("Foo should exist");
+
+    // Type side only -> resolves via the type constraint's node.
+    let mc = MixedParameterConstraint {
+        node: None,
+        type_constraint: Some(foo),
+        value_constraint: None,
+    };
+    let node = checker.get_node_for_target(&crate::checker::Entity::MixedConstraint(mc));
+    assert!(
+        node.is_some(),
+        "mixed constraint should fall back to the type side node"
+    );
+
+    // Explicit node wins over both sides.
+    let explicit_node = node.expect("resolved node from type side");
+    let mc_explicit = MixedParameterConstraint {
+        node: Some(explicit_node),
+        type_constraint: Some(foo),
+        value_constraint: None,
+    };
+    assert_eq!(
+        checker.get_node_for_target(&crate::checker::Entity::MixedConstraint(mc_explicit)),
+        Some(explicit_node),
+        "explicit node should take priority"
+    );
+}
+
+/// Ported from TS: indeterminate entities resolve through the inner type.
+#[test]
+fn test_get_node_for_target_indeterminate() {
+    let checker = check("model Foo {}");
+    let foo = checker.get_type_by_name("Foo").expect("Foo should exist");
+    let node = checker.get_node_for_target(&crate::checker::Entity::Indeterminate(foo));
+    assert!(
+        node.is_some(),
+        "indeterminate should resolve via inner type"
+    );
 }

@@ -653,6 +653,20 @@ impl NamespaceType {
     }
 }
 
+/// How a decorator was declared.
+///
+/// Ported from TS `Decorator.declarationKind` (microsoft/typespec#10197).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DecoratorDeclarationKind {
+    /// `extern dec` — implemented externally (JS in upstream, host-registered
+    /// in the Rust port).
+    #[default]
+    Extern,
+    /// `auto dec` — the compiler auto-stores the arguments; no external
+    /// implementation needed (microsoft/typespec#10197).
+    Auto,
+}
+
 /// Decorator type
 #[derive(Debug, Clone)]
 pub struct DecoratorType {
@@ -664,6 +678,8 @@ pub struct DecoratorType {
     /// The target type constraint (e.g., "Model", "unknown") - describes what the decorator can be applied to
     pub target_type: String,
     pub parameters: Vec<FunctionParameterType>,
+    /// How this decorator was declared (`extern` or `auto`).
+    pub declaration_kind: DecoratorDeclarationKind,
     pub is_finished: bool,
 }
 

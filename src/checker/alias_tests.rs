@@ -147,6 +147,28 @@ fn test_template_alias_declaration() {
 // ============================================================================
 
 #[test]
+fn test_no_diagnostic_for_recursive_aliases_through_model_expressions() {
+    // Ported from: "doesn't emit diagnostics for recursive aliases through
+    // model expressions" (microsoft/typespec#10684)
+    let checker = check(
+        "
+        alias A = {
+            a: B;
+        };
+        alias B = {
+            a: A;
+        };
+    ",
+    );
+    let diags = checker.diagnostics();
+    assert!(
+        diags.is_empty(),
+        "Recursive aliases through model expressions should not diagnose: {:?}",
+        diags
+    );
+}
+
+#[test]
 fn test_circular_alias_self_reference() {
     // Ported from: "emit diagnostics if assign itself"
     let checker = check("alias A = A;");

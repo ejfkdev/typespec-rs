@@ -31,8 +31,9 @@ This project is in **early development**. The core compiler pipeline works:
 | CLI (`tspc`) | Working |
 | WASM Extensions | Working |
 | Programmatic Decorator API | Working |
+| Auto Decorators (`auto dec`) | Working |
 
-2,900+ tests passing.
+3,200+ tests passing (synced with upstream TypeSpec through v1.13+).
 
 ## Quick Start
 
@@ -42,7 +43,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-typespec_rs = "0.4.3"
+typespec_rs = "0.5.6"
 ```
 
 Parse TypeSpec and emit YAML/JSON:
@@ -241,7 +242,7 @@ let result = Parser::new(source, ParseOptions::new(vec![])
 
 ```toml
 [dependencies]
-tspc = { version = "0.4.3", features = ["wasm-extensions"] }
+tspc = { version = "0.5.6", features = ["wasm-extensions"] }
 ```
 
 ```bash
@@ -363,6 +364,13 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 - `@doc`/`@summary` fields on Model, ModelProperty, EnumMember, UnionVariant, Namespace — populated from decorator evaluation
 - Standard decorator evaluation pipeline: `@doc`, `@summary`, `@minValue`, `@maxValue`, `@pattern`, `@format`, `@minLength`, `@maxLength`, `@minItems`, `@maxItems`, `@error`, `@tag`, `@discriminator`, `@encode`
 - Official-compliant keyword handling: three-tier classification (active/reserved/modifier), reserved keywords allowed as property/enum/variant names, backtick-escaped identifiers (e.g. `` `chrome-devtools-mcp` ``)
+- Auto decorators (`auto dec`): compiler-generated metadata storage without JS implementations, with `set_auto_decorator`/`has_auto_decorator`/`get_auto_decorator_value` accessors
+- Compiler feature flags (`CompilerOptions.features`) with per-library scoping (e.g. `auto-decorators`, `function-declarations`)
+- Blockless file namespaces (`namespace Foo;`) with correct declaration scoping and `using` resolution rules
+- `#suppress` directive tracking: unused-suppression and duplicate-suppression diagnostics
+- Diagnostic code short-name resolution (`@typespec/http/x` ↔ `http/x`, library aliases, ambiguity detection)
+- Compilation stage tracking (`parsing` → `checking` → `validating` → `linting` → `emitting`) with stage-gated per-type caching (`use_cache`, HTTP operation resolution cache)
+- `@encode(string)` on boolean types; SPDX license `identifier` (mutually exclusive with `url`); OpenID Connect auth scopes
 
 What's not yet ported:
 

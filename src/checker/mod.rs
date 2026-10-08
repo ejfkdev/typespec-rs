@@ -43,7 +43,9 @@ pub mod types;
 
 // Re-exports
 pub use decorator_utils::*;
-pub use type_relation::{Related, TypeRelationChecker, TypeRelationError, TypeRelationErrorCode};
+pub use type_relation::{
+    Related, RelationEnv, TypeRelationChecker, TypeRelationError, TypeRelationErrorCode,
+};
 pub use type_utils::*;
 pub use types::*;
 
@@ -465,6 +467,8 @@ pub struct Checker {
     // ---- Type relation ----
     /// Type relation checker
     pub type_relation: TypeRelationChecker,
+    /// Models created from object literals (`#{...}`), checked for unexpected properties.
+    pub object_literal_models: HashSet<TypeId>,
 
     // ---- Deprecation tracking ----
     /// Deprecation tracker
@@ -711,6 +715,7 @@ impl Checker {
             pending_alias_values: HashMap::new(),
             check_depth: 0,
             type_relation: TypeRelationChecker::new(),
+            object_literal_models: HashSet::new(),
             deprecation_tracker: crate::deprecation::DeprecationTracker::new(),
             suppressed_diagnostics: HashMap::new(),
             suppression_scanned: HashSet::new(),
@@ -1777,10 +1782,19 @@ impl Checker {
         target: TypeId,
         _diagnostic_target: TypeId,
     ) -> (bool, Vec<TypeRelationError>) {
-        let result = self
-            .type_relation
-            .is_related_with_store(&self.type_store, source, target);
+        let result = self.relate(source, target);
         (result.is_true(), Vec::new())
+    }
+
+    /// Whether `source` is assignable to `target`, constraints and unexpected properties
+    /// checked.
+    pub(crate) fn relate(&mut self, source: TypeId, target: TypeId) -> Related {
+        let env = type_relation::RelationEnv {
+            store: &self.type_store,
+            state: Some(&self.state_accessors),
+            object_literals: Some(&self.object_literal_models),
+        };
+        self.type_relation.is_related(&env, source, target)
     }
 
     /// Get the effective model type for a type.

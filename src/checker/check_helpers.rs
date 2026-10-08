@@ -151,11 +151,7 @@ impl Checker {
             if let Some((overridden_type, overridden_optional)) = override_info {
                 // Check type assignability
                 let is_assignable = {
-                    let related = self.type_relation.is_related_with_store(
-                        &self.type_store,
-                        new_prop_type,
-                        overridden_type,
-                    );
+                    let related = self.relate(new_prop_type, overridden_type);
                     related.is_true()
                 };
                 if !is_assignable {
@@ -504,9 +500,7 @@ impl Checker {
         value_type: TypeId,
         constraint_type: TypeId,
     ) -> bool {
-        let related =
-            self.type_relation
-                .is_related_with_store(&self.type_store, value_type, constraint_type);
+        let related = self.relate(value_type, constraint_type);
         related.is_true()
     }
 

@@ -670,10 +670,7 @@ impl Checker {
         // Check type assignability
         // TS: relation.isTypeAssignableTo(newProp.type, overriddenProp.type, newProp)
         if new_prop_type != overridden_prop_type {
-            let is_assignable = self
-                .type_relation
-                .is_related_with_store(&self.type_store, new_prop_type, overridden_prop_type)
-                .is_true();
+            let is_assignable = self.relate(new_prop_type, overridden_prop_type).is_true();
 
             if !is_assignable {
                 let parent_type_name = self.get_type_name_for_diagnostic(overridden_prop_type);

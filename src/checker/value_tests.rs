@@ -1238,3 +1238,84 @@ fn test_custom_scalar_extends_int8_out_range() {
         checker.diagnostics()
     );
 }
+
+// ============================================================================
+// Constraints and excess properties on values
+// Ported from TS type-relation-checker.ts: isNumericLiteralRelatedTo,
+// isStringLiteralRelatedTo, areModelsRelated (unexpected-property)
+// ============================================================================
+
+#[test]
+fn test_numeric_value_checked_against_scalar_min_and_max() {
+    let scalar = "@minValue(1) @maxValue(10) scalar Port extends uint16;";
+    for (value, ok) in [("0", false), ("1", true), ("10", true), ("11", false)] {
+        let checker = check(&format!("{scalar} const p: Port = {value};"));
+        assert_eq!(
+            !has_diagnostic(&checker, "unassignable"),
+            ok,
+            "Port = {value}"
+        );
+    }
+}
+
+#[test]
+fn test_numeric_value_checked_against_exclusive_bounds() {
+    let scalar = "@minValueExclusive(0) @maxValueExclusive(1) scalar Ratio extends float64;";
+    for (value, ok) in [("0", false), ("0.5", true), ("1", false)] {
+        let checker = check(&format!("{scalar} const r: Ratio = {value};"));
+        assert_eq!(
+            !has_diagnostic(&checker, "unassignable"),
+            ok,
+            "Ratio = {value}"
+        );
+    }
+}
+
+#[test]
+fn test_string_value_checked_against_scalar_length() {
+    let scalar = "@minLength(2) @maxLength(3) scalar Code extends string;";
+    for (value, ok) in [("a", false), ("ab", true), ("abc", true), ("abcd", false)] {
+        let checker = check(&format!(r#"{scalar} const c: Code = "{value}";"#));
+        assert_eq!(
+            !has_diagnostic(&checker, "unassignable"),
+            ok,
+            "Code = {value}"
+        );
+    }
+}
+
+#[test]
+fn test_scalar_constraint_checked_inside_object_value() {
+    let source = "@minValue(1) scalar Port extends uint16; model M { port: Port }";
+    let checker = check(&format!("{source} const m: M = #{{ port: 0 }};"));
+    assert!(has_diagnostic(&checker, "unassignable"));
+    let checker = check(&format!("{source} const m: M = #{{ port: 1 }};"));
+    assert!(!has_diagnostic(&checker, "unassignable"));
+}
+
+#[test]
+fn test_object_value_with_unexpected_property_not_assignable() {
+    let checker = check("model M { n: int32 } const m: M = #{ n: 1, extra: 2 };");
+    assert!(has_diagnostic(&checker, "unassignable"));
+    let nested = "model M { rules?: M[] } const m: M = #{ rules: #[#{ x: 1 }] };";
+    assert!(has_diagnostic(&check(nested), "unassignable"));
+}
+
+#[test]
+fn test_object_value_extra_property_allowed_by_indexer() {
+    let checker = check("model M { n: int32; ...Record<int32> } const m: M = #{ n: 1, extra: 2 };");
+    assert!(!has_diagnostic(&checker, "unassignable"));
+}
+
+#[test]
+fn test_enum_value_must_be_a_member() {
+    let source = "enum E { a, b } model M { e: E }";
+    assert!(!has_diagnostic(
+        &check(&format!("{source} const m: M = #{{ e: E.a }};")),
+        "unassignable"
+    ));
+    assert!(has_diagnostic(
+        &check(&format!(r#"{source} const m: M = #{{ e: "a" }};"#)),
+        "unassignable"
+    ));
+}

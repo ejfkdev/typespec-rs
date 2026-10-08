@@ -26,6 +26,7 @@ impl Checker {
             m.is_finished = true;
             self.create_type(Type::Model(m))
         };
+        self.object_literal_models.insert(type_id);
 
         self.node_type_map.insert(node_id, type_id);
         type_id
@@ -243,6 +244,7 @@ impl Checker {
             m.is_finished = true;
             self.create_type(Type::Model(m))
         };
+        self.object_literal_models.insert(type_id);
 
         self.node_type_map.insert(node_id, type_id);
         type_id
@@ -265,13 +267,9 @@ impl Checker {
             }
 
             // Check if A is assignable to B (A is subtype of B)
-            let a_to_b = self
-                .type_relation
-                .is_related_with_store(&self.type_store, a, b);
+            let a_to_b = self.relate(a, b);
             // Check if B is assignable to A (B is subtype of A)
-            let b_to_a = self
-                .type_relation
-                .is_related_with_store(&self.type_store, b, a);
+            let b_to_a = self.relate(b, a);
 
             if a_to_b.is_true() && b_to_a.is_true() {
                 // Both assignable to each other → equivalent → return A
@@ -864,6 +862,7 @@ impl Checker {
             m.is_finished = true;
             self.create_type(Type::Model(m))
         };
+        self.object_literal_models.insert(type_id);
 
         self.node_type_map.insert(node_id, type_id);
         type_id

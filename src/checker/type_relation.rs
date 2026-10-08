@@ -7,7 +7,19 @@
 use crate::ast::node::NodeId;
 use crate::checker::types::{IntrinsicTypeName, ModelType, ScalarType, Type, TypeId, TypeStore};
 use crate::numeric_ranges::is_value_in_range;
-use std::collections::HashMap;
+use crate::state_accessors::StateAccessors;
+use std::collections::{HashMap, HashSet};
+
+/// What a relation check reads beyond the types themselves.
+pub struct RelationEnv<'a> {
+    pub store: &'a TypeStore,
+    /// Decorator state, for `@minValue`, `@maxLength` and the other constraints a literal is
+    /// checked against. Without it, constraints aren't checked.
+    pub state: Option<&'a StateAccessors>,
+    /// Models created from object literals (`#{...}`): only these are checked for unexpected
+    /// properties. Ported from TS shouldCheckExcessProperties.
+    pub object_literals: Option<&'a HashSet<TypeId>>,
+}
 
 /// Diagnostic code for type relation errors
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -77,15 +89,34 @@ impl TypeRelationChecker {
         }
     }
 
-    /// Check assignability with direct type access
-    /// This is the main entry point used by the Checker
-    /// Full type relation check with type store access for recursive checks
+    /// Whether `source_id` is assignable to `target_id`, by the types alone: no constraint or
+    /// excess property checks.
     pub fn is_related_with_store(
         &mut self,
         store: &TypeStore,
         source_id: TypeId,
         target_id: TypeId,
     ) -> Related {
+        let env = RelationEnv {
+            store,
+            state: None,
+            object_literals: None,
+        };
+        self.relate(&env, source_id, target_id)
+    }
+
+    /// Whether `source_id` is assignable to `target_id`. This is the main entry point used by
+    /// the Checker.
+    pub fn is_related(
+        &mut self,
+        env: &RelationEnv,
+        source_id: TypeId,
+        target_id: TypeId,
+    ) -> Related {
+        self.relate(env, source_id, target_id)
+    }
+
+    fn relate(&mut self, env: &RelationEnv, source_id: TypeId, target_id: TypeId) -> Related {
         if source_id == target_id {
             return Related::True;
         }
@@ -96,11 +127,11 @@ impl TypeRelationChecker {
             return cached;
         }
 
-        let source_type = match store.get(source_id) {
+        let source_type = match env.store.get(source_id) {
             Some(t) => t,
             None => return Related::False,
         };
-        let target_type = match store.get(target_id) {
+        let target_type = match env.store.get(target_id) {
             Some(t) => t,
             None => return Related::False,
         };
@@ -108,7 +139,7 @@ impl TypeRelationChecker {
         // Prevent infinite recursion
         self.relation_cache.insert(cache_key, Related::Maybe);
         let result =
-            self.compute_related_with_store(store, source_type, target_type, source_id, target_id);
+            self.compute_related_with_store(env, source_type, target_type, source_id, target_id);
         self.relation_cache.insert(cache_key, result);
         result
     }
@@ -116,7 +147,7 @@ impl TypeRelationChecker {
     /// Full compute with type store access - enables recursive model property checks
     fn compute_related_with_store(
         &mut self,
-        store: &TypeStore,
+        env: &RelationEnv,
         source_type: &Type,
         target_type: &Type,
         source_id: TypeId,
@@ -125,10 +156,10 @@ impl TypeRelationChecker {
         // Resolve UnionVariant types to their inner type
         // UnionVariant is a wrapper around the actual type in a union
         if let Type::UnionVariant(source_variant) = source_type {
-            return self.is_related_with_store(store, source_variant.r#type, target_id);
+            return self.relate(env, source_variant.r#type, target_id);
         }
         if let Type::UnionVariant(target_variant) = target_type {
-            return self.is_related_with_store(store, source_id, target_variant.r#type);
+            return self.relate(env, source_id, target_variant.r#type);
         }
 
         // Never is assignable to everything
@@ -179,7 +210,7 @@ impl TypeRelationChecker {
         if let Type::TemplateParameter(tp) = source_type
             && let Some(constraint_id) = tp.constraint
         {
-            let constraint_related = self.is_related_with_store(store, constraint_id, target_id);
+            let constraint_related = self.relate(env, constraint_id, target_id);
             if constraint_related.is_true() {
                 return Related::True;
             }
@@ -196,7 +227,7 @@ impl TypeRelationChecker {
         // (e.g., alias Foo = string | int32 creates Scalar { base_scalar: Union })
         if let Type::Scalar(source_scalar) = source_type
             && let Some(base_id) = source_scalar.base_scalar
-            && let Some(base_type) = store.get(base_id)
+            && let Some(base_type) = env.store.get(base_id)
         {
             // If the base is not a Scalar (or is a Scalar with different name),
             // resolve through the base type
@@ -212,7 +243,7 @@ impl TypeRelationChecker {
                 | Type::Number(_)
                 | Type::Boolean(_) => {
                     // Alias pointing to a non-scalar type — resolve through
-                    return self.is_related_with_store(store, base_id, target_id);
+                    return self.relate(env, base_id, target_id);
                 }
                 Type::Scalar(base_scalar) => {
                     // If base scalar has a different name, it's a real extends relationship
@@ -222,7 +253,7 @@ impl TypeRelationChecker {
                         // Don't dereference - let are_scalars_related handle it
                     } else {
                         // Same name means this is a re-export or alias
-                        return self.is_related_with_store(store, base_id, target_id);
+                        return self.relate(env, base_id, target_id);
                     }
                 }
                 _ => {}
@@ -238,7 +269,7 @@ impl TypeRelationChecker {
         // assignable to myString extends string).
         if let Type::Scalar(target_scalar) = target_type
             && let Some(base_id) = target_scalar.base_scalar
-            && let Some(base_type) = store.get(base_id)
+            && let Some(base_type) = env.store.get(base_id)
         {
             match base_type {
                 Type::Union(_)
@@ -252,7 +283,7 @@ impl TypeRelationChecker {
                 | Type::Number(_)
                 | Type::Boolean(_) => {
                     // Non-scalar base (e.g., alias pointing to union) — always delegate
-                    return self.is_related_with_store(store, source_id, base_id);
+                    return self.relate(env, source_id, base_id);
                 }
                 Type::Scalar(base_scalar) => {
                     // Only delegate for literal types to custom scalars
@@ -272,10 +303,14 @@ impl TypeRelationChecker {
                         && !target_is_builtin
                         && target_scalar.name != base_scalar.name
                     {
-                        // Custom scalar with literal source — delegate to builtin base.
-                        // Once we reach a builtin target, is_simple_type_assignable_to
-                        // will handle the check directly (no further delegation).
-                        return self.is_related_with_store(store, source_id, base_id);
+                        // Custom scalar with literal source — check the constraints it
+                        // declares, then delegate to builtin base. Once we reach a builtin
+                        // target, is_simple_type_assignable_to will handle the check directly
+                        // (no further delegation).
+                        if !literal_within_constraints(env, source_type, target_id) {
+                            return Related::False;
+                        }
+                        return self.relate(env, source_id, base_id);
                     }
                     // For other cases, fall through to is_simple_type_assignable_to
                     // and are_scalars_related
@@ -295,9 +330,7 @@ impl TypeRelationChecker {
         if let Type::Union(source_union) = source_type {
             for name in &source_union.variant_names {
                 if let Some(&variant_id) = source_union.variants.get(name)
-                    && self
-                        .is_related_with_store(store, variant_id, target_id)
-                        .is_false()
+                    && self.relate(env, variant_id, target_id).is_false()
                 {
                     return Related::False;
                 }
@@ -309,7 +342,7 @@ impl TypeRelationChecker {
         if let Type::Union(target_union) = target_type {
             for name in &target_union.variant_names {
                 if let Some(&variant_id) = target_union.variants.get(name) {
-                    let related = self.is_related_with_store(store, source_id, variant_id);
+                    let related = self.relate(env, source_id, variant_id);
                     if related.is_true() {
                         return Related::True;
                     }
@@ -320,20 +353,14 @@ impl TypeRelationChecker {
 
         // Model to model
         if let (Type::Model(source_model), Type::Model(target_model)) = (source_type, target_type) {
-            return self.are_models_related(
-                store,
-                source_model,
-                target_model,
-                source_id,
-                target_id,
-            );
+            return self.are_models_related(env, source_model, target_model, source_id, target_id);
         }
 
         // Scalar to scalar
         if let (Type::Scalar(source_scalar), Type::Scalar(target_scalar)) =
             (source_type, target_type)
         {
-            return if self.are_scalars_related(store, source_scalar, target_scalar) {
+            return if self.are_scalars_related(env, source_scalar, target_scalar) {
                 Related::True
             } else {
                 Related::False
@@ -346,10 +373,7 @@ impl TypeRelationChecker {
                 return Related::False;
             }
             for (&src_val, &tgt_val) in source_tuple.values.iter().zip(target_tuple.values.iter()) {
-                if self
-                    .is_related_with_store(store, src_val, tgt_val)
-                    .is_false()
-                {
+                if self.relate(env, src_val, tgt_val).is_false() {
                     return Related::False;
                 }
             }
@@ -381,10 +405,7 @@ impl TypeRelationChecker {
             // Check if target is an array (has integer-keyed indexer)
             if let Some((_, target_val)) = &target_model.indexer {
                 for &src_val in &source_tuple.values {
-                    if self
-                        .is_related_with_store(store, src_val, *target_val)
-                        .is_false()
-                    {
+                    if self.relate(env, src_val, *target_val).is_false() {
                         return Related::False;
                     }
                 }
@@ -402,10 +423,7 @@ impl TypeRelationChecker {
             if !source_model.source_models.is_empty() {
                 // Intersection source: all constituent types must be assignable to target
                 for src_model in &source_model.source_models {
-                    if self
-                        .is_related_with_store(store, src_model.model, target_id)
-                        .is_false()
-                    {
+                    if self.relate(env, src_model.model, target_id).is_false() {
                         return Related::False;
                     }
                 }
@@ -417,10 +435,7 @@ impl TypeRelationChecker {
             if !target_model.source_models.is_empty() {
                 // Intersection target: source must be assignable to all constituent types
                 for tgt_model in &target_model.source_models {
-                    if self
-                        .is_related_with_store(store, source_id, tgt_model.model)
-                        .is_false()
-                    {
+                    if self.relate(env, source_id, tgt_model.model).is_false() {
                         return Related::False;
                     }
                 }
@@ -442,7 +457,7 @@ impl TypeRelationChecker {
                     return Related::True;
                 }
                 // Walk the extends chain
-                if self.walk_interface_extends_chain(store, extends_id, target_id) {
+                if self.walk_interface_extends_chain(env, extends_id, target_id) {
                     return Related::True;
                 }
             }
@@ -549,7 +564,7 @@ impl TypeRelationChecker {
     /// Check if two scalars are related (source extends target, directly or transitively)
     fn are_scalars_related(
         &self,
-        store: &TypeStore,
+        env: &RelationEnv,
         source: &ScalarType,
         target: &ScalarType,
     ) -> bool {
@@ -560,7 +575,7 @@ impl TypeRelationChecker {
         // Walk source's base_scalar chain
         let mut current_base = source.base_scalar;
         while let Some(base_id) = current_base {
-            if let Some(Type::Scalar(base_scalar)) = store.get(base_id) {
+            if let Some(Type::Scalar(base_scalar)) = env.store.get(base_id) {
                 if base_scalar.name == target.name {
                     return true;
                 }
@@ -577,7 +592,7 @@ impl TypeRelationChecker {
     /// not just anonymous ones. Named models are also checked structurally.
     fn are_models_related(
         &mut self,
-        store: &TypeStore,
+        env: &RelationEnv,
         source: &ModelType,
         target: &ModelType,
         source_id: TypeId,
@@ -589,8 +604,8 @@ impl TypeRelationChecker {
         }
 
         // Collect all properties from both models (including inherited)
-        let target_props = self.collect_model_properties_inherited(store, target_id);
-        let source_props = self.collect_model_properties_inherited(store, source_id);
+        let target_props = self.collect_model_properties_inherited(env, target_id);
+        let source_props = self.collect_model_properties_inherited(env, source_id);
 
         // Track which source properties were matched by target properties
         let mut matched_source_keys: std::collections::HashSet<String> =
@@ -607,14 +622,29 @@ impl TypeRelationChecker {
                 }
 
                 // Check property type compatibility
-                let prop_related =
-                    self.is_related_with_store(store, source_prop_type, *target_prop_type);
+                let prop_related = self.relate(env, source_prop_type, *target_prop_type);
                 if prop_related.is_false() {
                     return Related::False;
                 }
             } else {
                 // Property missing in source - only ok if target property is optional
                 if !target_optional {
+                    return Related::False;
+                }
+            }
+        }
+
+        // Ported from TS areModelsRelated: an object literal may not carry properties a target
+        // without an indexer lacks. A property spread in from elsewhere isn't checked
+        // (TS shouldCheckExcessProperty).
+        if target.indexer.is_none() && env.object_literals.is_some_and(|l| l.contains(&source_id)) {
+            for (name, prop_id) in &source.properties {
+                if matched_source_keys.contains(name) {
+                    continue;
+                }
+                if let Some(Type::ModelProperty(prop)) = env.store.get(*prop_id)
+                    && prop.source_property.is_none()
+                {
                     return Related::False;
                 }
             }
@@ -627,10 +657,7 @@ impl TypeRelationChecker {
                 if matched_source_keys.contains(prop_name) {
                     continue;
                 }
-                if self
-                    .is_related_with_store(store, source_prop_type, *target_val)
-                    .is_false()
-                {
+                if self.relate(env, source_prop_type, *target_val).is_false() {
                     return Related::False;
                 }
             }
@@ -641,10 +668,8 @@ impl TypeRelationChecker {
                 if let Some((source_key, source_val)) = &source.indexer {
                     // Source has indexer — check key and value compatibility
                     if let Some((target_key, _)) = &target.indexer {
-                        let key_related =
-                            self.is_related_with_store(store, *source_key, *target_key);
-                        let val_related =
-                            self.is_related_with_store(store, *source_val, *target_val);
+                        let key_related = self.relate(env, *source_key, *target_key);
+                        let val_related = self.relate(env, *source_val, *target_val);
                         if key_related.is_true() && val_related.is_true() {
                             return Related::True;
                         }
@@ -654,7 +679,7 @@ impl TypeRelationChecker {
                     // Named source model without indexer but target has one
                     // Check if target indexer key is not integer (not array)
                     if let Some((target_key, _)) = &target.indexer
-                        && let Some(Type::Scalar(s)) = store.get(*target_key)
+                        && let Some(Type::Scalar(s)) = env.store.get(*target_key)
                         && s.name != "integer"
                     {
                         // Source needs an indexer but doesn't have one
@@ -665,7 +690,7 @@ impl TypeRelationChecker {
 
             // Also check source indexer compatibility if source has one
             if let Some((_, source_val)) = &source.indexer {
-                let val_related = self.is_related_with_store(store, *source_val, *target_val);
+                let val_related = self.relate(env, *source_val, *target_val);
                 return if val_related.is_true() {
                     Related::True
                 } else {
@@ -686,7 +711,7 @@ impl TypeRelationChecker {
             }
             // For anonymous source models with indexer, check if the indexer is integer (array)
             if let Some((source_key, _)) = &source.indexer
-                && let Some(Type::Scalar(s)) = store.get(*source_key)
+                && let Some(Type::Scalar(s)) = env.store.get(*source_key)
                 && s.name == "integer"
             {
                 // Array model cannot be assigned to non-array target
@@ -701,7 +726,7 @@ impl TypeRelationChecker {
     /// eventually extends the target interface.
     fn walk_interface_extends_chain(
         &mut self,
-        store: &TypeStore,
+        env: &RelationEnv,
         start_id: TypeId,
         target_id: TypeId,
     ) -> bool {
@@ -715,7 +740,7 @@ impl TypeRelationChecker {
                 continue;
             }
             visited.insert(cur_id);
-            if let Some(Type::Interface(iface)) = store.get(cur_id) {
+            if let Some(Type::Interface(iface)) = env.store.get(cur_id) {
                 for &extends_id in &iface.extends {
                     if !visited.contains(&extends_id) {
                         stack.push(extends_id);
@@ -730,18 +755,18 @@ impl TypeRelationChecker {
     /// Returns (property_name -> (property_type_id, is_optional))
     fn collect_model_properties_inherited(
         &self,
-        store: &TypeStore,
+        env: &RelationEnv,
         model_id: TypeId,
     ) -> HashMap<String, (TypeId, bool)> {
         let mut result = HashMap::new();
         let mut current = Some(model_id);
         while let Some(cur_id) = current {
-            if let Some(Type::Model(m)) = store.get(cur_id) {
+            if let Some(Type::Model(m)) = env.store.get(cur_id) {
                 for (name, &prop_id) in &m.properties {
                     // Don't override child properties with parent ones
                     if !result.contains_key(name) {
                         // Get the property type and optional flag from the ModelProperty
-                        if let Some(Type::ModelProperty(prop)) = store.get(prop_id) {
+                        if let Some(Type::ModelProperty(prop)) = env.store.get(prop_id) {
                             result.insert(name.clone(), (prop.r#type, prop.optional));
                         }
                     }
@@ -758,17 +783,60 @@ impl TypeRelationChecker {
     /// Ported from TS isValueOfType
     pub fn is_value_of_type(
         &mut self,
-        store: &TypeStore,
+        env: &RelationEnv,
         value_type_id: TypeId,
         target_id: TypeId,
     ) -> bool {
-        self.is_related_with_store(store, value_type_id, target_id)
-            .is_true()
+        self.relate(env, value_type_id, target_id).is_true()
     }
 
     /// Clear the relation cache
     pub fn clear_cache(&mut self) {
         self.relation_cache.clear();
+    }
+}
+
+/// Whether a numeric or string literal meets the constraints the scalar `target_id` declares:
+/// `@minValue`, `@maxValue`, their exclusive forms, `@minLength` and `@maxLength`. Ported from TS
+/// isNumericLiteralRelatedTo and isStringLiteralRelatedTo.
+fn literal_within_constraints(env: &RelationEnv, source: &Type, target_id: TypeId) -> bool {
+    use crate::intrinsic_type_state as constraints;
+    use crate::numeric::Numeric;
+    let Some(state) = env.state else {
+        return true;
+    };
+    match source {
+        Type::Number(n) => {
+            let Ok(value) = Numeric::new(&n.value_as_string) else {
+                return true;
+            };
+            let below = |m: Option<Numeric>, inclusive: bool| {
+                m.is_some_and(|m| if inclusive { value < m } else { value <= m })
+            };
+            let above = |m: Option<Numeric>, inclusive: bool| {
+                m.is_some_and(|m| if inclusive { value > m } else { value >= m })
+            };
+            !(below(
+                constraints::get_min_value_as_numeric(state, target_id),
+                true,
+            ) || below(
+                constraints::get_min_value_exclusive_as_numeric(state, target_id),
+                false,
+            ) || above(
+                constraints::get_max_value_as_numeric(state, target_id),
+                true,
+            ) || above(
+                constraints::get_max_value_exclusive_as_numeric(state, target_id),
+                false,
+            ))
+        }
+        Type::String(s) => {
+            // TS measures a string's length in UTF-16 code units.
+            let len = s.value.encode_utf16().count() as f64;
+            !(constraints::get_min_length(state, target_id).is_some_and(|m| len < m)
+                || constraints::get_max_length(state, target_id).is_some_and(|m| len > m))
+        }
+        _ => true,
     }
 }
 

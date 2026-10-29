@@ -1542,3 +1542,116 @@ mod tests {
         assert!(is_prototype_getter(&state, 1));
     }
 }
+
+// ========================================================================
+// Enum member encoded names (microsoft/typespec#11980)
+// ========================================================================
+
+/// Ported from TS: "use the json encoded name of an enum member".
+#[test]
+fn test_resolve_encoded_enum_member_value_prefers_encoded_name() {
+    let mut state = StateAccessors::new();
+    apply_encoded_name(&mut state, 7, "application/json", "ready");
+    assert_eq!(
+        resolve_encoded_enum_member_value(&state, 7, "active", Some("1"), "application/json"),
+        "ready"
+    );
+    // Other mime types fall back to the explicit value.
+    assert_eq!(
+        resolve_encoded_enum_member_value(&state, 7, "active", Some("1"), "application/xml"),
+        "1"
+    );
+}
+
+#[test]
+fn test_resolve_encoded_enum_member_value_uses_explicit_value() {
+    let state = StateAccessors::new();
+    assert_eq!(
+        resolve_encoded_enum_member_value(&state, 7, "ready", Some("is-ready"), "application/json"),
+        "is-ready"
+    );
+}
+
+#[test]
+fn test_resolve_encoded_enum_member_value_falls_back_to_name() {
+    let state = StateAccessors::new();
+    assert_eq!(
+        resolve_encoded_enum_member_value(&state, 7, "unknown", None, "application/json"),
+        "unknown"
+    );
+}
+
+/// Ported from TS: "emit error if an enum member encoded name is the value
+/// of another member".
+#[test]
+fn test_encoded_enum_member_conflicts_with_other_member_value() {
+    let mut state = StateAccessors::new();
+    apply_encoded_name(&mut state, 1, "application/json", "ready");
+    let members = vec![
+        crate::libs::compiler::encoded_names::EnumMemberInfo {
+            member: 1,
+            enum_id: 10,
+            name: "active".to_string(),
+            value: None,
+        },
+        crate::libs::compiler::encoded_names::EnumMemberInfo {
+            member: 2,
+            enum_id: 10,
+            name: "other".to_string(),
+            value: Some("ready".to_string()),
+        },
+    ];
+    let mut existing: std::collections::HashMap<u32, Vec<String>> =
+        std::collections::HashMap::new();
+    existing.insert(1, Vec::new());
+    let conflicts = validate_encoded_names_conflicts(&state, &existing, &members);
+    assert_eq!(conflicts.len(), 1, "conflicts: {:?}", conflicts);
+    assert_eq!(conflicts[0].kind, EncodedNameConflictKind::EnumValue);
+    assert_eq!(conflicts[0].name, "ready");
+    assert_eq!(conflicts[0].mime_type, "application/json");
+}
+
+/// Ported from TS: "is ok if an enum member encoded name is the name of a
+/// member with another value".
+#[test]
+fn test_encoded_enum_member_other_member_name_no_conflict() {
+    let mut state = StateAccessors::new();
+    apply_encoded_name(&mut state, 1, "application/json", "ready");
+    let members = vec![
+        crate::libs::compiler::encoded_names::EnumMemberInfo {
+            member: 1,
+            enum_id: 10,
+            name: "active".to_string(),
+            value: None,
+        },
+        crate::libs::compiler::encoded_names::EnumMemberInfo {
+            member: 2,
+            enum_id: 10,
+            name: "ready".to_string(),
+            value: Some("is-ready".to_string()),
+        },
+    ];
+    let mut existing: std::collections::HashMap<u32, Vec<String>> =
+        std::collections::HashMap::new();
+    existing.insert(1, Vec::new());
+    let conflicts = validate_encoded_names_conflicts(&state, &existing, &members);
+    assert!(conflicts.is_empty(), "conflicts: {:?}", conflicts);
+}
+
+/// Ported from TS: "is ok if an enum member encoded name is its own name".
+#[test]
+fn test_encoded_enum_member_own_name_no_conflict() {
+    let mut state = StateAccessors::new();
+    apply_encoded_name(&mut state, 1, "application/json", "active");
+    let members = vec![crate::libs::compiler::encoded_names::EnumMemberInfo {
+        member: 1,
+        enum_id: 10,
+        name: "active".to_string(),
+        value: None,
+    }];
+    let mut existing: std::collections::HashMap<u32, Vec<String>> =
+        std::collections::HashMap::new();
+    existing.insert(1, Vec::new());
+    let conflicts = validate_encoded_names_conflicts(&state, &existing, &members);
+    assert!(conflicts.is_empty(), "conflicts: {:?}", conflicts);
+}

@@ -15,6 +15,14 @@ impl Checker {
 
         let name = Self::get_identifier_name(&ast, node.name);
 
+        // Declarations used as expressions (microsoft/typespec#11019).
+        self.check_declaration_expression_usage(
+            ctx,
+            node_id,
+            node.expression,
+            node.template_parameters.len(),
+        );
+
         self.check_template_declaration(ctx, &ast, &node.template_parameters);
 
         let template_node =
@@ -39,18 +47,96 @@ impl Checker {
                     name.clone(),
                     Some(node_id),
                     current_ns,
-                    false,
+                    node.expression,
                 );
                 u.template_node = template_node;
                 self.create_type(Type::Union(u))
             };
 
-            self.register_type(node_id, new_id, &name, ctx.mapper.as_ref());
+            if node.expression {
+                self.register_expression_type(node_id, new_id);
+            } else {
+                self.register_type(node_id, new_id, &name, ctx.mapper.as_ref());
+            }
             new_id
         };
 
         // Process directives (e.g., #deprecated) early so deprecated context works
         self.process_and_mark_directives(node_id, type_id);
+
+        // Resolve the `extends` clause, if any (microsoft/typespec#11771). The
+        // base type is only a constraint on the variants: it does not create
+        // an inheritance relationship and is not added as a variant.
+        let base_type = if let Some(extends_node) = node.extends {
+            if ctx.mapper.is_none()
+                && !self.is_compiler_feature_enabled("union-extends", Some(node_id))
+            {
+                self.error_at(
+                    extends_node,
+                    "union-extends-disabled",
+                    "Union `extends` clauses require the 'union-extends' feature to be enabled. Add 'union-extends' to the 'features' list in your tspconfig.yaml.",
+                );
+            }
+            let resolved = self.check_node(ctx, extends_node);
+            if resolved == self.error_type {
+                None
+            } else if self.union_expression_references(resolved, type_id) {
+                if ctx.mapper.is_none() {
+                    self.error_at(
+                        extends_node,
+                        "circular-base-type",
+                        &format!(
+                            "Type '{}' recursively references itself as a base type.",
+                            name
+                        ),
+                    );
+                }
+                None
+            } else if matches!(self.get_type(resolved), Some(Type::TemplateParameter(_))) {
+                // Unresolved template parameter: validation happens on
+                // instantiation.
+                None
+            } else if {
+                // Aliases are Scalar wrappers in this port, so look through the
+                // alias chain before classifying the base type.
+                let resolved = self.resolve_alias_chain(resolved);
+                matches!(
+                    self.get_type(resolved),
+                    Some(Type::Model(m)) if self.is_model_expression_type(m)
+                )
+            } {
+                self.error_at(
+                    extends_node,
+                    "extend-union",
+                    "Unions cannot extend model expressions.",
+                );
+                None
+            } else if !matches!(
+                self.get_type(resolved),
+                Some(Type::Model(_))
+                    | Some(Type::Scalar(_))
+                    | Some(Type::Enum(_))
+                    | Some(Type::Union(_))
+            ) {
+                self.error_at(
+                    extends_node,
+                    "extend-union",
+                    "Union `extends` must specify a model, scalar, enum, or union.",
+                );
+                None
+            } else {
+                Some(resolved)
+            }
+        } else {
+            None
+        };
+
+        if let Some(base) = base_type
+            && let Some(t) = self.get_type_mut(type_id)
+            && let Type::Union(u) = t
+        {
+            u.base_type = Some(base);
+        }
 
         let mut variants = HashMap::new();
         let mut variant_names = Vec::new();
@@ -76,6 +162,26 @@ impl Checker {
             }
 
             let variant_type = self.check_node(ctx, variant_node.value);
+
+            // Validate the variant against the union's `extends` constraint.
+            // Uninstantiated template declarations are validated per
+            // instantiation instead (microsoft/typespec#11771).
+            if let Some(base) = base_type
+                && !(ctx.mapper.is_none() && !node.template_parameters.is_empty())
+                && variant_type != self.error_type
+            {
+                let (is_assignable, _) =
+                    self.is_type_assignable_to(variant_type, base, variant_node.value);
+                if !is_assignable {
+                    let source = self.type_to_string(variant_type);
+                    let target = self.type_to_string(base);
+                    self.error_at(
+                        variant_node.value,
+                        "unassignable",
+                        &format!("Type '{}' is not assignable to type '{}'", source, target),
+                    );
+                }
+            }
 
             let variant_type_id = self.create_type(Type::UnionVariant(UnionVariantType {
                 id: self.next_type_id(),
@@ -114,5 +220,38 @@ impl Checker {
             ctx.mapper.as_ref(),
         );
         type_id
+    }
+
+    /// Whether the model was declared as a model expression (`{ ... }`).
+    fn is_model_expression_type(&self, model: &ModelType) -> bool {
+        self.ast
+            .as_ref()
+            .and_then(|ast| model.node.and_then(|n| ast.id_to_node(n)))
+            .is_some_and(|n| matches!(n, AstNode::ModelExpression(_)))
+    }
+
+    /// Check whether `target` is reachable from `type` through union
+    /// expressions only. Named unions, models, arrays, ... stop the traversal:
+    /// a union referencing itself from those positions builds a valid cyclic
+    /// type graph.
+    ///
+    /// Ported from TS `unionExpressionReferences` (microsoft/typespec#11771).
+    fn union_expression_references(&self, type_id: TypeId, target: TypeId) -> bool {
+        if type_id == target {
+            return true;
+        }
+        if let Some(Type::Union(u)) = self.get_type(type_id)
+            && u.expression
+        {
+            for name in &u.variant_names {
+                if let Some(&variant_id) = u.variants.get(name)
+                    && let Some(Type::UnionVariant(v)) = self.get_type(variant_id)
+                    && self.union_expression_references(v.r#type, target)
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }

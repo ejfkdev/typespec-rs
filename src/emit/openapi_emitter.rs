@@ -307,29 +307,44 @@ impl OpenAPIEmitter {
 
         for variant in &variants {
             match variant {
-                ResolvedResponseVariant::Plain { type_id } => {
+                ResolvedResponseVariant::Plain {
+                    type_id,
+                    description,
+                } => {
                     let resolved = checker.resolve_alias_chain(*type_id);
                     // Check if void
                     if let Some(Type::Intrinsic(i)) = checker.get_type(resolved)
                         && matches!(i.name, IntrinsicTypeName::Void)
                     {
                         s.push_str("          '204':\n");
-                        s.push_str("            description: No Content\n");
+                        s.push_str(&format!(
+                            "            description: {}\n",
+                            description.as_deref().unwrap_or("No Content")
+                        ));
                         continue;
                     }
                     s.push_str("          '200':\n");
-                    s.push_str("            description: Success\n");
+                    s.push_str(&format!(
+                        "            description: {}\n",
+                        description.as_deref().unwrap_or("Success")
+                    ));
                     s.push_str("            content:\n");
                     s.push_str("              application/json:\n");
                     s.push_str("                schema:\n");
                     s.push_str(&self.type_to_schema(checker, resolved, 18));
                 }
-                ResolvedResponseVariant::Envelope { type_id } => {
+                ResolvedResponseVariant::Envelope {
+                    type_id,
+                    description,
+                } => {
                     // Extract status code from envelope model
                     let status_code = self.extract_status_code(checker, *type_id);
                     let body_type = self.extract_body_type(checker, *type_id);
                     s.push_str(&format!("          '{}':\n", status_code));
-                    s.push_str("            description: Success\n");
+                    s.push_str(&format!(
+                        "            description: {}\n",
+                        description.as_deref().unwrap_or("Success")
+                    ));
                     if let Some(body_id) = body_type {
                         s.push_str("            content:\n");
                         s.push_str("              application/json:\n");
@@ -343,14 +358,22 @@ impl OpenAPIEmitter {
 
     /// Extract the status code from a response envelope model.
     fn extract_status_code(&self, checker: &Checker, type_id: TypeId) -> String {
+        use crate::libs::http::operation::get_status_codes_from_type;
+        use crate::libs::status_codes::StatusCodeEntry;
+
         let resolved = checker.resolve_alias_chain(type_id);
         if let Some(Type::Model(m)) = checker.get_type(resolved) {
             for name in &m.property_names {
-                if let Some(&prop_id) = m.properties.get(name) {
-                    let state = &checker.state_accessors;
-                    if let Some(codes) = state.get_state("TypeSpec.Http.statusCode", prop_id) {
-                        return codes.to_string();
-                    }
+                if let Some(&prop_id) = m.properties.get(name)
+                    && let Some(code) = get_status_codes_from_type(checker, prop_id)
+                        .into_iter()
+                        .next()
+                {
+                    return match code {
+                        StatusCodeEntry::Code(c) => c.to_string(),
+                        StatusCodeEntry::Range(r) => format!("{}-{}", r.start, r.end),
+                        StatusCodeEntry::Wildcard => "default".to_string(),
+                    };
                 }
             }
         }
@@ -530,6 +553,11 @@ impl OpenAPIEmitter {
                 }
                 Type::Tuple(t) => {
                     let mut s = format!("{}type: array\n", pad);
+                    // `items`/`prefixItems` alone do not constrain the array
+                    // length; a tuple has a fixed length
+                    // (microsoft/typespec#11893).
+                    s.push_str(&format!("{}minItems: {}\n", pad, t.values.len()));
+                    s.push_str(&format!("{}maxItems: {}\n", pad, t.values.len()));
                     if t.values.len() == 1 {
                         s.push_str(&format!("{}items:\n", pad));
                         s.push_str(&self.type_to_schema(checker, t.values[0], indent + 2));
@@ -633,6 +661,48 @@ mod tests {
         checker
     }
 
+    fn check_http(source: &str) -> Checker {
+        let parse_result = parse(source);
+        let mut checker = Checker::new();
+        checker.register_decorators(vec![
+            ("get", "TypeSpec.Http", "Operation"),
+            ("statusCode", "TypeSpec.Http", "ModelProperty"),
+        ]);
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.check_program();
+        checker
+    }
+
+    #[test]
+    fn test_openapi_union_variant_descriptions() {
+        // Ported from openapi3/test/response-descriptions.test.ts:
+        // "uses union variant descriptions" (microsoft/typespec#11785).
+        let checker = check_http(
+            r#"
+            model PetCreated { @statusCode code: 201 }
+            model PetAccepted { @statusCode code: 202 }
+            union CreatedResponses {
+              @doc("Pet Created") created: PetCreated,
+              @doc("Pet Accepted") accepted: PetAccepted,
+            }
+            @get op created(): CreatedResponses;
+            "#,
+        );
+        let emitter = OpenAPIEmitter::new();
+        let output = emitter.emit_from_checker(&checker).unwrap();
+        let yaml = &output.output;
+        assert!(yaml.contains("'201':"), "expected 201 response in:\n{yaml}");
+        assert!(yaml.contains("'202':"), "expected 202 response in:\n{yaml}");
+        assert!(
+            yaml.contains("description: Pet Created"),
+            "expected variant doc in:\n{yaml}"
+        );
+        assert!(
+            yaml.contains("description: Pet Accepted"),
+            "expected variant doc in:\n{yaml}"
+        );
+    }
+
     #[test]
     fn test_openapi_emitter_model() {
         let checker = check("model Pet { name: string; id: int32; }");
@@ -665,6 +735,24 @@ mod tests {
         assert!(output.output.contains("paths"));
         assert!(output.output.contains("list-pets"));
         assert!(output.output.contains("operationId: listPets"));
+    }
+
+    #[test]
+    fn test_openapi_tuple_min_max_items() {
+        // Ported from json-schema/test/tuples.test.ts (microsoft/typespec#11893):
+        // a tuple has a fixed length.
+        let checker = check("model M { value: [string, int32]; }");
+        let emitter = OpenAPIEmitter::new();
+        let output = emitter.emit_from_checker(&checker).unwrap();
+        let yaml = &output.output;
+        assert!(
+            yaml.contains("minItems: 2"),
+            "expected minItems in:\n{yaml}"
+        );
+        assert!(
+            yaml.contains("maxItems: 2"),
+            "expected maxItems in:\n{yaml}"
+        );
     }
 
     #[test]

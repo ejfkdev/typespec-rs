@@ -59,6 +59,9 @@ pub fn compiler_diagnostic_codes() -> &'static HashSet<&'static str> {
             "doc-invalid-identifier",
             "experimental-feature",
             "auto-decorator-disabled",
+            "union-extends-disabled",
+            "declaration-expression-disabled",
+            "templated-declaration-in-expression",
             // Checker errors
             "using-invalid-ref",
             "invalid-type-ref",
@@ -74,6 +77,7 @@ pub fn compiler_diagnostic_codes() -> &'static HashSet<&'static str> {
             "override-property-mismatch",
             "extend-scalar",
             "extend-model",
+            "extend-union",
             "is-model",
             "is-operation",
             "spread-model",

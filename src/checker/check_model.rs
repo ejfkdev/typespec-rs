@@ -50,6 +50,18 @@ impl Checker {
             _ => return self.error_type,
         };
 
+        // Declarations used as expressions (microsoft/typespec#11019).
+        let is_expression = match &node {
+            AstNode::ModelDeclaration(d) => d.expression,
+            _ => false,
+        };
+        self.check_declaration_expression_usage(
+            ctx,
+            node_id,
+            is_expression,
+            template_param_ids.len(),
+        );
+
         // Mark this node as currently being type-checked (for circular detection)
         // Insert AFTER all early returns to avoid leaking entries in pending_type_checks.
         self.pending_type_checks.insert(node_id);
@@ -100,7 +112,11 @@ impl Checker {
             // Only update node_type_map and declared_types for template declarations (no mapper).
             // For instantiations (with mapper), the instance is cached in symbol_links.instantiations
             // and should NOT overwrite the template declaration's registration.
-            self.register_type(node_id, new_id, &type_name, ctx.mapper.as_ref());
+            if is_expression {
+                self.register_expression_type(node_id, new_id);
+            } else {
+                self.register_type(node_id, new_id, &type_name, ctx.mapper.as_ref());
+            }
             new_id
         };
 
@@ -444,6 +460,25 @@ impl Checker {
                                     node_id,
                                     "spread-model",
                                     "Cannot spread type within its own declaration.",
+                                );
+                                continue;
+                            }
+
+                            // Array models cannot have properties: spreading a
+                            // model with properties or an indexer into one is an
+                            // error (microsoft/typespec#11559).
+                            let parent_is_array = matches!(
+                                self.get_type(type_id),
+                                Some(Type::Model(parent)) if type_utils::is_array_model_type(&self.type_store, parent)
+                            );
+                            if parent_is_array
+                                && (!target_model.properties.is_empty()
+                                    || target_model.indexer.is_some())
+                            {
+                                self.error_at(
+                                    spread_node.id,
+                                    "no-array-properties",
+                                    "Array models cannot have any properties.",
                                 );
                                 continue;
                             }

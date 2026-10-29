@@ -717,3 +717,267 @@ fn test_fn_in_union_no_error_for_regular_types() {
         checker.diagnostics()
     );
 }
+
+// ============================================================================
+// Union `extends` clause (microsoft/typespec#11771)
+// ============================================================================
+
+/// Check a source with the `union-extends` feature enabled or disabled.
+fn check_union_extends(source: &str, feature_enabled: bool) -> crate::checker::Checker {
+    let result = crate::parser::parse(source);
+    let options = crate::diagnostics::CompilerOptions {
+        features: if feature_enabled {
+            vec!["union-extends".to_string()]
+        } else {
+            Vec::new()
+        },
+        ..crate::diagnostics::CompilerOptions::default()
+    };
+    let mut checker = crate::checker::Checker::with_options(options);
+    checker.set_parse_result(result.root_id, result.builder);
+    checker.check_program();
+    checker
+}
+
+/// Ported from TS: "reports an error when the feature is not enabled"
+#[test]
+fn test_union_extends_requires_feature() {
+    let checker = check_union_extends(r#"union Foo extends string { a: "x" }"#, false);
+    assert!(
+        has_diagnostic(&checker, "union-extends-disabled"),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "does not report an error when the feature is enabled"
+#[test]
+fn test_union_extends_with_feature_enabled() {
+    let checker = check_union_extends(r#"union Foo extends string { a: "x" }"#, true);
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "sets baseType on the union type"
+#[test]
+fn test_union_extends_sets_base_type() {
+    let checker = check_union_extends(r#"union Foo extends string { a: "x" }"#, true);
+    let foo = checker.get_type_by_name("Foo").expect("Foo");
+    match checker.get_type(foo) {
+        Some(Type::Union(u)) => assert!(u.base_type.is_some(), "base_type should be set"),
+        _ => panic!("expected union"),
+    }
+}
+
+/// Ported from TS: "baseType is undefined when there is no extends clause"
+#[test]
+fn test_union_without_extends_has_no_base_type() {
+    let checker = check(r#"union Foo { a: "x" }"#);
+    let foo = checker.get_type_by_name("Foo").expect("Foo");
+    match checker.get_type(foo) {
+        Some(Type::Union(u)) => assert!(u.base_type.is_none()),
+        _ => panic!("expected union"),
+    }
+}
+
+/// Ported from TS: "does not add the base type as a variant"
+#[test]
+fn test_union_extends_does_not_add_variant() {
+    let checker = check_union_extends(r#"union Foo extends string { a: "x" }"#, true);
+    let foo = checker.get_type_by_name("Foo").expect("Foo");
+    match checker.get_type(foo) {
+        Some(Type::Union(u)) => {
+            assert_eq!(u.variant_names, vec!["a".to_string()]);
+            assert!(u.base_type.is_some());
+        }
+        _ => panic!("expected union"),
+    }
+}
+
+/// Ported from TS: "emits a diagnostic on the variant that doesn't satisfy the
+/// constraint"
+#[test]
+fn test_union_extends_variant_not_satisfying() {
+    let checker = check_union_extends("union Foo extends string { a: 123 }", true);
+    assert!(
+        has_diagnostic(&checker, "unassignable"),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "accepts the base type itself as a variant"
+#[test]
+fn test_union_extends_accepts_base_type_variant() {
+    let checker = check_union_extends(r#"union Foo extends string { a: string }"#, true);
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "supports an enum base type"
+#[test]
+fn test_union_extends_enum_base() {
+    let checker = check_union_extends(
+        r#"
+        enum E { a, b }
+        union Foo extends E { x: E.a }
+        "#,
+        true,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "supports a scalar base type"
+#[test]
+fn test_union_extends_scalar_base() {
+    let checker = check_union_extends(
+        r#"
+        scalar S extends string;
+        union Foo extends S { x: S }
+        "#,
+        true,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "supports a union expression as the base type"
+#[test]
+fn test_union_extends_union_expression_base() {
+    let checker = check_union_extends(r#"union Foo extends string | int32 { a: "x", b: 1 }"#, true);
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "rejects a model expression as the base type"
+#[test]
+fn test_union_extends_rejects_model_expression() {
+    let checker = check_union_extends(r#"union Foo extends { x: string } { a: "x" }"#, true);
+    assert!(
+        checker
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == "extend-union"
+                && d.message == "Unions cannot extend model expressions."),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "rejects an aliased model expression as the base type"
+#[test]
+fn test_union_extends_rejects_aliased_model_expression() {
+    let checker = check_union_extends(
+        r#"
+        alias M = { x: string };
+        union Foo extends M { a: "x" }
+        "#,
+        true,
+    );
+    assert!(
+        checker
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == "extend-union"
+                && d.message == "Unions cannot extend model expressions."),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "reports a diagnostic when the base type is a value"
+#[test]
+fn test_union_extends_invalid_base_kind() {
+    let checker = check_union_extends("union Foo extends 123 { a: \"x\" }", true);
+    assert!(
+        checker
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == "extend-union"
+                && d.message == "Union `extends` must specify a model, scalar, enum, or union."),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "reports a diagnostic when a union extends itself"
+#[test]
+fn test_union_extends_self_reference() {
+    let checker = check_union_extends(r#"union Foo extends Foo { a: "x" }"#, true);
+    assert!(
+        has_diagnostic(&checker, "circular-base-type"),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+    // No base type is set when a circular reference is reported.
+    let foo = checker.get_type_by_name("Foo").expect("Foo");
+    if let Some(Type::Union(u)) = checker.get_type(foo) {
+        assert!(u.base_type.is_none());
+    }
+}
+
+/// Ported from TS: "supports a templated base type reference"
+#[test]
+fn test_union_extends_templated_base() {
+    let checker = check_union_extends(
+        r#"
+        model Box<T> { value: T }
+        union Foo extends Box<string> { a: Box<string> }
+        "#,
+        true,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "supports a template parameter as the base type" — not
+/// validated on the uninstantiated declaration.
+#[test]
+fn test_union_extends_template_parameter_base() {
+    let checker = check_union_extends(
+        r#"union Foo<T extends string> extends T { a: T, b: "x" }"#,
+        true,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "supports composing unions declared with extends"
+#[test]
+fn test_union_extends_composition() {
+    let checker = check_union_extends(
+        r#"
+        union A extends string { a: "x" }
+        union B extends string { b: "y" }
+        union C extends string { x: A.a, y: B.b }
+        "#,
+        true,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "diagnostics: {:?}",
+        checker.diagnostics()
+    );
+}

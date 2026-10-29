@@ -350,6 +350,8 @@ pub struct ModelDeclaration {
     pub id: NodeId,
     pub span: Span,
     pub name: NodeId,
+    /// Declaration used in expression position (microsoft/typespec#11019).
+    pub expression: bool,
     pub properties: Vec<NodeId>,
     pub extends: Option<NodeId>, // Expression for extends clause
     pub is: Option<NodeId>,      // Expression for `model is` clause
@@ -398,6 +400,8 @@ pub struct ScalarDeclaration {
     pub id: NodeId,
     pub span: Span,
     pub name: NodeId,
+    /// Declaration used in expression position (microsoft/typespec#11019).
+    pub expression: bool,
     pub extends: Option<NodeId>,
     pub decorators: Vec<NodeId>,
     pub constructors: Vec<NodeId>,
@@ -443,10 +447,14 @@ pub struct UnionDeclaration {
     pub id: NodeId,
     pub span: Span,
     pub name: NodeId,
+    /// Declaration used in expression position (microsoft/typespec#11019).
+    pub expression: bool,
     pub variants: Vec<NodeId>,
     pub decorators: Vec<NodeId>,
     pub template_parameters: Vec<NodeId>,
     pub modifiers: Vec<NodeId>,
+    /// Base type of an `extends` clause (microsoft/typespec#11771).
+    pub extends: Option<NodeId>,
 }
 
 /// Union variant - individual variant in a union
@@ -469,6 +477,8 @@ pub struct EnumDeclaration {
     pub id: NodeId,
     pub span: Span,
     pub name: NodeId,
+    /// Declaration used in expression position (microsoft/typespec#11019).
+    pub expression: bool,
     pub members: Vec<NodeId>,
     pub decorators: Vec<NodeId>,
     pub modifiers: Vec<NodeId>,

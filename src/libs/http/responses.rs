@@ -13,16 +13,6 @@ use crate::libs::http::operation::HttpOperationResponse;
 use crate::libs::status_codes::StatusCodeEntry as HttpStatusCodesEntry;
 
 // ============================================================================
-// State key constants for HTTP response metadata
-// ============================================================================
-
-const STATE_STATUS_CODE: &str = "TypeSpec.Http.statusCode";
-const STATE_BODY: &str = "TypeSpec.Http.body";
-const STATE_BODY_ROOT: &str = "TypeSpec.Http.bodyRoot";
-const STATE_HEADER: &str = "TypeSpec.Http.header";
-const STATE_MULTIPART_BODY: &str = "TypeSpec.Http.multipartBody";
-
-// ============================================================================
 // AllowedSegmentSeparators — route path separators
 // ============================================================================
 
@@ -80,13 +70,17 @@ pub fn is_plain_response_body(checker: &Checker, type_id: TypeId) -> bool {
 }
 
 /// Check if a model property has HTTP envelope metadata decorators.
+///
+/// `@statusCode`, `@body`, `@bodyRoot` and `@multipartBody` are flag decorators
+/// stored in the state set, while `@header` stores an optional name in the
+/// state map — so each kind has to be queried through its own helper.
 fn has_http_metadata_decorators(checker: &Checker, prop_id: TypeId) -> bool {
     let state = &checker.state_accessors;
-    state.get_state(STATE_STATUS_CODE, prop_id).is_some()
-        || state.get_state(STATE_HEADER, prop_id).is_some()
-        || state.get_state(STATE_BODY, prop_id).is_some()
-        || state.get_state(STATE_BODY_ROOT, prop_id).is_some()
-        || state.get_state(STATE_MULTIPART_BODY, prop_id).is_some()
+    super::is_status_code(state, prop_id)
+        || super::is_header(state, prop_id)
+        || super::is_body(state, prop_id)
+        || super::is_body_root(state, prop_id)
+        || super::is_multipart_body(state, prop_id)
 }
 
 // ============================================================================
@@ -98,9 +92,19 @@ fn has_http_metadata_decorators(checker: &Checker, prop_id: TypeId) -> bool {
 #[derive(Debug, Clone)]
 pub enum ResolvedResponseVariant {
     /// A plain body response (no HTTP envelope metadata)
-    Plain { type_id: TypeId },
+    Plain {
+        type_id: TypeId,
+        /// Documentation carried by the union variant (or its union).
+        /// TS: ResolvedResponseVariant.description (microsoft/typespec#11785)
+        description: Option<String>,
+    },
     /// A response envelope (has HTTP metadata like @statusCode, @header, etc.)
-    Envelope { type_id: TypeId },
+    Envelope {
+        type_id: TypeId,
+        /// Documentation carried by the union variant (or its union).
+        /// TS: ResolvedResponseVariant.description (microsoft/typespec#11785)
+        description: Option<String>,
+    },
 }
 
 // ============================================================================
@@ -121,7 +125,7 @@ pub fn resolve_response_variants(
     type_id: TypeId,
 ) -> Vec<ResolvedResponseVariant> {
     let resolved = checker.resolve_alias_chain(type_id);
-    resolve_response_variants_inner(checker, resolved, 0)
+    resolve_response_variants_inner(checker, resolved, 0, None)
 }
 
 const MAX_RECURSION_DEPTH: usize = 10;
@@ -130,20 +134,34 @@ fn resolve_response_variants_inner(
     checker: &Checker,
     type_id: TypeId,
     depth: usize,
+    parent_description: Option<&str>,
 ) -> Vec<ResolvedResponseVariant> {
     if depth > MAX_RECURSION_DEPTH {
-        return vec![ResolvedResponseVariant::Plain { type_id }];
+        return vec![ResolvedResponseVariant::Plain {
+            type_id,
+            description: parent_description.map(str::to_string),
+        }];
     }
 
     match checker.get_type(type_id) {
         Some(Type::Union(u)) => {
+            // Variant docs win over the union doc, which wins over the
+            // description inherited from an enclosing variant
+            // (microsoft/typespec#11785).
+            let union_description = u
+                .doc
+                .clone()
+                .or_else(|| parent_description.map(str::to_string));
             let mut plain_variants = Vec::new();
             let mut envelope_variants = Vec::new();
 
             for name in &u.variant_names {
                 if let Some(&variant_id) = u.variants.get(name) {
-                    let inner_type_id = match checker.get_type(variant_id) {
-                        Some(Type::UnionVariant(v)) => v.r#type,
+                    let (inner_type_id, variant_description) = match checker.get_type(variant_id) {
+                        Some(Type::UnionVariant(v)) => (
+                            v.r#type,
+                            v.doc.clone().or_else(|| union_description.clone()),
+                        ),
                         _ => continue,
                     };
 
@@ -157,16 +175,20 @@ fn resolve_response_variants_inner(
                     }
 
                     // Recursively resolve inner variants
-                    let inner_variants =
-                        resolve_response_variants_inner(checker, inner_resolved, depth + 1);
+                    let inner_variants = resolve_response_variants_inner(
+                        checker,
+                        inner_resolved,
+                        depth + 1,
+                        variant_description.as_deref(),
+                    );
 
                     for variant in inner_variants {
                         match variant {
-                            ResolvedResponseVariant::Plain { type_id } => {
+                            ResolvedResponseVariant::Plain { type_id, .. } => {
                                 plain_variants.push(type_id);
                             }
-                            ResolvedResponseVariant::Envelope { type_id } => {
-                                envelope_variants.push(type_id);
+                            ResolvedResponseVariant::Envelope { .. } => {
+                                envelope_variants.push(variant);
                             }
                         }
                     }
@@ -179,16 +201,18 @@ fn resolve_response_variants_inner(
             if plain_variants.len() == 1 {
                 result.push(ResolvedResponseVariant::Plain {
                     type_id: plain_variants[0],
+                    description: union_description,
                 });
             } else if !plain_variants.is_empty() {
                 // Multiple plain variants: reference the original union as the merged plain body
-                result.push(ResolvedResponseVariant::Plain { type_id });
+                result.push(ResolvedResponseVariant::Plain {
+                    type_id,
+                    description: union_description,
+                });
             }
 
             // Add envelope variants individually
-            for env_id in envelope_variants {
-                result.push(ResolvedResponseVariant::Envelope { type_id: env_id });
-            }
+            result.extend(envelope_variants);
 
             result
         }
@@ -196,16 +220,26 @@ fn resolve_response_variants_inner(
             // Skip null variants
             vec![]
         }
-        _ => classify_variant(checker, type_id),
+        _ => classify_variant(checker, type_id, parent_description.map(str::to_string)),
     }
 }
 
 /// Classify a single type as plain or envelope.
-fn classify_variant(checker: &Checker, type_id: TypeId) -> Vec<ResolvedResponseVariant> {
+fn classify_variant(
+    checker: &Checker,
+    type_id: TypeId,
+    description: Option<String>,
+) -> Vec<ResolvedResponseVariant> {
     if is_plain_response_body(checker, type_id) {
-        vec![ResolvedResponseVariant::Plain { type_id }]
+        vec![ResolvedResponseVariant::Plain {
+            type_id,
+            description,
+        }]
     } else {
-        vec![ResolvedResponseVariant::Envelope { type_id }]
+        vec![ResolvedResponseVariant::Envelope {
+            type_id,
+            description,
+        }]
     }
 }
 
@@ -491,6 +525,69 @@ mod tests {
         let codes = super::super::operation::get_status_codes(&state, 1);
         assert_eq!(codes.len(), 1);
         assert!(matches!(codes[0], HttpStatusCodesEntry::Range(_)));
+    }
+
+    #[test]
+    fn test_union_variant_docs_become_response_descriptions() {
+        // Ported from openapi3/test/response-descriptions.test.ts:
+        // "uses union variant descriptions" (microsoft/typespec#11785).
+        let checker = compile_http(
+            r#"
+            model PetCreated { @statusCode code: 201 }
+            model PetAccepted { @statusCode code: 202 }
+            union CreatedResponses {
+              @doc("Pet Created") created: PetCreated,
+              @doc("Pet Accepted") accepted: PetAccepted,
+            }
+            @get op created(): CreatedResponses;
+            "#,
+        );
+        let op_id = checker.declared_types["created"];
+        let responses = super::super::operations::get_responses_for_operation(
+            &checker,
+            &checker.state_accessors,
+            op_id,
+        );
+        let description_for = |code: u16| {
+            responses
+                .iter()
+                .find(|r| matches!(r.status_codes, HttpStatusCodesEntry::Code(c) if c == code))
+                .and_then(|r| r.description.clone())
+        };
+        assert_eq!(description_for(201).as_deref(), Some("Pet Created"));
+        assert_eq!(description_for(202).as_deref(), Some("Pet Accepted"));
+    }
+
+    #[test]
+    fn test_union_doc_fallback_for_plain_variants() {
+        // The union-level doc is used when a variific variant has no doc,
+        // and inherited through nested unions.
+        let checker = compile_http(
+            r#"
+            model Cat { meow: boolean }
+            model Dog { bark: boolean }
+            @doc("A pet")
+            union Pet {
+              @doc("A cat") cat: Cat,
+              dog: Dog,
+            }
+            @get op get(): Pet;
+            "#,
+        );
+        let op_id = checker.declared_types["get"];
+        let responses = super::super::operations::get_responses_for_operation(
+            &checker,
+            &checker.state_accessors,
+            op_id,
+        );
+        let response = responses
+            .iter()
+            .find(|r| matches!(r.status_codes, HttpStatusCodesEntry::Code(200)));
+        // Plain variants merge into one response using the union doc.
+        assert_eq!(
+            response.and_then(|r| r.description.as_deref()),
+            Some("A pet")
+        );
     }
 
     #[test]

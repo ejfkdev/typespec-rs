@@ -762,3 +762,108 @@ fn test_deprecated_non_string_argument_emits_error() {
         checker.diagnostics()
     );
 }
+
+// ============================================================================
+// Deprecated operations suppress deprecation warnings for their signature
+// (microsoft/typespec#12314)
+// ============================================================================
+
+const DEP_PREAMBLE: &str = r#"
+namespace Legacy {
+  #deprecated "Old is deprecated"
+  model Old { value: string; }
+}
+model Box<T> { value: T; }
+op Generic<P extends {}, R>(...P): R;
+"#;
+
+/// Count deprecation warnings for the given operation signature.
+fn deprecated_warning_count_for(signature: &str, deprecated: bool) -> usize {
+    let source = format!(
+        "{}\n{}\n{}",
+        DEP_PREAMBLE,
+        if deprecated {
+            "#deprecated \"Operation is deprecated\""
+        } else {
+            ""
+        },
+        signature
+    );
+    let checker = check(&source);
+    checker
+        .diagnostics()
+        .iter()
+        .filter(|d| d.code == "deprecated")
+        .count()
+}
+
+/// Ported from TS deprecation.test.ts (#12314): every type reference position
+/// in an operation signature is suppressed when the operation is deprecated.
+#[test]
+fn test_deprecated_operation_suppresses_signature_deprecations() {
+    let signatures = [
+        "op test(body: Legacy.Old): void;",
+        "op test(body: { nested: Legacy.Old }): void;",
+        "op test(body: Legacy.Old[]): void;",
+        "op test(body: [Legacy.Old]): void;",
+        "op test(body: string | Legacy.Old): void;",
+        "op test(body: Legacy.Old & {}): void;",
+        "op test(body: Box<Legacy.Old>): void;",
+        "op test(): Legacy.Old;",
+        "op test(): { body: Legacy.Old };",
+        "op test(): Legacy.Old[];",
+        "op test(): [Legacy.Old];",
+        "op test(): string | Legacy.Old;",
+        "op test(): Legacy.Old & {};",
+        "op test(): Box<Legacy.Old>;",
+        "op test is Generic<Legacy.Old, void>;",
+        "op test is Generic<{ body: Legacy.Old }, void>;",
+        "op test is Generic<{}, Legacy.Old>;",
+        "op test<T extends Legacy.Old>(body: T): T;",
+        "op test<T = Legacy.Old>(body: T): T;",
+    ];
+    for signature in signatures {
+        assert_eq!(
+            deprecated_warning_count_for(signature, true),
+            0,
+            "deprecated operation should suppress warnings for: {}",
+            signature
+        );
+        assert!(
+            deprecated_warning_count_for(signature, false) > 0,
+            "non-deprecated operation should warn for: {}",
+            signature
+        );
+    }
+}
+
+/// Ported from TS: operations inside a deprecated interface are suppressed.
+#[test]
+fn test_deprecated_interface_suppresses_operation_signature_deprecations() {
+    let source = format!(
+        "{}\n#deprecated \"API is deprecated\"\ninterface API {{\n  op test(body: Legacy.Old): void;\n}}",
+        DEP_PREAMBLE
+    );
+    let checker = check(&source);
+    assert!(
+        !checker.diagnostics().iter().any(|d| d.code == "deprecated"),
+        "deprecated interface should suppress operation signature warnings: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "still warns in an independently declared model used by a
+/// deprecated operation" — the model body is not in a deprecated context.
+#[test]
+fn test_deprecated_operation_still_warns_in_independent_model_body() {
+    let source = format!(
+        "{}\nmodel Body {{ value: Legacy.Old; }}\n#deprecated \"Operation is deprecated\"\nop test(body: Body): Body;",
+        DEP_PREAMBLE
+    );
+    let checker = check(&source);
+    assert!(
+        checker.diagnostics().iter().any(|d| d.code == "deprecated"),
+        "model body is outside the deprecated context and should warn: {:?}",
+        checker.diagnostics()
+    );
+}

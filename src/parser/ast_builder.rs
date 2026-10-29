@@ -512,6 +512,33 @@ impl AstBuilder {
         id
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_union_declaration_with_extends(
+        &mut self,
+        name: u32,
+        variants: Vec<u32>,
+        decorators: Vec<u32>,
+        template_parameters: Vec<u32>,
+        modifiers: Vec<u32>,
+        extends: Option<u32>,
+        span: Span,
+    ) -> u32 {
+        let id = self.node_id_gen.next();
+        let node = AstNode::UnionDeclaration(UnionDeclaration {
+            id,
+            span,
+            name,
+            expression: false,
+            variants,
+            decorators,
+            template_parameters,
+            modifiers,
+            extends,
+        });
+        self.nodes.insert(id, node);
+        id
+    }
+
     pub fn create_union_declaration(
         &mut self,
         name: u32,
@@ -521,18 +548,15 @@ impl AstBuilder {
         modifiers: Vec<u32>,
         span: Span,
     ) -> u32 {
-        let id = self.node_id_gen.next();
-        let node = AstNode::UnionDeclaration(UnionDeclaration {
-            id,
-            span,
+        self.create_union_declaration_with_extends(
             name,
             variants,
             decorators,
             template_parameters,
             modifiers,
-        });
-        self.nodes.insert(id, node);
-        id
+            None,
+            span,
+        )
     }
 
     pub fn create_union_variant(
@@ -567,6 +591,7 @@ impl AstBuilder {
             id,
             span,
             name,
+            expression: false,
             members,
             decorators,
             modifiers,

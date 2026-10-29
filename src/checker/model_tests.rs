@@ -2730,3 +2730,94 @@ fn test_is_property_parent_is_target_model() {
         _ => panic!("Expected Model"),
     }
 }
+
+// ============================================================================
+// no-array-properties: spreads (microsoft/typespec#11559)
+// ============================================================================
+
+/// Ported from TS: "model is/extends array cannot spread record properties"
+#[test]
+fn test_model_is_array_cannot_spread_record_properties() {
+    let checker = check(
+        "
+        model A is Array<string> {
+          ...Record<int32>;
+        }
+    ",
+    );
+    assert!(
+        checker
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == "no-array-properties"
+                && d.message == "Array models cannot have any properties."),
+        "Should report no-array-properties when is-array model spreads Record: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "model is/extends array cannot spread record properties"
+#[test]
+fn test_model_extends_array_cannot_spread_record_properties() {
+    let checker = check(
+        "
+        model A extends Array<string> {
+          ...Record<int32>;
+        }
+    ",
+    );
+    assert!(
+        checker
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == "no-array-properties"),
+        "Should report no-array-properties when extending Array and spreading Record: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "model extends array cannot spread model properties"
+#[test]
+fn test_model_extends_array_cannot_spread_model_properties() {
+    let checker = check(
+        "
+        model Source {
+          name: string;
+        }
+
+        model A extends Array<string> {
+          ...Source;
+        }
+    ",
+    );
+    assert!(
+        checker
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == "no-array-properties"),
+        "Should report no-array-properties when extending Array and spreading a model: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Spreading an empty model into an array model is fine.
+#[test]
+fn test_model_extends_array_can_spread_empty_model() {
+    let checker = check(
+        "
+        model Empty {}
+
+        model A extends Array<string> {
+          ...Empty;
+        }
+    ",
+    );
+    assert!(
+        !checker
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == "no-array-properties"),
+        "Empty spread should not diagnose: {:?}",
+        checker.diagnostics()
+    );
+}

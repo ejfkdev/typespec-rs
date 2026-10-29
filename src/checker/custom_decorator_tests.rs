@@ -829,3 +829,44 @@ fn test_fqn_for_interface_with_decorator_overlap() {
         "FQN should be 'Llm.Chat' even with decorator overlap"
     );
 }
+
+// Regression tests for https://github.com/microsoft/typespec/issues/11743
+// (microsoft/typespec#11744): object members named like `Object.prototype`
+// keys must be kept as own members. The Rust port stores records in a
+// `HashMap`, so no prototype pollution is possible, but this locks the behavior.
+#[test]
+fn test_decorator_arg_object_members_named_prototype_keys() {
+    for name in ["__proto__", "constructor", "hasOwnProperty", "toString"] {
+        let source = format!(r#"@meta(#{{ {name}: "written", ok: 1 }}) op doWork(): void;"#);
+        let checker = check_with_decorators(&source, vec![("meta", "MyApp", "Operation")]);
+
+        let op_type = checker
+            .get_type_by_name("doWork")
+            .expect("operation should exist");
+        let decs = match checker.get_type(op_type) {
+            Some(Type::Operation(op)) => &op.decorators,
+            _ => panic!("expected Operation type"),
+        };
+        let arg = &decs[0].args[0];
+
+        let members = match &arg.js_value {
+            Some(DecoratorMarshalledValue::Record(members)) => members,
+            other => panic!("expected Record marshalled value, got {other:?}"),
+        };
+
+        assert_eq!(members.len(), 2, "member `{name}` should be kept");
+        let named_value = members.get(name).copied().expect("named member exists");
+        assert!(
+            matches!(
+                checker.get_type(named_value),
+                Some(Type::String(s)) if s.value == "written"
+            ),
+            "member `{name}` should hold the string value"
+        );
+        let ok_value = members.get("ok").copied().expect("ok member exists");
+        assert!(matches!(
+            checker.get_type(ok_value),
+            Some(Type::Number(n)) if n.value == 1.0
+        ));
+    }
+}

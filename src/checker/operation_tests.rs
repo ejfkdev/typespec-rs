@@ -1223,3 +1223,56 @@ fn test_overload_same_parent_interface_vs_namespace() {
     );
     let _ = checker.diagnostics();
 }
+
+// ============================================================================
+// Operation parameter model naming (microsoft/typespec#11551)
+// ============================================================================
+
+/// Ported from TS: "names a parameter with the operation meta property"
+#[test]
+fn test_operation_parameters_type_name() {
+    let checker = check(
+        r#"
+        namespace Foo;
+        model Bar {}
+        op test(param: Bar): void;
+        "#,
+    );
+    let op = checker.get_type_by_name("test").expect("test op");
+    let params_id = match checker.get_type(op) {
+        Some(crate::checker::Type::Operation(o)) => o.parameters.expect("parameters"),
+        _ => panic!("expected operation"),
+    };
+    assert_eq!(checker.type_to_string(params_id), "Foo.test::parameters");
+    let prop = match checker.get_type(params_id) {
+        Some(crate::checker::Type::Model(m)) => *m.properties.get("param").expect("param"),
+        _ => panic!("expected model"),
+    };
+    assert_eq!(checker.type_to_string(prop), "Foo.test::parameters.param");
+}
+
+/// Ported from TS: "includes the interface name"
+#[test]
+fn test_operation_parameters_type_name_in_interface() {
+    let checker = check(
+        r#"
+        namespace Foo;
+        interface Bar {
+            test(param: string): void;
+        }
+        "#,
+    );
+    let iface = checker.get_type_by_name("Bar").expect("Bar");
+    let op_id = match checker.get_type(iface) {
+        Some(crate::checker::Type::Interface(i)) => *i.operations.get("test").expect("test"),
+        _ => panic!("expected interface"),
+    };
+    let params_id = match checker.get_type(op_id) {
+        Some(crate::checker::Type::Operation(o)) => o.parameters.expect("parameters"),
+        _ => panic!("expected operation"),
+    };
+    assert_eq!(
+        checker.type_to_string(params_id),
+        "Foo.Bar.test::parameters"
+    );
+}

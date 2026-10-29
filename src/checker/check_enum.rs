@@ -10,6 +10,9 @@ impl Checker {
 
         let (ast, node) = require_ast_node!(self, node_id, EnumDeclaration, self.error_type);
 
+        // Declarations used as expressions (microsoft/typespec#11019).
+        self.check_declaration_expression_usage(ctx, node_id, node.expression, 0);
+
         // Mark as pending AFTER all early returns to avoid leaking entries
         self.pending_type_checks.insert(node_id);
 
@@ -34,7 +37,11 @@ impl Checker {
                 current_ns,
             )));
 
-            self.register_type(node_id, new_id, &name, ctx.mapper.as_ref());
+            if node.expression {
+                self.register_expression_type(node_id, new_id);
+            } else {
+                self.register_type(node_id, new_id, &name, ctx.mapper.as_ref());
+            }
             new_id
         };
 

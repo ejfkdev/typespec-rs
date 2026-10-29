@@ -10,6 +10,18 @@ impl Checker {
         ctx: &CheckContext,
         node_id: NodeId,
     ) -> TypeId {
+        let result = self.check_member_expression_inner(ctx, node_id);
+        // Emit a deprecation warning when a member reference resolves to a
+        // deprecated type (e.g. `Legacy.Old`). An enclosing deprecated context
+        // suppresses it (microsoft/typespec#12314).
+        if result != self.error_type {
+            self.emit_deprecated_warning_if_needed(result);
+        }
+        self.node_type_map.insert(node_id, result);
+        result
+    }
+
+    fn check_member_expression_inner(&mut self, ctx: &CheckContext, node_id: NodeId) -> TypeId {
         let (ast, node) = require_ast_node!(self, node_id, MemberExpression, self.error_type);
 
         // Check the object (base) part first
@@ -72,6 +84,7 @@ impl Checker {
         }
 
         // Look up the property in the base type
+        #[allow(clippy::let_and_return)]
         let result_type = match self.get_type(base_type) {
             Some(Type::TemplateParameter(_)) | Some(Type::TemplateParameterAccess(_)) => {
                 // Template parameter member access (e.g., T.id, T::returnType)
@@ -294,7 +307,6 @@ impl Checker {
             }
         };
 
-        self.node_type_map.insert(node_id, result_type);
         result_type
     }
 

@@ -11,6 +11,14 @@ impl Checker {
 
         let (ast, node) = require_ast_node!(self, node_id, ScalarDeclaration, self.error_type);
 
+        // Declarations used as expressions (microsoft/typespec#11019).
+        self.check_declaration_expression_usage(
+            ctx,
+            node_id,
+            node.expression,
+            node.template_parameters.len(),
+        );
+
         let name = Self::get_identifier_name(&ast, node.name);
 
         self.check_template_declaration(ctx, &ast, &node.template_parameters);
@@ -134,7 +142,11 @@ impl Checker {
                 self.create_type(Type::Scalar(s))
             };
 
-            self.register_type(node_id, new_id, &name, ctx.mapper.as_ref());
+            if node.expression {
+                self.register_expression_type(node_id, new_id);
+            } else {
+                self.register_type(node_id, new_id, &name, ctx.mapper.as_ref());
+            }
             new_id
         };
 

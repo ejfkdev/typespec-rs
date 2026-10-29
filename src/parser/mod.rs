@@ -196,6 +196,9 @@ pub struct Parser<'a> {
     builder: AstBuilder,
     diagnostics: Vec<ParseDiagnostic>,
     library_line_offset: usize,
+    /// True while parsing a declaration used in expression position
+    /// (`model { ... }`, `enum { a }`, ...) — microsoft/typespec#11019.
+    declaration_expression_mode: bool,
     /// Holds ownership of the combined source Box<str> so it's not leaked.
     /// The lexer borrows from this via a raw pointer — safe because Parser is
     /// consumed by parse() and the Box outlives the borrow.
@@ -259,6 +262,7 @@ impl<'a> Parser<'a> {
             builder,
             diagnostics: Vec::new(),
             library_line_offset: line_offset,
+            declaration_expression_mode: false,
             source_hold: Some(combined_box),
         }
     }
@@ -636,7 +640,7 @@ impl<'a> Parser<'a> {
         modifiers: Vec<u32>,
     ) -> u32 {
         self.expect_token(TokenKind::ModelKeyword);
-        let name = self.parse_identifier();
+        let name = self.parse_optional_declaration_expression_name();
 
         let template_parameters = self.parse_optional_template_parameters();
 
@@ -664,7 +668,7 @@ impl<'a> Parser<'a> {
             self.expect_token(TokenKind::CloseBrace);
             let body_end = self.previous_token_end;
             (props, self.make_span(body_start, body_end))
-        } else if extends.is_some() || is.is_some() {
+        } else if (extends.is_some() || is.is_some()) && !self.declaration_expression_mode {
             // When using extends/is, expect semicolon
             self.expect_token(TokenKind::Semicolon);
             (vec![], self.make_span(0, 0))
@@ -677,6 +681,7 @@ impl<'a> Parser<'a> {
             id: 0, // auto-generated
             span,
             name,
+            expression: false,
             properties,
             extends,
             is,
@@ -893,22 +898,37 @@ impl<'a> Parser<'a> {
         modifiers: Vec<u32>,
     ) -> u32 {
         self.expect_token(TokenKind::UnionKeyword);
-        let name = self.parse_identifier();
+        let name = self.parse_optional_declaration_expression_name();
 
         let template_parameters = self.parse_optional_template_parameters();
 
+        // Optional `extends` clause (microsoft/typespec#11771)
+        let extends = if self.check_token(TokenKind::ExtendsKeyword) {
+            self.next_token();
+            Some(self.parse_expression())
+        } else {
+            None
+        };
+
         // Union variants
-        self.expect_token(TokenKind::OpenBrace);
-        let variants = self.parse_union_variant_list();
-        self.expect_token(TokenKind::CloseBrace);
+        let variants =
+            if self.declaration_expression_mode && !self.check_token(TokenKind::OpenBrace) {
+                vec![]
+            } else {
+                self.expect_token(TokenKind::OpenBrace);
+                let variants = self.parse_union_variant_list();
+                self.expect_token(TokenKind::CloseBrace);
+                variants
+            };
 
         let span = self.make_span(pos, self.previous_token_end);
-        self.builder.create_union_declaration(
+        self.builder.create_union_declaration_with_extends(
             name,
             variants,
             decorators,
             template_parameters,
             modifiers,
+            extends,
             span,
         )
     }
@@ -993,11 +1013,17 @@ impl<'a> Parser<'a> {
         modifiers: Vec<u32>,
     ) -> u32 {
         self.expect_token(TokenKind::EnumKeyword);
-        let name = self.parse_identifier();
+        let name = self.parse_optional_declaration_expression_name();
 
-        self.expect_token(TokenKind::OpenBrace);
-        let members = self.parse_enum_member_list();
-        self.expect_token(TokenKind::CloseBrace);
+        let members = if self.declaration_expression_mode && !self.check_token(TokenKind::OpenBrace)
+        {
+            vec![]
+        } else {
+            self.expect_token(TokenKind::OpenBrace);
+            let members = self.parse_enum_member_list();
+            self.expect_token(TokenKind::CloseBrace);
+            members
+        };
 
         let span = self.make_span(pos, self.previous_token_end);
         self.builder
@@ -1058,7 +1084,7 @@ impl<'a> Parser<'a> {
         modifiers: Vec<u32>,
     ) -> u32 {
         self.expect_token(TokenKind::ScalarKeyword);
-        let name = self.parse_identifier();
+        let name = self.parse_optional_declaration_expression_name();
 
         let template_parameters = self.parse_optional_template_parameters();
 
@@ -1078,7 +1104,7 @@ impl<'a> Parser<'a> {
             self.expect_token(TokenKind::CloseBrace);
             let body_range = self.make_span(body_start, self.previous_token_end);
             (ctors, body_range)
-        } else if self.check_token(TokenKind::Semicolon) {
+        } else if self.check_token(TokenKind::Semicolon) && !self.declaration_expression_mode {
             self.next_token();
             (vec![], self.make_span(0, 0))
         } else {
@@ -1090,6 +1116,7 @@ impl<'a> Parser<'a> {
             id: 0, // auto-generated
             span,
             name,
+            expression: false,
             template_parameters,
             extends,
             decorators,
@@ -1393,6 +1420,23 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 self.builder.create_boolean_literal(value, span)
             }
+            // Declarations can be used as expressions (microsoft/typespec#11019):
+            // `alias X = model { ... }`, `p: enum { a }`, `s: scalar extends string`.
+            TokenKind::ModelKeyword
+            | TokenKind::EnumKeyword
+            | TokenKind::UnionKeyword
+            | TokenKind::ScalarKeyword => {
+                self.declaration_expression_mode = true;
+                let id = match self.current_token() {
+                    TokenKind::ModelKeyword => self.parse_model_statement(pos, vec![], vec![]),
+                    TokenKind::EnumKeyword => self.parse_enum_statement(pos, vec![], vec![]),
+                    TokenKind::UnionKeyword => self.parse_union_statement(pos, vec![], vec![]),
+                    _ => self.parse_scalar_statement(pos, vec![], vec![]),
+                };
+                self.declaration_expression_mode = false;
+                self.mark_expression_declaration(id);
+                id
+            }
             TokenKind::OpenBrace => {
                 self.next_token();
                 let props = self.parse_model_property_list();
@@ -1672,16 +1716,34 @@ impl<'a> Parser<'a> {
 
             // Check for named argument: Identifier = Expression
             // In TypeSpec: A<T = string> or A<U = int32, T = string>
+            // Template arguments may also be dotted member expressions
+            // (e.g. `Box<Legacy.Old>`).
             let arg = if self.current_token() == TokenKind::Identifier {
-                let name_id = self.parse_identifier();
+                let name_id = self.parse_identifier_or_member_expression(false, false);
+                let name_is_bare_identifier = !matches!(
+                    self.builder.nodes.get(&name_id),
+                    Some(AstNode::MemberExpression(_))
+                );
 
                 if self.check_token(TokenKind::Equals) {
                     // Named argument: T = string
+                    if !name_is_bare_identifier {
+                        // TS: Template parameter argument names must be valid,
+                        // bare identifiers.
+                        self.error(
+                            "invalid-template-argument-name",
+                            "Template parameter argument names must be valid, bare identifiers.",
+                        );
+                    }
                     self.next_token();
                     let value = self.parse_expression();
                     let span = self.make_span(pos, self.previous_token_end);
-                    self.builder
-                        .create_template_argument(Some(name_id), value, span)
+                    let name = if name_is_bare_identifier {
+                        Some(name_id)
+                    } else {
+                        None
+                    };
+                    self.builder.create_template_argument(name, value, span)
                 } else if self.check_token(TokenKind::LessThan) {
                     // The identifier is followed by `<...>` — this is a TypeReference
                     // with template arguments (e.g., T<string>). If this later turns
@@ -1937,6 +1999,28 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an identifier, optionally allowing string literals (for model property names)
+    /// Parse the optional identifier of a declaration used in expression
+    /// position. An anonymous declaration expression has an empty name.
+    fn parse_optional_declaration_expression_name(&mut self) -> u32 {
+        if self.declaration_expression_mode && !self.check_token(TokenKind::Identifier) {
+            let span = self.make_span(self.token_start_position(), self.previous_token_end);
+            return self.builder.create_identifier(String::new(), span);
+        }
+        self.parse_identifier()
+    }
+
+    /// Mark a declaration node as parsed in expression position
+    /// (microsoft/typespec#11019).
+    fn mark_expression_declaration(&mut self, node_id: u32) {
+        match self.builder.nodes.get_mut(&node_id) {
+            Some(AstNode::ModelDeclaration(d)) => d.expression = true,
+            Some(AstNode::EnumDeclaration(d)) => d.expression = true,
+            Some(AstNode::UnionDeclaration(d)) => d.expression = true,
+            Some(AstNode::ScalarDeclaration(d)) => d.expression = true,
+            _ => {}
+        }
+    }
+
     fn parse_identifier_allow_string(&mut self) -> u32 {
         self.parse_identifier_impl(true, true)
     }

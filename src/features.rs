@@ -31,6 +31,18 @@ pub const COMPILER_FEATURES: &[(&str, CompilerFeatureDefinition)] = &[
             description: "Allows use of auto decorator declarations without experimental warnings in project code.",
         },
     ),
+    (
+        "declaration-expressions",
+        CompilerFeatureDefinition {
+            description: "Allows use of declaration expressions (named or anonymous model, scalar, enum and union declarations in expression position) in project code.",
+        },
+    ),
+    (
+        "union-extends",
+        CompilerFeatureDefinition {
+            description: "Enables experimental union `extends` clauses in project code.",
+        },
+    ),
 ];
 
 /// All known compiler feature names.
@@ -55,14 +67,16 @@ mod tests {
     fn test_known_feature_names() {
         assert!(is_compiler_feature_name("function-declarations"));
         assert!(is_compiler_feature_name("auto-decorators"));
+        assert!(is_compiler_feature_name("union-extends"));
         assert!(!is_compiler_feature_name("not-a-feature"));
     }
 
     #[test]
     fn test_feature_names_list() {
         let names = compiler_feature_names();
-        assert_eq!(names.len(), 2);
+        assert_eq!(names.len(), 4);
         assert!(names.contains(&"function-declarations"));
         assert!(names.contains(&"auto-decorators"));
+        assert!(names.contains(&"union-extends"));
     }
 }

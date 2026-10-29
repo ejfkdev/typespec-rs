@@ -124,6 +124,23 @@ pub fn resolve_encoded_name(
     get_encoded_name(state, target, mime_type).unwrap_or_else(|| default_name.to_string())
 }
 
+/// Resolve the value the given enum member serializes to for the given mime
+/// type. A member is serialized as its `@encodedName` for that mime type if it
+/// has one, otherwise as its explicit value, otherwise as its name.
+///
+/// Ported from TS `resolveEncodedEnumMemberValue` (microsoft/typespec#11980).
+pub fn resolve_encoded_enum_member_value(
+    state: &StateAccessors,
+    member: TypeId,
+    member_name: &str,
+    member_value: Option<&str>,
+    mime_type: &str,
+) -> String {
+    get_encoded_name(state, member, mime_type)
+        .or_else(|| member_value.map(|v| v.to_string()))
+        .unwrap_or_else(|| member_name.to_string())
+}
+
 /// Result of validating encoded names for conflicts.
 ///
 /// In the TS version, this function reports diagnostics via the Program.
@@ -147,6 +164,19 @@ pub enum EncodedNameConflictKind {
     MemberConflict,
     /// The encoded name duplicates another encoded name for the same MIME type
     Duplicate,
+    /// An enum member's encoded name conflicts with another member's serialized
+    /// value (its explicit value or name) — microsoft/typespec#11980.
+    EnumValue,
+}
+
+/// Enum member metadata used to validate encoded-name conflicts against the
+/// values other members serialize to (microsoft/typespec#11980).
+#[derive(Debug, Clone)]
+pub struct EnumMemberInfo {
+    pub member: TypeId,
+    pub enum_id: TypeId,
+    pub name: String,
+    pub value: Option<String>,
 }
 
 /// Validate encoded names for conflicts across all types in the state.
@@ -162,6 +192,7 @@ pub enum EncodedNameConflictKind {
 pub fn validate_encoded_names_conflicts(
     state: &StateAccessors,
     existing_names: &std::collections::HashMap<TypeId, Vec<String>>,
+    enum_members: &[EnumMemberInfo],
 ) -> Vec<EncodedNameConflict> {
     let mut conflicts = Vec::new();
 
@@ -174,8 +205,28 @@ pub fn validate_encoded_names_conflicts(
         let all_encoded = get_all_encoded_names(state, target_id);
 
         for (mime_type, encoded_name) in &all_encoded {
-            // Check if encoded name conflicts with existing member names
-            if names.iter().any(|n| n == encoded_name) {
+            // An encoded name on an enum member is the value it serializes as,
+            // so it conflicts with the value (explicit value or name) of
+            // another member without its own encoded name
+            // (microsoft/typespec#11980).
+            if let Some(info) = enum_members.iter().find(|m| m.member == target_id) {
+                let conflicts_with_value = enum_members
+                    .iter()
+                    .filter(|other| other.enum_id == info.enum_id && other.member != info.member)
+                    .filter(|other| get_encoded_name(state, other.member, mime_type).is_none())
+                    .any(|other| {
+                        other.value.clone().unwrap_or_else(|| other.name.clone()) == *encoded_name
+                    });
+                if conflicts_with_value {
+                    conflicts.push(EncodedNameConflict {
+                        target: target_id,
+                        mime_type: mime_type.clone(),
+                        name: encoded_name.clone(),
+                        kind: EncodedNameConflictKind::EnumValue,
+                    });
+                }
+            } else if names.iter().any(|n| n == encoded_name) {
+                // Check if encoded name conflicts with existing member names
                 conflicts.push(EncodedNameConflict {
                     target: target_id,
                     mime_type: mime_type.clone(),

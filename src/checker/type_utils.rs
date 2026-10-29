@@ -188,7 +188,20 @@ pub fn is_boolean_literal_type(t: &Type) -> bool {
 /// Handles string literals, numeric literals, boolean literals, and enum members.
 /// Ported from TS typeReferenceToString() / getEntityName()
 pub fn type_to_string(store: &TypeStore, type_id: TypeId) -> String {
-    match store.get(type_id) {
+    type_to_string_inner(store, type_id, &mut std::collections::HashSet::new())
+}
+
+fn type_to_string_inner(
+    store: &TypeStore,
+    type_id: TypeId,
+    seen: &mut std::collections::HashSet<TypeId>,
+) -> String {
+    // Guard against recursive types (`union Loop { self: Loop }`): a type
+    // already being rendered is printed by identity instead of recursing.
+    if !seen.insert(type_id) {
+        return get_fully_qualified_name(store, type_id);
+    }
+    let result = match store.get(type_id) {
         Some(Type::String(s)) => format!("\"{}\"", s.value),
         Some(Type::Number(n)) => n.value_as_string.clone(),
         Some(Type::Boolean(b)) => if b.value { "true" } else { "false" }.to_string(),
@@ -203,25 +216,43 @@ pub fn type_to_string(store: &TypeStore, type_id: TypeId) -> String {
         Some(Type::Scalar(_s)) => get_fully_qualified_name(store, type_id),
         Some(Type::Enum(_e)) => get_fully_qualified_name(store, type_id),
         Some(Type::Union(u)) => {
+            // Named unions print their name (upstream getUnionName); anonymous
+            // unions expand their variants.
+            if !u.name.is_empty() {
+                seen.remove(&type_id);
+                return get_fully_qualified_name(store, type_id);
+            }
             let variant_names: Vec<String> = u
                 .variant_names
                 .iter()
                 .filter_map(|name| u.variants.get(name))
                 .filter_map(|&vid| match store.get(vid) {
-                    Some(Type::UnionVariant(v)) => Some(type_to_string(store, v.r#type)),
+                    Some(Type::UnionVariant(v)) => {
+                        Some(type_to_string_inner(store, v.r#type, seen))
+                    }
                     _ => None,
                 })
                 .collect();
-            variant_names.join(" | ")
+            if variant_names.is_empty() {
+                get_fully_qualified_name(store, type_id)
+            } else {
+                variant_names.join(" | ")
+            }
         }
         Some(Type::Tuple(t)) => {
-            let items: Vec<String> = t.values.iter().map(|&v| type_to_string(store, v)).collect();
+            let items: Vec<String> = t
+                .values
+                .iter()
+                .map(|&v| type_to_string_inner(store, v, seen))
+                .collect();
             format!("[{}]", items.join(", "))
         }
         Some(Type::EnumMember(m)) => m.name.clone(),
         Some(Type::TemplateParameter(p)) => p.name.clone(),
         _ => format!("Type#{}", type_id),
-    }
+    };
+    seen.remove(&type_id);
+    result
 }
 
 /// Check if a type is a template instance (created by instantiating a template).

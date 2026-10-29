@@ -232,12 +232,17 @@ pub fn is_name_reserved(name: &str, reservations: &[FieldReservation]) -> bool {
 
 /// Protobuf full identifier regex.
 /// Defined in the [ProtoBuf Language Spec](https://developers.google.com/protocol-buffers/docs/reference/proto3-spec#identifiers).
-/// ident = letter { letter | decimalDigit | "_" }
+/// letter = "A" ... "Z" | "a" ... "z" | "_"
+/// ident = letter { letter | decimalDigit }
 /// fullIdent = ident { "." ident }
-pub const PROTO_FULL_IDENT: &str = r"([a-zA-Z][a-zA-Z0-9_]*)+";
+///
+/// Matches microsoft/typespec#11960 — the pattern is anchored and a leading
+/// underscore is a valid identifier start.
+pub const PROTO_FULL_IDENT: &str = r"^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*$";
 
 /// Check if a string is a valid Protobuf package name.
-/// Must consist of letters and numbers separated by ".".
+/// Must consist of identifiers (letters, digits, underscores) separated by ".".
+/// A segment may start with a letter or an underscore, but not a digit.
 pub fn is_valid_proto_package_name(name: &str) -> bool {
     if name.is_empty() {
         return false;
@@ -247,7 +252,7 @@ pub fn is_valid_proto_package_name(name: &str) -> bool {
             return false;
         }
         let chars: Vec<char> = segment.chars().collect();
-        if !chars[0].is_ascii_alphabetic() {
+        if !(chars[0].is_ascii_alphabetic() || chars[0] == '_') {
             return false;
         }
         if !chars.iter().all(|c| c.is_ascii_alphanumeric() || *c == '_') {
@@ -905,6 +910,21 @@ mod tests {
         assert!(!is_valid_proto_package_name("example."));
         assert!(!is_valid_proto_package_name("123.example"));
         assert!(!is_valid_proto_package_name("com.123"));
+        // Ported from protobuf/test/package-name.test.ts (#11960).
+        assert!(is_valid_proto_package_name("_internal.azure_test.v1"));
+        assert!(is_valid_proto_package_name("_"));
+        for unsafe_name in [
+            "../../outside/pwn",
+            r"..\..\outside\pwn",
+            "/outside/pwn",
+            "C:/outside/pwn",
+            r"\\server\share\pwn",
+        ] {
+            assert!(
+                !is_valid_proto_package_name(unsafe_name),
+                "{unsafe_name} should be rejected"
+            );
+        }
     }
 
     #[test]

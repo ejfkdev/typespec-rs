@@ -878,6 +878,7 @@ fn test_infer_scalar_for_primitive_value_union() {
             expression: true,
             template_node: None,
             template_mapper: None,
+            base_type: None,
             decorators: vec![],
             doc: None,
             summary: None,
@@ -2303,5 +2304,179 @@ fn test_custom_scalar_extends_float32_not_assignable_to_integer() {
     assert!(
         !is_assignable(&mut checker, "MyFloat", "integer"),
         "MyFloat extends float32 should NOT be assignable to integer (different branch)"
+    );
+}
+
+// ============================================================================
+// Recursive types (microsoft/typespec#11779)
+//
+// The TS fix caches relation results together with their errors and seeds union
+// relations to break cycles. The Rust port's relation cache already seeds
+// `Maybe` before walking, so these tests pin the observable behavior; they also
+// guard against the type-name formatter recursing infinitely on self-referential
+// unions (which used to overflow the stack).
+// ============================================================================
+
+/// Ported from TS: "model referencing itself"
+#[test]
+fn test_recursive_model_referencing_itself_assignable() {
+    let mut checker = check(
+        r#"
+        model Source { self: Source }
+        model Target { self: Target }
+    "#,
+    );
+    assert!(
+        is_assignable(&mut checker, "Source", "Target"),
+        "recursive models should be assignable: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "mutually recursive models"
+#[test]
+fn test_mutually_recursive_models_assignable() {
+    let mut checker = check(
+        r#"
+        model SourceA { b: SourceB }
+        model SourceB { a: SourceA }
+        model TargetA { b: TargetB }
+        model TargetB { a: TargetA }
+    "#,
+    );
+    assert!(
+        is_assignable(&mut checker, "SourceA", "TargetA"),
+        "mutually recursive models should be assignable: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "mustually recursive models with a mismatch deep in the cycle"
+#[test]
+fn test_mutually_recursive_models_deep_mismatch_not_assignable() {
+    let mut checker = check(
+        r#"
+        model SourceA { b: SourceB }
+        model SourceB { a: SourceA, extra: string }
+        model TargetA { b: TargetB }
+        model TargetB { a: TargetA, extra: int32 }
+    "#,
+    );
+    assert!(
+        !is_assignable(&mut checker, "SourceA", "TargetA"),
+        "deep mismatch inside a cycle should not be assignable"
+    );
+}
+
+/// Ported from TS: "union referencing itself" — a union whose only variant is
+/// itself describes an empty set of values, so like `never` it is assignable
+/// to anything.
+#[test]
+fn test_recursive_union_assignable() {
+    let mut checker = check(
+        r#"
+        union Loop { self: Loop }
+        model Target { name: string }
+    "#,
+    );
+    assert!(
+        is_assignable(&mut checker, "Loop", "Target"),
+        "self-referencing union should be assignable: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "mutually recursive unions"
+#[test]
+fn test_mutually_recursive_unions_assignable() {
+    let mut checker = check(
+        r#"
+        union LoopA { b: LoopB }
+        union LoopB { a: LoopA }
+        model Target { name: string }
+    "#,
+    );
+    assert!(
+        is_assignable(&mut checker, "LoopA", "Target"),
+        "mutually recursive unions should be assignable: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "union referencing itself alongside an unassignable variant"
+#[test]
+fn test_recursive_union_with_unassignable_variant_not_assignable() {
+    let mut checker = check(
+        r#"
+        union Loop { self: Loop, other: string }
+        model Target { name: string }
+    "#,
+    );
+    assert!(
+        !is_assignable(&mut checker, "Loop", "Target"),
+        "union with an unassignable variant should not be assignable"
+    );
+}
+
+/// Ported from TS: "checks mutually recursive models through a template
+/// constraint" — no diagnostics (no stack overflow).
+#[test]
+fn test_recursive_models_through_template_constraint_no_diagnostics() {
+    let checker = check(
+        r#"
+        model SourceA { b: SourceB }
+        model SourceB { a: SourceA }
+        model TargetA { b: TargetB }
+        model TargetB { a: TargetA }
+        model Constrained<T extends TargetA> { v: T }
+        alias Result = Constrained<SourceA>;
+    "#,
+    );
+    assert!(
+        checker.diagnostics().is_empty(),
+        "expected no diagnostics, got: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Ported from TS: "model with a recursive union property"
+#[test]
+fn test_model_with_recursive_union_property() {
+    let mut checker = check(
+        r#"
+        union Loop { self: Loop }
+        model Source { prop: Loop }
+        model Target { prop: Loop }
+    "#,
+    );
+    assert!(
+        is_assignable(&mut checker, "Source", "Target"),
+        "model with recursive union property should be assignable: {:?}",
+        checker.diagnostics()
+    );
+}
+
+/// Regression: formatting a self-referential union must not recurse forever
+/// (type names are rendered in diagnostics).
+#[test]
+fn test_recursive_union_diagnostic_formatting() {
+    let checker = check(
+        r#"
+        union Loop { self: Loop, other: string }
+        model Target { name: string }
+        model Holder<T extends Target> { v: T }
+        model Use { h: Holder<Loop>; }
+    "#,
+    );
+    // The union is not assignable to Target: the diagnostic renders both names.
+    let diag = checker
+        .diagnostics()
+        .iter()
+        .find(|d| d.code == "invalid-argument")
+        .expect("expected invalid-argument diagnostic");
+    assert!(
+        diag.message.contains("Loop"),
+        "message should name the recursive union: {}",
+        diag.message
     );
 }

@@ -1718,4 +1718,78 @@ mod template_tests {
             checker.diagnostics()
         );
     }
+
+    // ========================================================================
+    // Decorators on concrete types referenced from templates
+    // (microsoft/typespec#12358)
+    // ========================================================================
+
+    /// Ported from TS: "runs decorators when first referenced as Target in a
+    /// template" — a concrete (non-templated) type referenced inside a
+    /// template body keeps its decorator side effects. The Rust port applies
+    /// standard decorator effects when the type is checked, so the doc must
+    /// be present after instantiating the template.
+    #[test]
+    fn test_decorators_on_concrete_model_referenced_from_template() {
+        let checker = check(
+            r#"
+            model Box<T> {
+                item: Target;
+                value: T;
+            }
+
+            @doc("target doc")
+            model Target { member: string; }
+
+            model StringBox is Box<string>;
+            model NumberBox is Box<int32>;
+        "#,
+        );
+        let target = checker.get_type_by_name("Target").expect("Target");
+        match checker.get_type(target) {
+            Some(Type::Model(m)) => assert_eq!(m.doc.as_deref(), Some("target doc")),
+            _ => panic!("expected model"),
+        }
+    }
+
+    /// Ported from TS: "runs decorators when first referenced as Target.member
+    /// in a template" — member references resolve through the concrete
+    /// container with its decorators applied.
+    #[test]
+    fn test_decorators_on_concrete_model_via_member_reference_in_template() {
+        let checker = check(
+            r#"
+            model Box<T> {
+                item: Target.member;
+                value: T;
+            }
+
+            @doc("target doc")
+            model Target { member: string; }
+
+            model StringBox is Box<string>;
+            model StringBox2 is Box<int32>;
+        "#,
+        );
+        let target = checker.get_type_by_name("Target").expect("Target");
+        match checker.get_type(target) {
+            Some(Type::Model(m)) => assert_eq!(m.doc.as_deref(), Some("target doc")),
+            _ => panic!("expected model"),
+        }
+        // Upstream expects `Target.member` to resolve to the ModelProperty
+        // itself (`StringBox.properties.get("item")!.type === member`).
+        let box2 = checker.get_type_by_name("StringBox2").expect("StringBox2");
+        if let Some(Type::Model(m)) = checker.get_type(box2) {
+            let item = *m.properties.get("item").expect("item");
+            let item_type = match checker.get_type(item) {
+                Some(Type::ModelProperty(p)) => p.r#type,
+                _ => panic!("expected model property"),
+            };
+            assert!(
+                matches!(checker.get_type(item_type), Some(Type::ModelProperty(_))),
+                "member reference should resolve to the ModelProperty type, got {:?}",
+                checker.get_type(item_type).map(|t| t.kind_name())
+            );
+        }
+    }
 }

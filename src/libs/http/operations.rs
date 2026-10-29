@@ -842,11 +842,29 @@ pub fn get_responses_for_operation(
 
     for variant in &variants {
         match variant {
-            super::responses::ResolvedResponseVariant::Plain { type_id } => {
-                process_plain_response(checker, state, *type_id, &mut response_index);
+            super::responses::ResolvedResponseVariant::Plain {
+                type_id,
+                description,
+            } => {
+                process_plain_response(
+                    checker,
+                    state,
+                    *type_id,
+                    description.clone(),
+                    &mut response_index,
+                );
             }
-            super::responses::ResolvedResponseVariant::Envelope { type_id } => {
-                process_envelope_response(checker, state, *type_id, &mut response_index);
+            super::responses::ResolvedResponseVariant::Envelope {
+                type_id,
+                description,
+            } => {
+                process_envelope_response(
+                    checker,
+                    state,
+                    *type_id,
+                    description.clone(),
+                    &mut response_index,
+                );
             }
         }
     }
@@ -860,6 +878,7 @@ fn process_plain_response(
     checker: &Checker,
     _state: &StateAccessors,
     type_id: TypeId,
+    description: Option<String>,
     response_index: &mut ResponseIndex,
 ) {
     let resolved = checker.resolve_alias_chain(type_id);
@@ -871,7 +890,7 @@ fn process_plain_response(
         let response = HttpOperationResponse {
             status_codes: super::operation::HttpStatusCodesEntry::Code(204),
             response_type: type_id,
-            description: None,
+            description,
             responses: vec![HttpOperationResponseContent {
                 properties: Vec::new(),
                 headers: Vec::new(),
@@ -882,10 +901,13 @@ fn process_plain_response(
         return;
     }
 
-    // Default: 200 with body
-    let description = checker.get_type(resolved).and_then(|t| match t {
-        Type::Model(m) => m.doc.clone(),
-        _ => None,
+    // Default: 200 with body. The union variant / union doc wins over the
+    // model's own doc (microsoft/typespec#11785).
+    let description = description.or_else(|| {
+        checker.get_type(resolved).and_then(|t| match t {
+            Type::Model(m) => m.doc.clone(),
+            _ => None,
+        })
     });
 
     let response = HttpOperationResponse {
@@ -915,6 +937,7 @@ fn process_envelope_response(
     checker: &Checker,
     state: &StateAccessors,
     type_id: TypeId,
+    description: Option<String>,
     response_index: &mut ResponseIndex,
 ) {
     let resolved = checker.resolve_alias_chain(type_id);
@@ -966,9 +989,13 @@ fn process_envelope_response(
         }
     }
 
-    let description = checker.get_type(resolved).and_then(|t| match t {
-        Type::Model(m) => m.doc.clone(),
-        _ => None,
+    // A description inherited from the union variant wins, then the
+    // envelope model's own @doc (microsoft/typespec#11785).
+    let description = description.or_else(|| {
+        checker.get_type(resolved).and_then(|t| match t {
+            Type::Model(m) => m.doc.clone(),
+            _ => None,
+        })
     });
 
     // Add response for each status code

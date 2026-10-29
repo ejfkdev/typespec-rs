@@ -328,11 +328,27 @@ fn get_status_codes_from_type_inner(
             }
             codes
         }
-        // ModelProperty: resolve from its type
+        // ModelProperty: property-level @minValue/@maxValue (with inheritance
+        // from its type and base scalars) narrow the range
+        // (microsoft/typespec#12118).
         Some(crate::checker::types::Type::ModelProperty(mp)) => {
+            let property_is_range_candidate = matches!(
+                checker.get_type(mp.r#type),
+                Some(crate::checker::types::Type::Scalar(_))
+                    | Some(crate::checker::types::Type::ModelProperty(_))
+            );
+            if property_is_range_candidate {
+                let (start, end) = get_status_codes_range(checker, resolved);
+                if let (Some(start), Some(end)) = (start, end)
+                    && let Some(range) = HttpStatusCodeRange::new(start as u16, end as u16)
+                {
+                    return vec![HttpStatusCodesEntry::Range(range)];
+                }
+            }
             get_status_codes_from_type_inner(checker, mp.r#type, depth + 1)
         }
-        // Scalar with @minValue/@maxValue → range
+        // Scalar with @minValue/@maxValue (possibly inherited from a base
+        // scalar) → range (microsoft/typespec#12118).
         Some(crate::checker::types::Type::Scalar(_)) => {
             validate_status_code_range(checker, resolved)
         }
@@ -381,10 +397,7 @@ fn validate_status_code_range(
     checker: &crate::checker::Checker,
     scalar_id: TypeId,
 ) -> Vec<HttpStatusCodesEntry> {
-    // Check for @minValue and @maxValue decorators on the scalar
-    let min = checker.get_decorator_numeric_arg(scalar_id, "minValue", 0);
-    let max = checker.get_decorator_numeric_arg(scalar_id, "maxValue", 0);
-
+    let (min, max) = get_status_codes_range(checker, scalar_id);
     match (min, max) {
         (Some(start), Some(end)) => {
             if let Some(range) = HttpStatusCodeRange::new(start as u16, end as u16) {
@@ -395,6 +408,43 @@ fn validate_status_code_range(
         }
         _ => Vec::new(),
     }
+}
+
+/// Resolve the status code range bounds for a type.
+///
+/// Bounds set on this type win; otherwise they are inherited from the model
+/// property's type or from the base scalar, so `@minValue(400) @maxValue(499)
+/// scalar ClientErrorCode extends int32` also constrains a scalar extending it,
+/// and a property can narrow a single bound with `@maxValue`.
+///
+/// Ported from TS `getStatusCodesRange` (microsoft/typespec#12118).
+fn get_status_codes_range(
+    checker: &crate::checker::Checker,
+    type_id: TypeId,
+) -> (Option<f64>, Option<f64>) {
+    use crate::checker::types::Type;
+    let min = checker.get_decorator_numeric_arg(type_id, "minValue", 0);
+    let max = checker.get_decorator_numeric_arg(type_id, "maxValue", 0);
+
+    let mut base = (None, None);
+    match checker.get_type(type_id) {
+        Some(Type::ModelProperty(mp))
+            if matches!(
+                checker.get_type(mp.r#type),
+                Some(Type::Scalar(_)) | Some(Type::ModelProperty(_))
+            ) =>
+        {
+            base = get_status_codes_range(checker, mp.r#type);
+        }
+        Some(Type::Scalar(s)) => {
+            if let Some(base_scalar) = s.base_scalar {
+                base = get_status_codes_range(checker, base_scalar);
+            }
+        }
+        _ => {}
+    }
+
+    (min.or(base.0), max.or(base.1))
 }
 
 /// Get status codes for a property (legacy API, reads from state).
@@ -816,4 +866,100 @@ pub enum HttpPayloadDisposition {
     Response,
     /// Multipart payload
     Multipart,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::checker::Checker;
+    use crate::parser;
+
+    /// Compile a source snippet with the decorators used by the response tests.
+    fn compile(source: &str) -> Checker {
+        let parse_result = parser::parse(source);
+        let mut checker = Checker::new();
+        checker.register_decorators(vec![
+            ("statusCode", "TypeSpec.Http", "ModelProperty"),
+            ("minValue", "TypeSpec", "any"),
+            ("maxValue", "TypeSpec", "any"),
+        ]);
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.check_program();
+        checker
+    }
+
+    /// Resolve the single property named `name` on the model called `model_name`.
+    fn property_of(checker: &Checker, model_name: &str, name: &str) -> TypeId {
+        let model_id = checker.declared_types[model_name];
+        match checker.get_type(model_id) {
+            Some(crate::checker::types::Type::Model(m)) => m.properties[name],
+            other => panic!("expected model {model_name}, got {other:?}"),
+        }
+    }
+
+    fn range_of(codes: &[HttpStatusCodesEntry]) -> Option<(u16, u16)> {
+        match codes {
+            [HttpStatusCodesEntry::Range(r)] => Some((r.start, r.end)),
+            _ => None,
+        }
+    }
+
+    // Ported from microsoft/typespec#12118 (responses.test.ts): the range is
+    // resolved from @minValue/@maxValue on the scalar itself.
+    #[test]
+    fn test_status_code_range_from_scalar_decorators() {
+        let checker = compile(
+            r#"
+            @minValue(200) @maxValue(299)
+            scalar SuccessCode extends int32;
+
+            model Response {
+                @statusCode code: SuccessCode;
+            }
+            "#,
+        );
+        let prop = property_of(&checker, "Response", "code");
+        let codes = get_status_codes_from_type(&checker, prop);
+        assert_eq!(range_of(&codes), Some((200, 299)));
+    }
+
+    // Ported from microsoft/typespec#12118: bounds declared on a base scalar are
+    // inherited by scalars extending it.
+    #[test]
+    fn test_status_code_range_from_base_scalar_decorators() {
+        let checker = compile(
+            r#"
+            @minValue(400) @maxValue(499)
+            scalar ClientErrorCode extends int32;
+
+            scalar NotFoundCode extends ClientErrorCode;
+
+            model ErrorResponse {
+                @statusCode code: NotFoundCode;
+            }
+            "#,
+        );
+        let prop = property_of(&checker, "ErrorResponse", "code");
+        let codes = get_status_codes_from_type(&checker, prop);
+        assert_eq!(range_of(&codes), Some((400, 499)));
+    }
+
+    // Ported from microsoft/typespec#12118: a bound on the property narrows the
+    // inherited range instead of discarding the other inherited bound.
+    #[test]
+    fn test_status_code_range_narrowed_on_property() {
+        let checker = compile(
+            r#"
+            @minValue(400) @maxValue(499)
+            scalar ClientErrorCode extends int32;
+
+            model ErrorResponse {
+                @statusCode @maxValue(429) code: ClientErrorCode;
+            }
+            "#,
+        );
+        let prop = property_of(&checker, "ErrorResponse", "code");
+        let codes = get_status_codes_from_type(&checker, prop);
+        assert_eq!(range_of(&codes), Some((400, 429)));
+    }
 }

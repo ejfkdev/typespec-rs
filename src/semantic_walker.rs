@@ -445,6 +445,10 @@ fn navigate_union_type<L: SemanticNodeListener>(
     }
 
     if let Some(Type::Union(union)) = checker.get_type(union_id) {
+        // Navigate the `extends` base type first (microsoft/typespec#11771).
+        if let Some(base) = union.base_type {
+            navigate_type_internal(checker, base, context);
+        }
         for name in &union.variant_names {
             if let Some(&variant_id) = union.variants.get(name) {
                 navigate_union_type_variant(checker, variant_id, context);
@@ -617,8 +621,10 @@ fn navigate_type_internal<L: SemanticNodeListener>(
             }
         }
         Type::EnumMember(_) => {
-            if !check_visited(&mut context.visited, type_id) {
-                context.listener.on_enum_member(type_id, checker);
+            if !check_visited(&mut context.visited, type_id)
+                && context.listener.on_enum_member(type_id, checker) != ListenerFlow::NoRecursion
+            {
+                context.listener.on_exit_enum_member(type_id, checker);
             }
         }
         // Leaf types with no child navigation
@@ -1657,4 +1663,151 @@ mod tests {
     // The "by default only include the template instantiations" test requires
     // full template instantiation (op return type resolves to Bar<Qux>), which
     // depends on deeper checker support - skipped.
+
+    // ========================================================================
+    // Enum member navigation (microsoft/typespec#12180)
+    // ========================================================================
+
+    #[derive(Default)]
+    struct EnumMemberCollector {
+        members: Vec<TypeId>,
+        exit_members: Vec<TypeId>,
+        order: Vec<&'static str>,
+    }
+
+    impl SemanticNodeListener for EnumMemberCollector {
+        fn on_enum_member(&mut self, type_id: TypeId, _checker: &Checker) -> ListenerFlow {
+            self.members.push(type_id);
+            self.order.push("enumMember");
+            ListenerFlow::Continue
+        }
+        fn on_exit_enum_member(&mut self, type_id: TypeId, _checker: &Checker) {
+            self.exit_members.push(type_id);
+            self.order.push("exitEnumMember");
+        }
+    }
+
+    #[derive(Default)]
+    struct NoMemberCollector {
+        members: Vec<TypeId>,
+    }
+
+    impl SemanticNodeListener for NoMemberCollector {
+        fn on_enum(&mut self, _type_id: TypeId, _checker: &Checker) -> ListenerFlow {
+            ListenerFlow::NoRecursion
+        }
+        fn on_enum_member(&mut self, type_id: TypeId, _checker: &Checker) -> ListenerFlow {
+            self.members.push(type_id);
+            ListenerFlow::Continue
+        }
+    }
+
+    fn enum_member_name(checker: &Checker, id: TypeId) -> String {
+        checker
+            .get_type(id)
+            .and_then(|t| t.name().map(|s| s.to_string()))
+            .unwrap_or_default()
+    }
+
+    /// Ported from TS: enum members are visited and exitEnumMember fires for
+    /// each of them, in order.
+    #[test]
+    fn test_visits_enum_members_and_exit_events() {
+        let checker = check("enum Direction { North, East, South, West }");
+        let mut collector = EnumMemberCollector::default();
+        navigate_type(
+            &checker,
+            checker.global_namespace_type.unwrap(),
+            &mut collector,
+            NavigationOptions::default(),
+        );
+        let names: Vec<String> = collector
+            .members
+            .iter()
+            .map(|&id| enum_member_name(&checker, id))
+            .collect();
+        assert_eq!(names, vec!["North", "East", "South", "West"]);
+        assert_eq!(collector.exit_members, collector.members);
+        assert_eq!(
+            collector.order,
+            vec![
+                "enumMember",
+                "exitEnumMember",
+                "enumMember",
+                "exitEnumMember",
+                "enumMember",
+                "exitEnumMember",
+                "enumMember",
+                "exitEnumMember"
+            ]
+        );
+    }
+
+    /// Ported from TS: "visits referenced enum members only once".
+    #[test]
+    fn test_enum_members_visited_once() {
+        let checker = check(
+            r#"
+            enum Direction { North, South }
+            model Foo {
+                first: Direction.North;
+                second: Direction.North;
+            }
+        "#,
+        );
+        let mut collector = EnumMemberCollector::default();
+        navigate_type(
+            &checker,
+            checker.global_namespace_type.unwrap(),
+            &mut collector,
+            NavigationOptions::default(),
+        );
+        let names: Vec<String> = collector
+            .members
+            .iter()
+            .map(|&id| enum_member_name(&checker, id))
+            .collect();
+        assert_eq!(names, vec!["North", "South"]);
+        assert_eq!(collector.exit_members, collector.members);
+    }
+
+    /// Ported from TS: "navigates enum members directly".
+    #[test]
+    fn test_navigate_enum_member_directly() {
+        let checker = check("enum Direction { North, South }");
+        let enum_id = checker.get_type_by_name("Direction").expect("Direction");
+        let north = match checker.get_type(enum_id) {
+            Some(Type::Enum(e)) => *e.members.get("North").expect("North"),
+            _ => panic!("expected enum"),
+        };
+        let mut collector = EnumMemberCollector::default();
+        navigate_type(
+            &checker,
+            north,
+            &mut collector,
+            NavigationOptions::default(),
+        );
+        assert_eq!(collector.members, vec![north]);
+        assert_eq!(collector.exit_members, vec![north]);
+        assert_eq!(collector.order, vec!["enumMember", "exitEnumMember"]);
+    }
+
+    /// Ported from TS: "does not visit enum members when the enum listener
+    /// returns NoRecursion".
+    #[test]
+    fn test_no_enum_members_when_no_recursion() {
+        let checker = check("enum Direction { North, South }");
+        let mut collector = NoMemberCollector::default();
+        navigate_type(
+            &checker,
+            checker.global_namespace_type.unwrap(),
+            &mut collector,
+            NavigationOptions::default(),
+        );
+        assert!(
+            collector.members.is_empty(),
+            "members should not be visited: {:?}",
+            collector.members
+        );
+    }
 }

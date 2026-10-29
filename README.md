@@ -365,11 +365,15 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 - Standard decorator evaluation pipeline: `@doc`, `@summary`, `@minValue`, `@maxValue`, `@pattern`, `@format`, `@minLength`, `@maxLength`, `@minItems`, `@maxItems`, `@error`, `@tag`, `@discriminator`, `@encode`
 - Official-compliant keyword handling: three-tier classification (active/reserved/modifier), reserved keywords allowed as property/enum/variant names, backtick-escaped identifiers (e.g. `` `chrome-devtools-mcp` ``)
 - Auto decorators (`auto dec`): compiler-generated metadata storage without JS implementations, with `set_auto_decorator`/`has_auto_decorator`/`get_auto_decorator_value` accessors
-- Compiler feature flags (`CompilerOptions.features`) with per-library scoping (e.g. `auto-decorators`, `function-declarations`)
+- Compiler feature flags (`CompilerOptions.features`) with per-library scoping (e.g. `auto-decorators`, `function-declarations`, `union-extends`, `declaration-expressions`)
 - Blockless file namespaces (`namespace Foo;`) with correct declaration scoping and `using` resolution rules
 - `#suppress` directive tracking: unused-suppression and duplicate-suppression diagnostics
 - Diagnostic code short-name resolution (`@typespec/http/x` ↔ `http/x`, library aliases, ambiguity detection)
 - Compilation stage tracking (`parsing` → `checking` → `validating` → `linting` → `emitting`) with stage-gated per-type caching (`use_cache`, HTTP operation resolution cache)
+- Union `extends` base-type clause (`union-extends` feature) — variant assignability validation and circular-base detection, with no inheritance semantics
+- Declarations as expressions (`model { ... }`, `union { ... }`, `enum { ... }`, `scalar ...`) in argument/return position (`declaration-expressions` feature)
+- `@statusCode` numeric ranges: bounds inherited from the property type and base scalar chain, with per-property bounds narrowing the inherited range
+- OpenAPI response descriptions preserve `@doc` from return-type union variants (with union-level fallback)
 - `@encode(string)` on boolean types; SPDX license `identifier` (mutually exclusive with `url`); OpenID Connect auth scopes
 
 What's not yet ported:

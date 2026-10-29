@@ -497,6 +497,11 @@ pub struct Checker {
     /// explicitly set.
     pub diagnostic_code_resolver: Option<crate::diagnostic_code::DiagnosticCodeResolver>,
 
+    /// Display-only names for types whose type-graph name is empty, e.g. the
+    /// anonymous parameter model of an operation (`Foo.test::parameters`).
+    /// Ported from TS `getOperationParametersName` (microsoft/typespec#11551).
+    pub type_display_names: HashMap<TypeId, String>,
+
     /// Current stage of the compilation pipeline
     /// (microsoft/typespec#11318).
     pub current_stage: std::cell::Cell<CompilationStage>,
@@ -702,6 +707,7 @@ impl Checker {
             decorator_fqns: HashMap::new(),
             auto_decorator_state: HashMap::new(),
             diagnostic_code_resolver: None,
+            type_display_names: HashMap::new(),
             current_stage: std::cell::Cell::new(CompilationStage::default()),
             experimental_cache: std::cell::RefCell::new(HashMap::new()),
             loaded_library_names: Vec::new(),
@@ -1198,6 +1204,19 @@ impl Checker {
 
     /// Get a human-readable string for a type (convenience shorthand)
     pub(crate) fn type_to_string(&self, type_id: TypeId) -> String {
+        if let Some(name) = self.type_display_names.get(&type_id) {
+            return name.clone();
+        }
+        // Model properties render as `<model>.<prop>` (upstream
+        // getModelPropertyName) so parameters of an operation render as
+        // `Foo.test::parameters.param` (microsoft/typespec#11551).
+        if let Some(Type::ModelProperty(p)) = self.get_type(type_id) {
+            let model_name = p
+                .model
+                .map(|m| self.type_to_string(m))
+                .unwrap_or_else(|| "(anonymous model)".to_string());
+            return format!("{}.{}", model_name, p.name);
+        }
         type_utils::type_to_string(&self.type_store, type_id)
     }
 
@@ -2422,6 +2441,47 @@ impl Checker {
         links.type_id = Some(type_id);
     }
 
+    /// Register a declaration used in expression position: link it into the
+    /// symbol links (needed for caching) but do NOT add it to the namespace's
+    /// declared types (microsoft/typespec#11019).
+    pub(crate) fn register_expression_type(&mut self, node_id: NodeId, type_id: TypeId) {
+        let links = self.symbol_links.entry(node_id).or_default();
+        links.declared_type = Some(type_id);
+        links.type_id = Some(type_id);
+    }
+
+    /// Validate a declaration used in expression position: gate it behind the
+    /// `declaration-expressions` feature and reject template parameters.
+    ///
+    /// Ported from microsoft/typespec#11019.
+    pub(crate) fn check_declaration_expression_usage(
+        &mut self,
+        ctx: &CheckContext,
+        node_id: NodeId,
+        is_expression: bool,
+        template_param_count: usize,
+    ) {
+        if !is_expression {
+            return;
+        }
+        if ctx.mapper.is_none()
+            && !self.is_compiler_feature_enabled("declaration-expressions", Some(node_id))
+        {
+            self.error_at(
+                node_id,
+                "declaration-expression-disabled",
+                "Declaration expressions require the 'declaration-expressions' feature to be enabled. Add 'declaration-expressions' to the 'features' list in your tspconfig.yaml.",
+            );
+        }
+        if template_param_count > 0 {
+            self.error_at(
+                node_id,
+                "templated-declaration-in-expression",
+                "A declaration used as an expression cannot have template parameters as it cannot be referenced or instantiated.",
+            );
+        }
+    }
+
     /// Compute the template_node for a type declaration.
     /// If template_parameters is non-empty and there's no mapper (i.e., this is
     /// the template declaration, not an instantiation), set template_node to the
@@ -2515,6 +2575,8 @@ mod circular_ref_tests;
 mod clone_type_tests;
 #[cfg(test)]
 mod custom_decorator_tests;
+#[cfg(test)]
+mod declaration_expression_tests;
 #[cfg(test)]
 mod decorators_tests;
 #[cfg(test)]

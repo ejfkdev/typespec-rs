@@ -502,6 +502,11 @@ pub struct Checker {
     /// Ported from TS `getOperationParametersName` (microsoft/typespec#11551).
     pub type_display_names: HashMap<TypeId, String>,
 
+    /// `@experimental` lifecycle markers, keyed by target type.
+    /// Ported from TS `featureLifecycleState` in `@typespec/http-client`.
+    pub client_feature_lifecycles:
+        HashMap<TypeId, crate::libs::http_client::ScopedFeatureLifecycle>,
+
     /// Current stage of the compilation pipeline
     /// (microsoft/typespec#11318).
     pub current_stage: std::cell::Cell<CompilationStage>,
@@ -519,6 +524,12 @@ pub struct Checker {
 
     /// Set of NodeIds for which directives have already been processed
     pub directives_processed: HashSet<NodeId>,
+
+    /// Namespace declaration nodes whose statements have been checked.
+    /// Blockless namespaces with the same name are merged into one type, so
+    /// `is_finished()` on the merged type cannot be used to skip re-checking:
+    /// each declaration node owns a different set of statements.
+    pub checked_namespace_nodes: HashSet<NodeId>,
 
     // ---- Value exact type tracking ----
     /// Map from ValueId to exact TypeId (literal type) for values
@@ -708,10 +719,12 @@ impl Checker {
             auto_decorator_state: HashMap::new(),
             diagnostic_code_resolver: None,
             type_display_names: HashMap::new(),
+            client_feature_lifecycles: HashMap::new(),
             current_stage: std::cell::Cell::new(CompilationStage::default()),
             experimental_cache: std::cell::RefCell::new(HashMap::new()),
             loaded_library_names: Vec::new(),
             directives_processed: HashSet::with_capacity(8),
+            checked_namespace_nodes: HashSet::with_capacity(8),
             value_exact_types: HashMap::with_capacity(16),
             internal_declarations: HashSet::with_capacity(8),
             template_param_scope: Vec::with_capacity(4),

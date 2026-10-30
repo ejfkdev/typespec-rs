@@ -212,7 +212,11 @@ impl<'a> Parser<'a> {
             (source.to_string(), 0, Vec::new())
         } else {
             let lib_part = options.libraries.join("\n\n");
-            let offset = lib_part.lines().count() + 2; // +2 for the separator blank lines
+            // The main source starts after the library part plus the two
+            // separator newlines. Count actual newlines (not `lines()`) so the
+            // offset is correct whether or not the last library ends with a
+            // trailing newline.
+            let offset = lib_part.matches('\n').count() + 2;
 
             // Compute each library's line range within the combined source so
             // the checker can resolve per-library feature flags

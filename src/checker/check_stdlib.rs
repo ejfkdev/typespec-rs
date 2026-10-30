@@ -654,6 +654,24 @@ impl Checker {
         ))));
         self.global_namespace_type = Some(ns_id);
         self.current_namespace = Some(ns_id);
+
+        // Attach the standard `TypeSpec` namespace to the global namespace.
+        // Without this, custom decorator namespace creation (which looks up
+        // `TypeSpec` as a child of the global namespace) creates a duplicate
+        // `TypeSpec` and shadows the standard library namespace.
+        if let Some(typespec_id) = self.typespec_namespace_id {
+            if let Some(Type::Namespace(typespec)) = self.get_type_mut(typespec_id) {
+                typespec.namespace = Some(ns_id);
+            }
+            if let Some(Type::Namespace(global)) = self.get_type_mut(ns_id) {
+                if !global.namespaces.contains_key("TypeSpec") {
+                    global.namespace_names.push("TypeSpec".to_string());
+                }
+                global
+                    .namespaces
+                    .insert("TypeSpec".to_string(), typespec_id);
+            }
+        }
     }
 }
 
@@ -801,6 +819,86 @@ mod tests {
             assert!(ns.decorator_declarations.contains_key("doc"));
             assert!(ns.decorator_declarations.contains_key("tag"));
             assert!(ns.decorator_declarations.contains_key("error"));
+        }
+    }
+
+    // Regression: the standard `TypeSpec` namespace was not attached to the
+    // global namespace, so registering any decorator in `TypeSpec.*` created a
+    // duplicate namespace that shadowed the standard library.
+    #[test]
+    fn test_std_typespec_attached_to_global_namespace() {
+        let parse_result = parser::parse("model Pet { name: string; }");
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.register_decorator("service", "TypeSpec.Http", "Namespace");
+        checker.check_program();
+
+        let global = checker.get_global_namespace_type().unwrap();
+        let typespec = checker.typespec_namespace_id.unwrap();
+        if let Some(Type::Namespace(ns)) = checker.get_type(global) {
+            assert_eq!(ns.namespaces.get("TypeSpec"), Some(&typespec));
+        } else {
+            panic!("global namespace missing");
+        }
+        if let Some(Type::Namespace(ns)) = checker.get_type(typespec) {
+            assert_eq!(ns.namespace, Some(global));
+            // The decorator namespace must be reachable as a member, not a
+            // detached duplicate.
+            assert!(ns.namespaces.contains_key("Http"));
+        }
+    }
+
+    // Regression: `@service` stored its state key under TypeSpec.Http.service,
+    // so `isService`/`listServices` never saw any service.
+    #[test]
+    fn test_service_decorator_sets_service_state() {
+        let parse_result =
+            parser::parse(r#"@service(#{ title: "Widget Service" }) namespace DemoService;"#);
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.register_decorator("service", "TypeSpec", "Namespace");
+        checker.check_program();
+
+        let service_id = checker.declared_types["DemoService"];
+        assert!(crate::libs::compiler::is_service(
+            &checker.state_accessors,
+            service_id
+        ));
+        assert_eq!(
+            crate::libs::compiler::get_service_title(&checker.state_accessors, service_id)
+                .as_deref(),
+            Some("Widget Service")
+        );
+        assert_eq!(
+            crate::libs::compiler::list_services(&checker.state_accessors).len(),
+            1
+        );
+    }
+
+    // Regression: blockless namespaces with the same name were merged into one
+    // type, and after the first declaration finished the type, later
+    // declarations were skipped entirely. Each segment must be checked.
+    #[test]
+    fn test_merged_blockless_namespaces_check_each_segment() {
+        let library = "namespace TypeSpec.Http;\nmodel First { a: string; }\n\nnamespace TypeSpec.Http;\nenum Second { x, y }\n";
+        let options = crate::parser::ParseOptions::new(vec![library.to_string()]);
+        let parse_result = crate::parser::parse_with_options("namespace DemoService;", options);
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.check_program();
+
+        let http_id = checker.declared_types["TypeSpec.Http"];
+        if let Some(Type::Namespace(ns)) = checker.get_type(http_id) {
+            assert!(ns.models.contains_key("First"));
+            assert!(!ns.models.contains_key("Second"));
+        }
+        let second_id = checker.declared_types["TypeSpec.Http.Second"];
+        match checker.get_type(second_id) {
+            Some(Type::Enum(e)) => {
+                assert!(e.is_finished, "enum in the second segment must be checked");
+                assert_eq!(e.members.len(), 2);
+            }
+            other => panic!("expected enum, got {other:?}"),
         }
     }
 }

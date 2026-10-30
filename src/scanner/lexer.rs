@@ -891,20 +891,16 @@ impl<'a> Lexer<'a> {
             }
 
             '"' => {
-                // Check for triple-quoted string
+                // Triple-quoted strings need two more quotes after the opening
+                // one. Two quotes in a row are an empty string, not the start
+                // of a triple-quoted string.
                 let mut lookahead = self.chars.clone();
-                let is_triple = lookahead.peek() == Some(&'"');
+                let is_triple = lookahead.next() == Some('"') && lookahead.next() == Some('"');
                 if is_triple {
-                    lookahead.next();
-                    if lookahead.peek() == Some(&'"') {
-                        lookahead.next();
-                        self.chars = lookahead;
-                        self.chars_consumed += 2;
-                        self.current_token_flags = TokenFlags::TRIPLE_QUOTED;
-                        self.scan_string(TokenFlags::TRIPLE_QUOTED)
-                    } else {
-                        self.finish_token(TokenKind::StringLiteral)
-                    }
+                    self.chars = lookahead;
+                    self.chars_consumed += 2;
+                    self.current_token_flags = TokenFlags::TRIPLE_QUOTED;
+                    self.scan_string(TokenFlags::TRIPLE_QUOTED)
                 } else {
                     self.scan_string(TokenFlags::NONE)
                 }

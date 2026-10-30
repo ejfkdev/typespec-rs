@@ -12,6 +12,7 @@
 //! Currently ported libraries:
 //! - `compiler` - TypeSpec std decorators (@doc, @tag, @key, @error, @format, paging, examples, etc.)
 //! - `http` - @typespec/http: HTTP protocol decorators and types
+//! - `http_client` - @typespec/http-client: shared client SDK model (`@experimental`, client discovery)
 //! - `xml` - @typespec/xml: XML serialization decorators and types
 //! - `streams` - @typespec/streams: Stream protocol types
 //! - `sse` - @typespec/sse: Server-Sent Events types
@@ -34,6 +35,7 @@ pub mod compiler;
 pub mod content_types;
 pub mod events;
 pub mod http;
+pub mod http_client;
 pub mod json_schema;
 pub mod openapi;
 pub mod openapi3;

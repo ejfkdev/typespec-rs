@@ -173,54 +173,180 @@ model Link {
 scalar LinkHeader<T extends Record<url> | Link[]> extends string;
 "#;
 
-/// The TypeSpec source for the HTTP library auth types
+/// The TypeSpec source for the HTTP library auth types.
+///
+/// Ported from `packages/http/lib/auth.tsp`, including the `AuthType`,
+/// `ApiKeyLocation`, and `OAuth2FlowType` enums and the concrete OAuth2 flow
+/// models that client SDK generators inspect.
 pub const HTTP_AUTH_TSP: &str = r#"
 namespace TypeSpec.Http;
 
+@doc("Authentication type")
+enum AuthType {
+  @doc("HTTP")
+  http,
+
+  @doc("API key")
+  apiKey,
+
+  @doc("OAuth2")
+  oauth2,
+
+  @doc("OpenID connect")
+  openIdConnect,
+
+  @doc("Empty auth")
+  noAuth,
+}
+
+@doc("")
 model BasicAuth {
-  type: "http";
+  @doc("Http authentication")
+  type: AuthType.http;
+
+  @doc("basic auth scheme")
   scheme: "Basic";
 }
 
+@doc("")
 model BearerAuth {
-  type: "http";
+  @doc("Http authentication")
+  type: AuthType.http;
+
+  @doc("bearer auth scheme")
   scheme: "Bearer";
 }
 
-model ApiKeyAuth<location extends "header" | "query" | "cookie", name extends string> {
-  type: "apiKey";
-  in: location;
-  name: name;
+@doc("Describes the location of the API key")
+enum ApiKeyLocation {
+  @doc("API key is a header value")
+  header,
+
+  @doc("API key is a query parameter")
+  query,
+
+  @doc("API key is found in a cookie")
+  cookie,
 }
 
-model Oauth2Auth<flows extends OAuth2Flow[]> {
-  type: "oauth2";
-  flows: flows;
+@doc("")
+model ApiKeyAuth<Location extends ApiKeyLocation, Name extends string> {
+  @doc("API key authentication")
+  type: AuthType.apiKey;
+
+  @doc("location of the API key")
+  in: Location;
+
+  @doc("name of the API key")
+  name: Name;
+}
+
+@doc("")
+model OAuth2Auth<Flows extends OAuth2Flow[], Scopes extends string[] = []> {
+  @doc("OAuth2 authentication")
+  type: AuthType.oauth2;
+
+  @doc("Supported OAuth2 flows")
+  flows: Flows;
+
+  @doc("Oauth2 scopes of every flow.")
+  defaultScopes: Scopes;
+}
+
+@doc("Describes the OAuth2 flow type")
+enum OAuth2FlowType {
+  @doc("authorization code flow")
+  authorizationCode,
+
+  @doc("implicit flow")
+  implicit,
+
+  @doc("password flow")
+  password,
+
+  @doc("client credential flow")
+  clientCredentials,
+}
+
+alias OAuth2Flow = AuthorizationCodeFlow | ImplicitFlow | PasswordFlow | ClientCredentialsFlow;
+
+@doc("Authorization Code flow")
+model AuthorizationCodeFlow {
+  @doc("authorization code flow")
+  type: OAuth2FlowType.authorizationCode;
+
+  @doc("the authorization URL")
+  authorizationUrl: string;
+
+  @doc("the token URL")
+  tokenUrl: string;
+
+  @doc("the refresh URL")
+  refreshUrl?: string;
+
+  @doc("list of scopes for the credential")
+  scopes?: string[];
+}
+
+@doc("Implicit flow")
+model ImplicitFlow {
+  @doc("implicit flow")
+  type: OAuth2FlowType.implicit;
+
+  @doc("the authorization URL")
+  authorizationUrl: string;
+
+  @doc("the refresh URL")
+  refreshUrl?: string;
+
+  @doc("list of scopes for the credential")
+  scopes?: string[];
+}
+
+@doc("Resource Owner Password flow")
+model PasswordFlow {
+  @doc("password flow")
+  type: OAuth2FlowType.password;
+
+  @doc("the token URL")
+  tokenUrl: string;
+
+  @doc("the refresh URL")
+  refreshUrl?: string;
+
+  @doc("list of scopes for the credential")
+  scopes?: string[];
+}
+
+@doc("Client credentials flow")
+model ClientCredentialsFlow {
+  @doc("client credential flow")
+  type: OAuth2FlowType.clientCredentials;
+
+  @doc("the token URL")
+  tokenUrl: string;
+
+  @doc("the refresh URL")
+  refreshUrl?: string;
+
+  @doc("list of scopes for the credential")
+  scopes?: string[];
 }
 
 model OpenIdConnectAuth<ConnectUrl extends string, Scopes extends string[] = []> {
-  type: "openIdConnect";
+  /** Auth type */
+  type: AuthType.openIdConnect;
+
+  /** Connect url. It can be specified relative to the server URL */
   openIdConnectUrl: ConnectUrl;
+
+  /** Scope names required for operations that use this authentication scheme. */
   scopes: Scopes;
 }
 
+@doc("")
 model NoAuth {
-  type: "none";
-}
-
-union Auth {
-  BasicAuth,
-  BearerAuth,
-  ApiKeyAuth<"header" | "query" | "cookie", string>,
-  Oauth2Auth<OAuth2Flow[]>,
-  OpenIdConnectAuth<string>,
-  NoAuth,
-}
-
-model OAuth2Flow {
-  authorizationUrl?: string;
-  tokenUrl?: string;
-  refreshUrl?: string;
-  scopes: Record<string>;
+  /** No authentication. */
+  type: AuthType.noAuth;
 }
 "#;

@@ -65,6 +65,16 @@ impl Checker {
         self.global_namespace_type
     }
 
+    /// Whether a node comes from injected library source (as opposed to the
+    /// user's project). Client SDK discovery only considers project code.
+    pub fn is_library_node(&self, node_id: NodeId) -> bool {
+        let Some(ast) = &self.ast else {
+            return false;
+        };
+        ast.node_span(node_id)
+            .is_some_and(|span| span.start.line as usize <= ast.library_line_offset)
+    }
+
     // ========================================================================
     // Deprecation tracking
     // ========================================================================

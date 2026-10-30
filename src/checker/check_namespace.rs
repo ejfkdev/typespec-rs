@@ -6,9 +6,11 @@ impl Checker {
 
         let full_name = Self::get_identifier_name(&ast, node.name);
 
-        if let Some(&type_id) = self.node_type_map.get(&node_id)
-            && let Some(t) = self.get_type(type_id)
-            && t.is_finished()
+        // Re-entrant check for the same declaration node only. Merged
+        // blockless namespaces share one type, but each declaration node has
+        // its own statements, so a finished merged type must not skip them.
+        if self.checked_namespace_nodes.contains(&node_id)
+            && let Some(&type_id) = self.node_type_map.get(&node_id)
         {
             return type_id;
         }
@@ -60,6 +62,10 @@ impl Checker {
                 ns.namespace = Some(parent_id);
             }
         }
+
+        // Mark this declaration node as checked before descending so a
+        // self-reference cannot recurse indefinitely.
+        self.checked_namespace_nodes.insert(node_id);
 
         let prev_namespace = self.current_namespace;
         self.current_namespace = Some(type_id);

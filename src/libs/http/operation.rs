@@ -231,33 +231,52 @@ pub struct HttpServer {
 
 /// Apply @server decorator.
 /// Ported from TS $server().
+///
+/// `parameters` are the `ModelProperty` types of the optional third argument
+/// (e.g. `@server("https://{name}/foo", "desc", { name: string })`); client
+/// SDK generators expose them as client constructor parameters.
 pub fn apply_server(
     state: &mut StateAccessors,
     target: TypeId,
     url: &str,
     description: Option<&str>,
+    parameters: &[TypeId],
 ) {
-    // Use \x01 (SOH) as separator - cannot appear in URLs, unlike "::" which
-    // breaks IPv6 addresses like https://[::1]:3000
-    let value = format!("{}\x01{}", url, description.unwrap_or(""));
+    // Use \x01 (SOH) and \x02 (STX) as separators - they cannot appear in
+    // URLs, unlike "::" which breaks IPv6 addresses like https://[::1]:3000
+    let params = parameters
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let value = format!("{}\x01{}\x01{}", url, description.unwrap_or(""), params);
     state.set_state(STATE_SERVERS, target, value);
 }
 
 /// Get servers for a namespace.
 /// Ported from TS getServers().
-/// Returns the URL and description from the stored server state.
+/// Returns the URL, description, and parameter property types from the stored
+/// server state.
 pub fn get_server(state: &StateAccessors, target: TypeId) -> Option<HttpServer> {
     state.get_state(STATE_SERVERS, target).map(|s| {
-        let parts: Vec<&str> = s.splitn(2, '\x01').collect();
-        let url = parts.first().unwrap_or(&"").to_string();
+        let mut parts = s.splitn(3, '\x01');
+        let url = parts.next().unwrap_or("").to_string();
         let description = parts
-            .get(1)
+            .next()
             .filter(|d| !d.is_empty())
             .map(|d| d.to_string());
+        let parameters = parts
+            .next()
+            .map(|p| {
+                p.split(',')
+                    .filter_map(|id| id.parse::<TypeId>().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
         HttpServer {
             url,
             description,
-            parameters: vec![],
+            parameters,
         }
     })
 }

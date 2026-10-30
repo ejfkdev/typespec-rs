@@ -7,6 +7,8 @@ mod macros;
 
 pub mod array;
 pub mod builtin;
+pub mod client;
+pub mod client_library;
 pub mod entity;
 pub mod enum_member;
 pub mod enum_type;

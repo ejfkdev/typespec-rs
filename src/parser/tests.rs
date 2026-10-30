@@ -2010,4 +2010,31 @@ model Foo {}
         assert_eq!(dupe_libs.len(), 1);
         assert!(dupe_libs[0].contains("TestDupe1"));
     }
+
+    // Regression: `""` was misdetected as the start of a triple-quoted string,
+    // which broke every declaration containing an empty string literal.
+    #[test]
+    fn test_empty_string_literal() {
+        for source in [
+            "model A { x: \"\"; }",
+            "alias X = \"\";",
+            "enum E { a: \"\" }",
+            "@doc(\"\") model Foo {}",
+            "@dec(\"a\", \"\") model Foo {}",
+        ] {
+            let result = parse(source);
+            assert!(
+                result.diagnostics.is_empty(),
+                "unexpected diagnostics for {source:?}: {:?}",
+                result.diagnostics
+            );
+        }
+    }
+
+    // Regression: tripe-quoted strings still work after the empty-string fix.
+    #[test]
+    fn test_triple_quoted_string_after_empty_string() {
+        let result = parse("model T { x: \"\"\"triple\"\"\"; y: \"\"; }");
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    }
 }

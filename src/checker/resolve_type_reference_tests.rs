@@ -277,3 +277,47 @@ fn test_valid_type_ref_model_no_error() {
         diags
     );
 }
+
+// ============================================================================
+// Template instantiation through `using`
+// ============================================================================
+
+// Regression: names resolved via `using` bypassed template instantiation, so
+// `Key<"h">` from an imported library silently resolved to the template
+// declaration instead of an instance (breaking, among other things,
+// `@useAuth(ApiKeyAuth<...>)` from the HTTP library).
+#[test]
+fn test_template_instantiation_via_using_library() {
+    use crate::checker::types::Type;
+    let library = "namespace TypeSpec.Http;\nmodel Key<L extends string> { in: L; }\n";
+    let options = crate::parser::ParseOptions::new(vec![library.to_string()]);
+    let parse_result =
+        crate::parser::parse_with_options("using TypeSpec.Http;\nalias A = Key<\"h\">;\n", options);
+    let mut checker = crate::checker::Checker::new();
+    checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+    checker.check_program();
+
+    let alias_id = checker.declared_types["A"];
+    let resolved = checker.resolve_alias_chain(alias_id);
+    match checker.get_type(resolved) {
+        Some(Type::Model(m)) => {
+            assert_eq!(m.name, "Key");
+            assert!(
+                m.template_mapper.is_some(),
+                "using-resolved template must produce an instance"
+            );
+            assert!(m.is_finished, "instance must be fully checked");
+            let prop = m.properties["in"];
+            match checker.get_type(prop) {
+                Some(Type::ModelProperty(p)) => {
+                    assert!(matches!(
+                        checker.get_type(checker.resolve_alias_chain(p.r#type)),
+                        Some(Type::String(s)) if s.value == "h"
+                    ));
+                }
+                other => panic!("expected property, got {other:?}"),
+            }
+        }
+        other => panic!("expected instantiated model, got {other:?}"),
+    }
+}

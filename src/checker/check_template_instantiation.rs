@@ -240,6 +240,69 @@ impl Checker {
             self.mark_using_as_used_if_applicable(&name, type_id);
             // Check internal visibility for the resolved type
             self.check_internal_visibility(type_id);
+
+            // Names resolved through `using` must go through the same
+            // template handling as declared names, otherwise `Foo<T>` from an
+            // imported library silently resolves to the template declaration.
+            let has_template_node = self
+                .get_type(type_id)
+                .is_some_and(|t| t.template_node().is_some());
+            let ast_template_param_count = self.get_template_param_count(type_id);
+            let is_template = has_template_node || ast_template_param_count > 0;
+
+            if !node.arguments.is_empty() {
+                if !is_template {
+                    self.error_at(
+                        node_id,
+                        "invalid-template-args",
+                        &format!(
+                            "Can't pass template arguments to non-templated type '{}'.",
+                            name
+                        ),
+                    );
+                    return self.error_type;
+                }
+                let inst_type_id =
+                    self.instantiate_template(ctx, node_id, type_id, &node.arguments);
+                self.symbol_links
+                    .entry(node_id)
+                    .or_default()
+                    .is_template_instantiation = true;
+                self.emit_deprecated_warning_if_needed(inst_type_id);
+                return inst_type_id;
+            }
+
+            // All-default template parameters are instantiated automatically,
+            // matching the declared-name path.
+            if is_template {
+                let required_param_count = self.get_required_template_param_count(type_id);
+                if required_param_count > 0 {
+                    let missing_param = self.get_missing_template_param_name(type_id, 0);
+                    self.error_at(
+                        node_id,
+                        "invalid-template-args",
+                        &format!(
+                            "Template argument '{}' is required for '{}'.",
+                            missing_param, name
+                        ),
+                    );
+                    return self.error_type;
+                }
+                let total_param_count = self.get_template_param_count(type_id);
+                if total_param_count > 0 {
+                    let default_args = self.get_template_default_args(type_id);
+                    if !default_args.is_empty() {
+                        let inst_type_id =
+                            self.instantiate_template(ctx, node_id, type_id, &default_args);
+                        self.symbol_links
+                            .entry(node_id)
+                            .or_default()
+                            .is_template_instantiation = true;
+                        return inst_type_id;
+                    }
+                }
+            }
+
             self.emit_deprecated_warning_if_needed(type_id);
             return type_id;
         }

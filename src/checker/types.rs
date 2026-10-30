@@ -271,11 +271,6 @@ pub struct InterfaceType {
     /// Template mapper for template instances. None for template declarations and non-templated types.
     /// TS: TemplatedType.templateMapper
     pub template_mapper: Option<Box<TypeMapper>>,
-    /// Type declared with the `extends` clause of a union statement. Union
-    /// variants are constrained to be assignable to it. This is only a
-    /// constraint: it does not create an inheritance relationship.
-    /// TS: Union.baseType (microsoft/typespec#11771)
-    pub base_type: Option<TypeId>,
     pub decorators: Vec<DecoratorApplication>,
     /// Documentation comment
     pub doc: Option<String>,
@@ -297,7 +292,6 @@ impl InterfaceType {
             source_interfaces: Vec::new(),
             template_node: None,
             template_mapper: None,
-            base_type: None,
             decorators: Vec::new(),
             doc: None,
             summary: None,
@@ -323,11 +317,6 @@ pub struct OperationType {
     /// Template mapper for template instances. None for template declarations and non-templated types.
     /// TS: TemplatedType.templateMapper
     pub template_mapper: Option<Box<TypeMapper>>,
-    /// Type declared with the `extends` clause of a union statement. Union
-    /// variants are constrained to be assignable to it. This is only a
-    /// constraint: it does not create an inheritance relationship.
-    /// TS: Union.baseType (microsoft/typespec#11771)
-    pub base_type: Option<TypeId>,
     pub decorators: Vec<DecoratorApplication>,
     /// Documentation comment
     pub doc: Option<String>,
@@ -349,7 +338,6 @@ impl OperationType {
             interface_: None,
             template_node: None,
             template_mapper: None,
-            base_type: None,
             decorators: Vec::new(),
             doc: None,
             summary: None,
@@ -495,11 +483,6 @@ pub struct ScalarType {
     /// Template mapper for template instances. None for template declarations and non-templated types.
     /// TS: TemplatedType.templateMapper
     pub template_mapper: Option<Box<TypeMapper>>,
-    /// Type declared with the `extends` clause of a union statement. Union
-    /// variants are constrained to be assignable to it. This is only a
-    /// constraint: it does not create an inheritance relationship.
-    /// TS: Union.baseType (microsoft/typespec#11771)
-    pub base_type: Option<TypeId>,
     pub decorators: Vec<DecoratorApplication>,
     /// Documentation comment
     pub doc: Option<String>,
@@ -526,7 +509,6 @@ impl ScalarType {
             derived_scalars: Vec::new(),
             template_node: None,
             template_mapper: None,
-            base_type: None,
             decorators: Vec::new(),
             doc: None,
             summary: None,

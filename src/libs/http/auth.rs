@@ -2,7 +2,8 @@
 //!
 //! Ported from TypeSpec @typespec/http authentication.ts
 
-use crate::checker::types::TypeId;
+use crate::checker::Checker;
+use crate::checker::types::{Type, TypeId};
 use crate::state_accessors::StateAccessors;
 
 // ============================================================================
@@ -307,6 +308,70 @@ pub fn get_authentication(state: &StateAccessors, target: TypeId) -> Option<Stri
         .map(|s| s.to_string())
 }
 
+/// Parse the authentication configured on a target into structured form.
+///
+/// The state is serialized by [`set_authentication`]; this restores the scheme
+/// kind (and the api key name / OpenID Connect URL when present) so client SDK
+/// generators can inspect it.
+pub fn parse_authentication(state: &StateAccessors, target: TypeId) -> Option<Authentication> {
+    let serialized = get_authentication(state, target)?;
+    let options: Vec<AuthenticationOption> = serialized
+        .split(';')
+        .filter(|option| !option.is_empty())
+        .map(|option| {
+            let schemes = option
+                .split(',')
+                .filter(|name| !name.is_empty())
+                .filter_map(parse_authentication_scheme)
+                .collect();
+            AuthenticationOption { schemes }
+        })
+        .filter(|option: &AuthenticationOption| !option.schemes.is_empty())
+        .collect();
+    (!options.is_empty()).then_some(Authentication { options })
+}
+
+fn parse_authentication_scheme(serialized: &str) -> Option<HttpAuth> {
+    let base = HttpAuthBase {
+        id: serialized.to_string(),
+        description: None,
+    };
+    if serialized == "BasicAuth" {
+        Some(HttpAuth::Basic(BasicAuth { base }))
+    } else if serialized == "BearerAuth" {
+        Some(HttpAuth::Bearer(BearerAuth { base }))
+    } else if let Some(name) = serialized
+        .strip_prefix("ApiKeyAuth(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        Some(HttpAuth::ApiKey(ApiKeyAuth {
+            base,
+            location: ApiKeyLocation::Header,
+            name: name.to_string(),
+        }))
+    } else if serialized == "Oauth2Auth" {
+        Some(HttpAuth::Oauth2(Oauth2Auth {
+            base,
+            flows: Vec::new(),
+        }))
+    } else if let Some(url) = serialized
+        .strip_prefix("OpenIdConnectAuth(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        Some(HttpAuth::OpenIdConnect(OpenIdConnectAuth {
+            base,
+            open_id_connect_url: url.to_string(),
+            scopes: Vec::new(),
+        }))
+    } else if serialized == "NoAuth" {
+        Some(HttpAuth::NoAuth(NoAuth { base }))
+    } else {
+        // Unknown scheme name; keep it as an opaque no-auth scheme so callers
+        // can still see that authentication is configured.
+        Some(HttpAuth::NoAuth(NoAuth { base }))
+    }
+}
+
 fn auth_scheme_name(auth: &HttpAuth) -> String {
     match auth {
         HttpAuth::Basic(_) => "BasicAuth".to_string(),
@@ -315,6 +380,177 @@ fn auth_scheme_name(auth: &HttpAuth) -> String {
         HttpAuth::Oauth2(_) => "Oauth2Auth".to_string(),
         HttpAuth::OpenIdConnect(a) => format!("OpenIdConnectAuth({})", a.open_id_connect_url),
         HttpAuth::NoAuth(_) => "NoAuth".to_string(),
+    }
+}
+
+// ============================================================================
+// Authentication scheme type names (client SDK support)
+// ============================================================================
+
+/// The TypeSpec `HttpAuth.type` value for a scheme.
+///
+/// Ported from the `type` property of the auth models in `@typespec/http`
+/// (`http`, `apiKey`, `oauth2`, `openIdConnect`). `NoAuth` has no credential.
+pub fn auth_scheme_type_name(auth: &HttpAuth) -> Option<&'static str> {
+    match auth {
+        HttpAuth::Basic(_) | HttpAuth::Bearer(_) => Some("http"),
+        HttpAuth::ApiKey(_) => Some("apiKey"),
+        HttpAuth::Oauth2(_) => Some("oauth2"),
+        HttpAuth::OpenIdConnect(_) => Some("openIdConnect"),
+        HttpAuth::NoAuth(_) => None,
+    }
+}
+
+/// Get the deduplicated credential type names of the authentication configured
+/// on `target` (a service namespace).
+///
+/// Client SDK generators turn these into the `credential` constructor
+/// parameter (one string literal per scheme, or a union of literals).
+pub fn get_authentication_scheme_types(state: &StateAccessors, target: TypeId) -> Vec<String> {
+    let Some(serialized) = get_authentication(state, target) else {
+        return Vec::new();
+    };
+    let mut types: Vec<String> = Vec::new();
+    for scheme in serialized.split([';', ',']) {
+        let scheme = scheme.trim();
+        if scheme.is_empty() {
+            continue;
+        }
+        let type_name = if scheme.starts_with("BasicAuth") || scheme.starts_with("BearerAuth") {
+            "http"
+        } else if scheme.starts_with("ApiKeyAuth") {
+            "apiKey"
+        } else if scheme.starts_with("Oauth2Auth") {
+            "oauth2"
+        } else if scheme.starts_with("OpenIdConnectAuth") {
+            "openIdConnect"
+        } else {
+            // NoAuth and unknown scheme names carry no credential.
+            continue;
+        };
+        if !types.iter().any(|t| t == type_name) {
+            types.push(type_name.to_string());
+        }
+    }
+    types
+}
+
+// ============================================================================
+// Resolving an @useAuth argument
+// ============================================================================
+
+/// Resolve an `@useAuth` argument type into an [`Authentication`].
+///
+/// Ported from the TS `$useAuth` implementation. The argument is one of:
+/// - a single auth scheme model instance (`BasicAuth`, `ApiKeyAuth<...>`, ...)
+/// - a tuple of schemes that must all be used together (`[A, B]`)
+/// - a union of alternatives (`A | B`)
+///
+/// Returns `None` when the type is not a recognizable auth reference.
+pub fn resolve_auth_reference(checker: &Checker, type_id: TypeId) -> Option<Authentication> {
+    let resolved = checker.resolve_alias_chain(type_id);
+    match checker.get_type(resolved) {
+        Some(Type::Union(u)) => {
+            let mut options = Vec::new();
+            for name in &u.variant_names {
+                if let Some(&variant_id) = u.variants.get(name)
+                    && let Some(Type::UnionVariant(v)) = checker.get_type(variant_id)
+                    && let Some(auth) = resolve_auth_reference(checker, v.r#type)
+                {
+                    options.extend(auth.options);
+                }
+            }
+            (!options.is_empty()).then_some(Authentication { options })
+        }
+        Some(Type::Tuple(t)) => {
+            let mut schemes = Vec::new();
+            for &value in &t.values {
+                if let Some(auth) = resolve_auth_reference(checker, value) {
+                    schemes.extend(auth.options.into_iter().flat_map(|o| o.schemes));
+                }
+            }
+            (!schemes.is_empty()).then_some(Authentication {
+                options: vec![AuthenticationOption { schemes }],
+            })
+        }
+        Some(Type::Model(m)) => {
+            let scheme = resolve_auth_model(checker, m)?;
+            Some(Authentication {
+                options: vec![AuthenticationOption {
+                    schemes: vec![scheme],
+                }],
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Resolve a single auth scheme model instance.
+fn resolve_auth_model(
+    checker: &Checker,
+    model: &crate::checker::types::ModelType,
+) -> Option<HttpAuth> {
+    let scheme_type = get_model_string_property(checker, model, "type")?;
+    let base = HttpAuthBase {
+        id: scheme_type.clone(),
+        description: None,
+    };
+    match scheme_type.as_str() {
+        "http" => match get_model_string_property(checker, model, "scheme") {
+            Some(scheme) if scheme.eq_ignore_ascii_case("basic") => {
+                Some(HttpAuth::Basic(BasicAuth { base }))
+            }
+            Some(scheme) if scheme.eq_ignore_ascii_case("bearer") => {
+                Some(HttpAuth::Bearer(BearerAuth { base }))
+            }
+            // Unknown HTTP scheme: treat as bearer token auth.
+            Some(_) => Some(HttpAuth::Bearer(BearerAuth { base })),
+            None => None,
+        },
+        "apiKey" => {
+            let location = match get_model_string_property(checker, model, "in").as_deref() {
+                Some("query") => ApiKeyLocation::Query,
+                Some("cookie") => ApiKeyLocation::Cookie,
+                _ => ApiKeyLocation::Header,
+            };
+            let name = get_model_string_property(checker, model, "name").unwrap_or_default();
+            Some(HttpAuth::ApiKey(ApiKeyAuth {
+                base,
+                location,
+                name,
+            }))
+        }
+        "oauth2" => Some(HttpAuth::Oauth2(Oauth2Auth {
+            base,
+            flows: Vec::new(),
+        })),
+        "openIdConnect" => Some(HttpAuth::OpenIdConnect(OpenIdConnectAuth {
+            base,
+            open_id_connect_url: get_model_string_property(checker, model, "openIdConnectUrl")
+                .unwrap_or_default(),
+            scopes: Vec::new(),
+        })),
+        "none" => Some(HttpAuth::NoAuth(NoAuth { base })),
+        _ => None,
+    }
+}
+
+/// Read a string-valued property from a model, accepting either a string
+/// literal or an enum member (e.g. `in: "header"` or referenced enum members).
+fn get_model_string_property(
+    checker: &Checker,
+    model: &crate::checker::types::ModelType,
+    name: &str,
+) -> Option<String> {
+    let prop_id = model.properties.get(name).copied()?;
+    let prop_type = match checker.get_type(prop_id) {
+        Some(Type::ModelProperty(p)) => p.r#type,
+        _ => return None,
+    };
+    match checker.get_type(checker.resolve_alias_chain(prop_type)) {
+        Some(Type::String(s)) => Some(s.value.clone()),
+        Some(Type::EnumMember(m)) => Some(m.name.clone()),
+        _ => None,
     }
 }
 

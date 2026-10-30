@@ -348,6 +348,7 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 - Template declaration and instantiation
 - Standard library types (string, int32, float64, utcDateTime, etc.)
 - Helper libraries: HTTP types, status codes, content types, URI templates, OpenAPI/OpenAPI3/JSON Schema/protobuf/versioning type definitions
+- `@typespec/http-client` shared SDK layer: `@experimental` with per-emitter scoping, client/sub-client discovery, operation-to-client mapping, data type collection, and client constructors (endpoint, server parameters, credential)
 - External library injection API for custom decorator declarations
 - Programmatic decorator registration (`Checker::register_decorator`) — bypasses source parsing, supports reserved keywords
 - WASM extension system with wasmtime runtime — custom decorators and emitters
@@ -374,6 +375,7 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 - Declarations as expressions (`model { ... }`, `union { ... }`, `enum { ... }`, `scalar ...`) in argument/return position (`declaration-expressions` feature)
 - `@statusCode` numeric ranges: bounds inherited from the property type and base scalar chain, with per-property bounds narrowing the inherited range
 - OpenAPI response descriptions preserve `@doc` from return-type union variants (with union-level fallback)
+- `@useAuth` scheme resolution (`BasicAuth`, `BearerAuth`, `ApiKeyAuth`, `OAuth2Auth`, `OpenIdConnectAuth`, unions/tuples of schemes) and `@server` parameter models
 - `@encode(string)` on boolean types; SPDX license `identifier` (mutually exclusive with `url`); OpenID Connect auth scopes
 
 What's not yet ported:

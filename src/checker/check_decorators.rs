@@ -841,6 +841,34 @@ impl Checker {
                     );
                 }
 
+                // ---- Shared client library: @experimental ----
+                "experimental" => {
+                    let mut options = crate::libs::http_client::ExperimentalOptions::default();
+                    if let Some(DecoratorMarshalledValue::Record(map)) =
+                        args.first().and_then(|a| a.js_value.as_ref())
+                    {
+                        options.emitter_scope = map
+                            .get("emitterScope")
+                            .and_then(|&id| self.string_literal_value(id));
+                        options.diagnostic_id = map
+                            .get("diagnosticId")
+                            .and_then(|&id| self.string_literal_value(id));
+                        options.depends_on = map
+                            .get("dependsOn")
+                            .map(|&id| self.tuple_string_values(id))
+                            .unwrap_or_default();
+                    }
+                    let (lifecycle, include_exclude_conflict) =
+                        crate::libs::http_client::create_scoped_feature_lifecycle(&options);
+                    if include_exclude_conflict {
+                        self.error(
+                            "include-and-exclude-scopes",
+                            "The @experimental should only either include or exclude scopes, not both.",
+                        );
+                    }
+                    self.client_feature_lifecycles.insert(type_id, lifecycle);
+                }
+
                 // ---- HTTP shared route decorator ----
                 "sharedRoute" => {
                     crate::libs::http::apply_shared_route(&mut self.state_accessors, type_id);
@@ -857,11 +885,29 @@ impl Checker {
                                 _ => None,
                             })
                         });
+                        // The optional third argument is a model expression
+                        // whose properties become server parameters. Use the
+                        // checked model type so parameter property TypeIds are
+                        // preserved for client SDK generators.
+                        let parameters: Vec<TypeId> = args
+                            .get(2)
+                            .and_then(|a| self.node_type_map.get(&a.value))
+                            .and_then(|&id| match self.get_type(self.resolve_alias_chain(id)) {
+                                Some(Type::Model(m)) => Some(
+                                    m.property_names
+                                        .iter()
+                                        .filter_map(|n| m.properties.get(n).copied())
+                                        .collect(),
+                                ),
+                                _ => None,
+                            })
+                            .unwrap_or_default();
                         crate::libs::http::apply_server(
                             &mut self.state_accessors,
                             type_id,
                             url,
                             description.as_deref(),
+                            &parameters,
                         );
                     }
                 }
@@ -869,10 +915,37 @@ impl Checker {
                 // ---- HTTP useAuth decorator ----
                 "useAuth" => {
                     crate::libs::http::apply_use_auth(&mut self.state_accessors, type_id);
+                    // Resolve the auth scheme reference so client SDK
+                    // generators can derive the `credential` parameter.
+                    if let Some(arg) = args.first()
+                        && let Some(&auth_type) = self.node_type_map.get(&arg.value)
+                        && let Some(auth) =
+                            crate::libs::http::auth::resolve_auth_reference(self, auth_type)
+                    {
+                        crate::libs::http::auth::set_authentication(
+                            &mut self.state_accessors,
+                            type_id,
+                            &auth,
+                        );
+                    }
                 }
 
                 // ---- HTTP service decorator ----
                 "service" => {
+                    // `@service` is the compiler's TypeSpec.service decorator;
+                    // store the title so `isService`/`listServices` see it, and
+                    // keep the HTTP marker for consumers of that state key.
+                    let title = match args.first().and_then(|a| a.js_value.as_ref()) {
+                        Some(DecoratorMarshalledValue::Record(map)) => map
+                            .get("title")
+                            .and_then(|&id| self.string_literal_value(id)),
+                        _ => None,
+                    };
+                    crate::libs::compiler::apply_service(
+                        &mut self.state_accessors,
+                        type_id,
+                        title.as_deref(),
+                    );
                     crate::libs::http::apply_service(&mut self.state_accessors, type_id);
                 }
                 _ => {}
@@ -881,6 +954,26 @@ impl Checker {
     }
 
     /// Set the `doc` field on a type.
+    /// Read a string literal type's value.
+    fn string_literal_value(&self, type_id: TypeId) -> Option<String> {
+        match self.get_type(self.resolve_alias_chain(type_id)) {
+            Some(Type::String(s)) => Some(s.value.clone()),
+            _ => None,
+        }
+    }
+
+    /// Read the string literals of a tuple type.
+    fn tuple_string_values(&self, type_id: TypeId) -> Vec<String> {
+        match self.get_type(self.resolve_alias_chain(type_id)) {
+            Some(Type::Tuple(t)) => t
+                .values
+                .iter()
+                .filter_map(|&value| self.string_literal_value(value))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     fn set_type_doc(&mut self, type_id: TypeId, doc: String) {
         if let Some(t) = self.get_type_mut(type_id) {
             match t {

@@ -493,7 +493,7 @@ mod tests {
         assert!(!HTTP_AUTH_TSP.is_empty());
         assert!(HTTP_AUTH_TSP.contains("BasicAuth"));
         assert!(HTTP_AUTH_TSP.contains("BearerAuth"));
-        assert!(HTTP_AUTH_TSP.contains("Oauth2Auth"));
+        assert!(HTTP_AUTH_TSP.contains("OAuth2Auth"));
     }
 
     #[test]
@@ -716,7 +716,13 @@ mod tests {
     fn test_http_server() {
         let mut state = StateAccessors::new();
         assert_eq!(get_server(&state, 1), None);
-        apply_server(&mut state, 1, "https://example.com", Some("Production"));
+        apply_server(
+            &mut state,
+            1,
+            "https://example.com",
+            Some("Production"),
+            &[],
+        );
         let server = get_server(&state, 1).unwrap();
         assert_eq!(server.url, "https://example.com");
         assert_eq!(server.description, Some("Production".to_string()));
@@ -725,7 +731,7 @@ mod tests {
     #[test]
     fn test_http_server_no_description() {
         let mut state = StateAccessors::new();
-        apply_server(&mut state, 1, "https://localhost:3000", None);
+        apply_server(&mut state, 1, "https://localhost:3000", None, &[]);
         let server = get_server(&state, 1).unwrap();
         assert_eq!(server.url, "https://localhost:3000");
         assert_eq!(server.description, None);
@@ -1016,12 +1022,14 @@ mod tests {
             1,
             "https://prod.example.com",
             Some("Production"),
+            &[],
         );
         apply_server(
             &mut state,
             2,
             "https://staging.example.com",
             Some("Staging"),
+            &[],
         );
 
         let s1 = get_server(&state, 1).unwrap();

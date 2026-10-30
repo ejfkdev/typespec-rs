@@ -817,6 +817,22 @@ mod tests {
     }
 
     /// Helper: get the name of a type by TypeId
+    /// Whether a type comes from project source (not an injected library).
+    /// Mirrors upstream test harnesses that compile with `nostdlib: true`.
+    fn is_project_type(checker: &Checker, type_id: TypeId) -> bool {
+        checker
+            .get_type(type_id)
+            .and_then(|t| t.node_id_from_type())
+            .is_some_and(|node| !checker.is_library_node(node))
+    }
+
+    fn project_names(checker: &Checker, ids: &[TypeId]) -> Vec<String> {
+        ids.iter()
+            .filter(|&&id| is_project_type(checker, id))
+            .map(|&id| type_name(checker, id))
+            .collect()
+    }
+
     fn type_name(checker: &Checker, type_id: TypeId) -> String {
         checker
             .get_type(type_id)
@@ -847,11 +863,7 @@ mod tests {
         let mut collector = DetailCollector::new();
         navigate_program(&checker, &mut collector, NavigationOptions::default());
 
-        let model_names: Vec<String> = collector
-            .models
-            .iter()
-            .map(|&id| type_name(&checker, id))
-            .collect();
+        let model_names = project_names(&checker, &collector.models);
 
         // HashMap iteration order is non-deterministic, so check by content
         assert_eq!(
@@ -891,11 +903,7 @@ mod tests {
         let mut collector = DetailCollector::new();
         navigate_program(&checker, &mut collector, NavigationOptions::default());
 
-        let exit_model_names: Vec<String> = collector
-            .exit_models
-            .iter()
-            .map(|&id| type_name(&checker, id))
-            .collect();
+        let exit_model_names = project_names(&checker, &collector.exit_models);
 
         assert_eq!(
             exit_model_names.len(),
@@ -1122,11 +1130,7 @@ mod tests {
         let mut collector = DetailCollector::new();
         navigate_program(&checker, &mut collector, NavigationOptions::default());
 
-        let enum_names: Vec<String> = collector
-            .enums
-            .iter()
-            .map(|&id| type_name(&checker, id))
-            .collect();
+        let enum_names = project_names(&checker, &collector.enums);
 
         assert_eq!(
             enum_names.len(),
@@ -1165,11 +1169,7 @@ mod tests {
         let mut collector = DetailCollector::new();
         navigate_program(&checker, &mut collector, NavigationOptions::default());
 
-        let exit_enum_names: Vec<String> = collector
-            .exit_enums
-            .iter()
-            .map(|&id| type_name(&checker, id))
-            .collect();
+        let exit_enum_names = project_names(&checker, &collector.exit_enums);
 
         assert_eq!(
             exit_enum_names.len(),
@@ -1387,11 +1387,7 @@ mod tests {
         let mut collector = DetailCollector::new();
         navigate_program(&checker, &mut collector, NavigationOptions::default());
 
-        let model_names: Vec<String> = collector
-            .models
-            .iter()
-            .map(|&id| type_name(&checker, id))
-            .collect();
+        let model_names = project_names(&checker, &collector.models);
 
         assert_eq!(
             model_names.len(),
@@ -1676,14 +1672,21 @@ mod tests {
     }
 
     impl SemanticNodeListener for EnumMemberCollector {
-        fn on_enum_member(&mut self, type_id: TypeId, _checker: &Checker) -> ListenerFlow {
-            self.members.push(type_id);
-            self.order.push("enumMember");
+        fn on_enum_member(&mut self, type_id: TypeId, checker: &Checker) -> ListenerFlow {
+            // The stdlib is part of the program graph; these tests mirror
+            // upstream's `nostdlib: true` harness by only recording project
+            // enum members.
+            if is_project_type(checker, type_id) {
+                self.members.push(type_id);
+                self.order.push("enumMember");
+            }
             ListenerFlow::Continue
         }
-        fn on_exit_enum_member(&mut self, type_id: TypeId, _checker: &Checker) {
-            self.exit_members.push(type_id);
-            self.order.push("exitEnumMember");
+        fn on_exit_enum_member(&mut self, type_id: TypeId, checker: &Checker) {
+            if is_project_type(checker, type_id) {
+                self.exit_members.push(type_id);
+                self.order.push("exitEnumMember");
+            }
         }
     }
 
@@ -1724,6 +1727,7 @@ mod tests {
         let names: Vec<String> = collector
             .members
             .iter()
+            .filter(|&&id| is_project_type(&checker, id))
             .map(|&id| enum_member_name(&checker, id))
             .collect();
         assert_eq!(names, vec!["North", "East", "South", "West"]);
@@ -1765,6 +1769,7 @@ mod tests {
         let names: Vec<String> = collector
             .members
             .iter()
+            .filter(|&&id| is_project_type(&checker, id))
             .map(|&id| enum_member_name(&checker, id))
             .collect();
         assert_eq!(names, vec!["North", "South"]);

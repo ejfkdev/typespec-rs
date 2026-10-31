@@ -167,7 +167,7 @@ impl Checker {
             // Uninstantiated template declarations are validated per
             // instantiation instead (microsoft/typespec#11771).
             if let Some(base) = base_type
-                && !(ctx.mapper.is_none() && !node.template_parameters.is_empty())
+                && (ctx.mapper.is_some() || node.template_parameters.is_empty())
                 && variant_type != self.error_type
             {
                 let (is_assignable, _) =

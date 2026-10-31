@@ -593,19 +593,17 @@ pub fn collect_data_types(
         Some(Type::UnionVariant(v)) => {
             collect_data_types(checker, state, v.r#type, out, seen);
         }
-        Some(Type::Enum(e)) => {
+        Some(Type::Enum(e))
             if is_named_data_type(checker, resolved, &e.name, e.namespace)
-                && !out.contains(&resolved)
-            {
-                out.push(resolved);
-            }
+                && !out.contains(&resolved) =>
+        {
+            out.push(resolved);
         }
-        Some(Type::Scalar(s)) => {
+        Some(Type::Scalar(s))
             if is_named_data_type(checker, resolved, &s.name, s.namespace)
-                && !out.contains(&resolved)
-            {
-                out.push(resolved);
-            }
+                && !out.contains(&resolved) =>
+        {
+            out.push(resolved);
         }
         Some(Type::ModelProperty(p)) => {
             collect_data_types(checker, state, p.r#type, out, seen);

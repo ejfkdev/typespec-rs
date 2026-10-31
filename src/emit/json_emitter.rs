@@ -57,7 +57,16 @@ impl Emitter for JsonEmitter {
         let mut enums: Vec<EnumInfo> = Vec::new();
         let mut aliases: Vec<String> = Vec::new();
 
-        for node in result.builder.nodes.values() {
+        // Only project declarations: injected library sources (stdlib, HTTP)
+        // are implementation detail and must not leak into the emitted output.
+        for (&node_id, node) in &result.builder.nodes {
+            let is_library = result
+                .builder
+                .node_span(node_id)
+                .is_some_and(|span| span.start.line as usize <= result.library_line_offset);
+            if is_library {
+                continue;
+            }
             match node {
                 AstNode::ModelDeclaration(m) => {
                     let name = get_name(&result.builder, m.name);

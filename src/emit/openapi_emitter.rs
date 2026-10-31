@@ -39,64 +39,10 @@ impl OpenAPIEmitter {
         let mut schemas = Vec::new();
         let mut paths = Vec::new();
 
-        // Walk the global namespace
-        if let Some(gns_id) = checker.global_namespace_type
-            && let Some(Type::Namespace(ns)) = checker.get_type(gns_id)
-        {
-            // Models -> schemas
-            for name in &ns.model_names {
-                if let Some(&model_id) = ns.models.get(name)
-                    && let Some(Type::Model(m)) = checker.get_type(model_id)
-                {
-                    // Skip template instances (they are inline)
-                    if m.template_node.is_some() && m.template_mapper.is_some() {
-                        continue;
-                    }
-                    // Skip array-like models (have indexer), they are rendered inline
-                    if m.indexer.is_some() {
-                        continue;
-                    }
-                    schemas.push(self.emit_model_schema(checker, m));
-                }
-            }
-
-            // Enums -> schemas
-            for name in &ns.enum_names {
-                if let Some(&enum_id) = ns.enums.get(name)
-                    && let Some(Type::Enum(e)) = checker.get_type(enum_id)
-                {
-                    schemas.push(self.emit_enum_schema(e));
-                }
-            }
-
-            // Unions -> schemas
-            for name in &ns.union_names {
-                if let Some(&union_id) = ns.unions.get(name)
-                    && let Some(Type::Union(u)) = checker.get_type(union_id)
-                    && !u.expression
-                {
-                    schemas.push(self.emit_union_schema(checker, u));
-                }
-            }
-
-            // Interfaces -> paths
-            for name in &ns.interface_names {
-                if let Some(&iface_id) = ns.interfaces.get(name)
-                    && let Some(Type::Interface(iface)) = checker.get_type(iface_id)
-                {
-                    paths.push(self.emit_interface_paths(checker, iface));
-                }
-            }
-
-            // Standalone operations -> paths
-            for name in &ns.operation_names {
-                if let Some(&op_id) = ns.operations.get(name)
-                    && let Some(Type::Operation(op)) = checker.get_type(op_id)
-                    && op.interface_.is_none()
-                {
-                    paths.push(self.emit_operation_path(checker, op));
-                }
-            }
+        // Walk the project namespaces (library namespaces such as `TypeSpec`
+        // and injected `TypeSpec.Http` are implementation detail).
+        if let Some(gns_id) = checker.global_namespace_type {
+            self.collect_namespace(checker, gns_id, &mut schemas, &mut paths);
         }
 
         // Paths section
@@ -121,6 +67,93 @@ impl OpenAPIEmitter {
         }
 
         Ok(EmitResult::new(out, "openapi", checker.diagnostics().len()))
+    }
+
+    /// Collect schemas and paths from a namespace, recursing into
+    /// user-defined child namespaces.
+    fn collect_namespace(
+        &self,
+        checker: &Checker,
+        ns_id: TypeId,
+        schemas: &mut Vec<String>,
+        paths: &mut Vec<String>,
+    ) {
+        let ns = match checker.get_type(ns_id) {
+            Some(Type::Namespace(ns)) => ns.clone(),
+            _ => return,
+        };
+
+        // Models -> schemas
+        for name in &ns.model_names {
+            if let Some(&model_id) = ns.models.get(name)
+                && let Some(Type::Model(m)) = checker.get_type(model_id)
+            {
+                // Skip template instances (they are inline)
+                if m.template_node.is_some() && m.template_mapper.is_some() {
+                    continue;
+                }
+                // Skip array-like models (have indexer), they are rendered inline
+                if m.indexer.is_some() {
+                    continue;
+                }
+                schemas.push(self.emit_model_schema(checker, m));
+            }
+        }
+
+        // Enums -> schemas
+        for name in &ns.enum_names {
+            if let Some(&enum_id) = ns.enums.get(name)
+                && let Some(Type::Enum(e)) = checker.get_type(enum_id)
+            {
+                schemas.push(self.emit_enum_schema(e));
+            }
+        }
+
+        // Unions -> schemas
+        for name in &ns.union_names {
+            if let Some(&union_id) = ns.unions.get(name)
+                && let Some(Type::Union(u)) = checker.get_type(union_id)
+                && !u.expression
+            {
+                schemas.push(self.emit_union_schema(checker, u));
+            }
+        }
+
+        // Interfaces -> paths
+        for name in &ns.interface_names {
+            if let Some(&iface_id) = ns.interfaces.get(name)
+                && let Some(Type::Interface(iface)) = checker.get_type(iface_id)
+            {
+                paths.push(self.emit_interface_paths(checker, iface));
+            }
+        }
+
+        // Standalone operations -> paths
+        for name in &ns.operation_names {
+            if let Some(&op_id) = ns.operations.get(name)
+                && let Some(Type::Operation(op)) = checker.get_type(op_id)
+                && op.interface_.is_none()
+            {
+                paths.push(self.emit_operation_path(checker, op));
+            }
+        }
+
+        // Recurse into project child namespaces. Namespaces without an AST
+        // node are compiler/library-created (`TypeSpec`, decorator namespaces).
+        for name in &ns.namespace_names {
+            let Some(&child_id) = ns.namespaces.get(name) else {
+                continue;
+            };
+            let is_project = match checker.get_type(child_id) {
+                Some(Type::Namespace(child)) => child
+                    .node
+                    .is_some_and(|node| !checker.is_library_node(node)),
+                _ => false,
+            };
+            if is_project {
+                self.collect_namespace(checker, child_id, schemas, paths);
+            }
+        }
     }
 
     fn emit_model_schema(&self, checker: &Checker, m: &ModelType) -> String {
@@ -220,15 +253,27 @@ impl OpenAPIEmitter {
         s.push_str(&format!("        operationId: {}\n", op.name));
         s.push_str(&format!("        summary: {}\n", op.name));
 
-        // Parameters from operation parameters model
+        // Parameters from operation parameters model. Body properties become
+        // `requestBody`; status codes are response-only and are skipped.
+        let mut request_body: Option<(TypeId, bool)> = None;
         if let Some(params_id) = op.parameters
             && let Some(Type::Model(params_model)) = checker.get_type(params_id)
         {
+            let state = &checker.state_accessors;
             let mut has_params = false;
             for param_name in &params_model.property_names {
                 if let Some(&prop_id) = params_model.properties.get(param_name)
                     && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
                 {
+                    if crate::libs::http::is_status_code(state, prop_id) {
+                        continue;
+                    }
+                    if crate::libs::http::is_body(state, prop_id)
+                        || crate::libs::http::is_body_root(state, prop_id)
+                    {
+                        request_body = Some((prop.r#type, !prop.optional));
+                        continue;
+                    }
                     if !has_params {
                         s.push_str("        parameters:\n");
                         has_params = true;
@@ -245,6 +290,17 @@ impl OpenAPIEmitter {
                     s.push_str(&self.type_to_schema(checker, prop.r#type, 14));
                 }
             }
+        }
+
+        if let Some((body_type, required)) = request_body {
+            s.push_str("        requestBody:\n");
+            if required {
+                s.push_str("          required: true\n");
+            }
+            s.push_str("          content:\n");
+            s.push_str("            application/json:\n");
+            s.push_str("              schema:\n");
+            s.push_str(&self.type_to_schema(checker, body_type, 16));
         }
 
         // Responses — resolve status codes from return type
@@ -384,19 +440,38 @@ impl OpenAPIEmitter {
     fn extract_body_type(&self, checker: &Checker, type_id: TypeId) -> Option<TypeId> {
         let resolved = checker.resolve_alias_chain(type_id);
         if let Some(Type::Model(m)) = checker.get_type(resolved) {
+            let state = &checker.state_accessors;
             for name in &m.property_names {
-                if let Some(&prop_id) = m.properties.get(name) {
-                    let state = &checker.state_accessors;
-                    if state.get_state("TypeSpec.Http.body", prop_id).is_some()
-                        && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
-                    {
-                        return Some(prop.r#type);
-                    }
+                if let Some(&prop_id) = m.properties.get(name)
+                    && (crate::libs::http::is_body(state, prop_id)
+                        || crate::libs::http::is_body_root(state, prop_id))
+                    && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
+                {
+                    return Some(prop.r#type);
                 }
             }
+            // No explicit @body: use the model only if it has non-metadata
+            // properties. An envelope with only @statusCode/@header has no body.
+            let has_body = m.property_names.iter().any(|name| {
+                m.properties
+                    .get(name)
+                    .is_some_and(|&prop_id| !self.is_metadata_property(checker, prop_id))
+            });
+            return has_body.then_some(resolved);
         }
-        // If no explicit @body property, the entire model is the body
         Some(resolved)
+    }
+
+    /// Whether a property is HTTP metadata (not part of the request/response body).
+    fn is_metadata_property(&self, checker: &Checker, prop_id: TypeId) -> bool {
+        let state = &checker.state_accessors;
+        crate::libs::http::is_status_code(state, prop_id)
+            || crate::libs::http::is_header(state, prop_id)
+            || crate::libs::http::is_query(state, prop_id)
+            || crate::libs::http::is_path(state, prop_id)
+            || crate::libs::http::is_cookie(state, prop_id)
+            || crate::libs::http::is_body(state, prop_id)
+            || crate::libs::http::is_body_root(state, prop_id)
     }
 
     /// Convert a TypeId to an OpenAPI schema fragment

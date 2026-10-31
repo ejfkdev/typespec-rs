@@ -33,7 +33,7 @@ This project is in **early development**. The core compiler pipeline works:
 | Programmatic Decorator API | Working |
 | Auto Decorators (`auto dec`) | Working |
 
-3,200+ tests passing (synced with upstream TypeSpec through v1.13+).
+3,300+ tests passing (synced with upstream TypeSpec through v1.13+ and later fixes).
 
 ## Quick Start
 
@@ -43,7 +43,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-typespec_rs = "0.5.6"
+typespec_rs = "0.5.7"
 ```
 
 Parse TypeSpec and emit YAML/JSON:
@@ -97,6 +97,12 @@ tspc -f openapi petstore.tsp -o petstore.openapi.json
 
 # Type-check only
 tspc --no-emit petstore.tsp
+
+# Enable compiler features (comma separated)
+tspc --features union-extends,declaration-expressions petstore.tsp
+
+# List all options and examples
+tspc --help
 
 # Read from stdin
 echo 'model Pet { name: string }' | tspc -f json -
@@ -242,7 +248,7 @@ let result = Parser::new(source, ParseOptions::new(vec![])
 
 ```toml
 [dependencies]
-tspc = { version = "0.5.6", features = ["wasm-extensions"] }
+tspc = { version = "0.5.7", features = ["wasm-extensions"] }
 ```
 
 ```bash

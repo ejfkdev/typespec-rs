@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use typespec_rs::checker::Checker;
 #[cfg(feature = "wasm-extensions")]
 use typespec_rs::checker::types::{DecoratorApplication, Type, TypeId};
-use typespec_rs::diagnostics::DiagnosticSeverity;
+use typespec_rs::diagnostics::{CompilerOptions, DiagnosticSeverity};
 use typespec_rs::emit::{Emitter, JsonEmitter, OpenAPIEmitter, YamlEmitter};
 use typespec_rs::parser::{ParseOptions, parse_with_libraries};
 
@@ -19,6 +19,8 @@ pub struct Pipeline {
     pub output: Option<PathBuf>,
     pub no_stdlib: bool,
     pub no_emit: bool,
+    /// Compiler feature flags enabled for project code.
+    pub features: Vec<String>,
     pub extensions: Vec<PathBuf>,
     /// Custom decorators to register programmatically (name, namespace, target_type)
     pub custom_decorators: Vec<(String, String, String)>,
@@ -49,7 +51,10 @@ impl Pipeline {
         // 2. Type check
         let t1 = std::time::Instant::now();
         let library_line_offset = parse_result.library_line_offset;
-        let mut checker = Checker::new();
+        let mut checker = Checker::with_options(CompilerOptions {
+            features: self.features.clone(),
+            ..CompilerOptions::default()
+        });
         checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
 
         // Register custom decorators before check_program()

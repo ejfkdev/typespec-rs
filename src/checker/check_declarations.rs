@@ -11,6 +11,19 @@ impl Checker {
     // Decorator declaration checking
     // ========================================================================
 
+    /// Whether a model is one of the `TypeSpec.Reflection` kind models
+    /// (`Model`, `ModelProperty`, `Operation`, ...), which decorator target
+    /// annotations refer to.
+    fn is_reflection_kind_model(
+        checker: &Checker,
+        model: &crate::checker::types::ModelType,
+    ) -> bool {
+        model.namespace.is_some_and(|ns| {
+            crate::checker::type_utils::get_fully_qualified_name(&checker.type_store, ns)
+                == "TypeSpec.Reflection"
+        })
+    }
+
     pub(crate) fn check_decorator_declaration(
         &mut self,
         ctx: &CheckContext,
@@ -20,13 +33,29 @@ impl Checker {
 
         let name = Self::get_identifier_name(&ast, node.name);
 
-        // Check the target parameter to get its type constraint
-        let target_type_id = self.check_node(ctx, node.target);
+        // Check the target parameter's type annotation to get its constraint.
+        // `node.target` is a `FunctionParameter` node; checking the node itself
+        // has no dispatch arm and yields ErrorType, so resolve its annotation.
+        let target_type_id = ast
+            .id_to_node(node.target)
+            .and_then(|n| match n {
+                AstNode::FunctionParameter(fp) => fp.type_annotation,
+                _ => None,
+            })
+            .map(|annotation| self.check_node(ctx, annotation))
+            .unwrap_or(self.unknown_type);
 
-        // Resolve the target type name for constraint checking
+        // Resolve the target type name for constraint checking. A decorator
+        // target such as `ModelProperty` is a reflection model; its own name
+        // is the constraint kind (upstream compares against the reflection
+        // model). Other type kinds keep their kind name.
         let target_type_name = match self.get_type(target_type_id) {
+            Some(Type::Model(m)) if Self::is_reflection_kind_model(self, m) => m.name.as_str(),
             Some(Type::Model(_)) => "Model",
-            Some(Type::Union(_)) => "Union",
+            // A union target (e.g. `Namespace | Interface | Operation`) allows
+            // several kinds; the string-kind comparison cannot express that,
+            // so skip the check (upstream checks assignability).
+            Some(Type::Union(_)) => "unknown",
             Some(Type::Interface(_)) => "Interface",
             Some(Type::Enum(_)) => "Enum",
             Some(Type::Scalar(_)) => "Scalar",
@@ -101,8 +130,11 @@ impl Checker {
         if is_auto {
             // Auto decorators get a compiler-generated implementation that
             // stores their arguments — no external implementation needed.
-        } else if has_extern {
-            // Extern decorator must have a JS implementation
+        } else if has_extern && !self.is_library_node(node_id) {
+            // Extern decorator must have an implementation. Library source is
+            // injected by the host and its implementations are registered by
+            // the host (built-in Rust dispatch or WASM extensions), so only
+            // project-declared externs can be missing here.
             self.error_at(
                 node_id,
                 "missing-implementation",

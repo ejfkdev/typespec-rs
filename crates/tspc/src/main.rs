@@ -14,13 +14,29 @@ use std::process;
 
 /// TypeSpec Compiler — convert .tsp files to various output formats
 #[derive(Parser, Debug)]
-#[command(name = "tspc", version, about = "TypeSpec Compiler CLI")]
+#[command(
+    name = "tspc",
+    version,
+    about = "TypeSpec Compiler CLI",
+    long_about = "Compile TypeSpec (.tsp) files and emit JSON, YAML, or OpenAPI.\n\n\
+The HTTP library is preloaded, so decorators such as @service, @route, @get, \
+@header, @query, @body, and @statusCode are available without imports.\n\
+Compiler features (for example union-extends, declaration-expressions, \
+auto-decorators) can be enabled with --features.",
+    after_help = "Examples:\n  \
+  tspc api.tsp                         Emit JSON (default)\n  \
+  tspc -f yaml api.tsp                 Emit YAML\n  \
+  tspc -f openapi api.tsp              Emit OpenAPI 3.0\n  \
+  tspc -f openapi --openapi-version 3.1.0 api.tsp\n  \
+  tspc --no-emit api.tsp               Type-check only\n  \
+  tspc --features union-extends api.tsp"
+)]
 struct Cli {
     /// TypeSpec source file path, or "-" for stdin
     input: String,
 
     /// Output format: json, yaml, openapi
-    #[arg(short, long, default_value = "json")]
+    #[arg(short, long, default_value = "json", value_name = "FORMAT")]
     format: String,
 
     /// OpenAPI version: 3.0.0, 3.1.0
@@ -39,6 +55,11 @@ struct Cli {
     #[arg(long)]
     no_emit: bool,
 
+    /// Enable compiler features (comma separated): union-extends,
+    /// declaration-expressions, auto-decorators, function-declarations
+    #[arg(long, value_delimiter = ',', value_name = "FEATURE")]
+    features: Vec<String>,
+
     /// Load a WASM extension (.wasm file), can be repeated
     #[arg(short, long)]
     extension: Vec<PathBuf>,
@@ -55,6 +76,10 @@ struct Cli {
 fn main() {
     // Register built-in libraries
     typespec_rs::parser::register_library("http", typespec_rs::libs::http::http_library_source());
+    typespec_rs::parser::register_library(
+        "http-client",
+        typespec_rs::libs::http_client::HTTP_CLIENT_TSP.to_string(),
+    );
 
     let cli = Cli::parse();
 
@@ -120,6 +145,7 @@ fn main() {
         output: cli.output,
         no_stdlib: cli.no_stdlib,
         no_emit: cli.no_emit,
+        features: cli.features,
         extensions: cli.extension,
         custom_decorators,
         verbose: cli.verbose,

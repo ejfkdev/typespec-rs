@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.7] - 2026-10-31
+
+Sync with upstream TypeSpec through `fc7cf891`, port the shared
+`@typespec/http-client` SDK layer used by the official Java, TypeScript,
+Python, and C# client generators, and fix several compiler defects found
+while validating those flows.
+
+### Added
+- Upstream compiler sync: union `extends` clauses (#11771,
+  `union-extends`), declarations as expressions (#11019,
+  `declaration-expressions`), array-spread validation (#11559), decorators on
+  template-referenced concrete types (#12358), deprecated-type warning
+  suppression inside deprecated operations (#12314), `op::parameters` type
+  names (#11551), recursive-type assignability fix (#11779), `@encodedName`
+  on enum members (#11980), enum member navigation (#12180)
+- `@typespec/http-client` shared SDK layer: `@experimental` with per-emitter
+  scoping and lifecycle queries, client/sub-client discovery, operation to
+  client mapping, data type collection, and client constructors (endpoint,
+  `@server` parameters, credential from `@useAuth`)
+- Client typekit kits (`client`, `client_library`) including `listModels`,
+  `listEnums`, and `listDataTypes`
+- `@useAuth` scheme resolution for basic/bearer/api-key/OAuth2/OpenID Connect,
+  including unions and tuples of schemes; upstream `auth.tsp` enums and OAuth2
+  flow models
+- `@server` parameter models are retained for client constructor generation
+- `@statusCode` numeric ranges inherit bounds from the scalar chain and can be
+  narrowed per property (#12118)
+- Union variant `@doc` is preserved in response descriptions (#11785);
+  object members named like `Object.prototype` keys are kept (#11744);
+  tuple schemas emit `minItems`/`maxItems` (#11893); protobuf package names
+  use the anchored identifier rule (#11960)
+- CLI: `--features` flag to enable compiler features, richer `--help` with
+  examples, and the `TypeSpec.HttpClient` library preloaded
+- OpenAPI emitter: walks project namespaces, emits `@body`/`@bodyRoot` as
+  `requestBody`, skips request-side metadata, and omits envelope metadata
+  (including status-code-only envelopes) from response bodies
+
+### Changed
+- `@service` now stores the compiler service state (title), so
+  `isService`/`listServices` work; the HTTP marker is kept for existing
+  consumers
+- JSON/YAML emitters only emit project declarations; injected library types
+  are no longer included in output
+- Diagnostics for library decorators no longer report
+  `missing-implementation`; host-provided implementations are assumed
+
+### Fixed
+- Empty string literals (`""`) were misdetected as triple-quoted strings,
+  breaking any declaration containing one
+- Types resolved through `using` bypassed template instantiation
+- Merged blockless namespaces only checked the first declaration segment
+- The standard `TypeSpec` namespace was not attached to the global namespace,
+  so registering `TypeSpec.*` decorators shadowed the standard library
+- `library_line_offset` was off by one when an injected library did not end
+  with a newline
+- Name resolution inside dotted blockless namespaces did not try enclosing
+  prefixes
+- Decorator declaration targets resolved the `FunctionParameter` node instead
+  of its type annotation, and union targets forced a single-kind constraint
+
 ## [0.5.6] - 2026-08-12
 
 Sync with upstream TypeSpec through v1.13 and post-v1.13 changes

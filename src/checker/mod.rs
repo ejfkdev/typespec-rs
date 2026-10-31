@@ -1050,11 +1050,21 @@ impl Checker {
                 Some(Type::Namespace(ns)) => ns.namespace,
                 _ => break,
             };
-            let prefix = self.full_namespace_prefix(id);
-            if !prefix.is_empty() && tried.insert(prefix.clone()) {
-                let fqn = format!("{}.{}", prefix, name);
-                if let Some(&type_id) = self.declared_types.get(&fqn) {
-                    return Some(type_id);
+            // A blockless `namespace A.B.C;` is stored as one namespace whose
+            // name carries the full path, so a reference inside it resolves
+            // lexically against each enclosing prefix (A.B.C.x, A.B.x, A.x),
+            // not just the full dotted name.
+            let mut prefix = self.full_namespace_prefix(id);
+            loop {
+                if !prefix.is_empty() && tried.insert(prefix.clone()) {
+                    let fqn = format!("{}.{}", prefix, name);
+                    if let Some(&type_id) = self.declared_types.get(&fqn) {
+                        return Some(type_id);
+                    }
+                }
+                match prefix.rfind('.') {
+                    Some(index) => prefix.truncate(index),
+                    None => break,
                 }
             }
             ns_id = next;

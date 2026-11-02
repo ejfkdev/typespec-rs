@@ -20,6 +20,8 @@ impl Checker {
             .insert("TypeSpec".to_string(), typespec_ns_id);
         self.std_types
             .insert("TypeSpec".to_string(), typespec_ns_id);
+        // `void`, `never`, and `unknown` are keywords; `null` is only a name.
+        self.std_types.insert("null".to_string(), self.null_type);
 
         // Create TypeSpec.Prototypes namespace
         let prototypes_ns_id = self.create_type(Type::Namespace(Box::new(NamespaceType::new(

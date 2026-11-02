@@ -2193,12 +2193,57 @@ fn test_default_value_string_literal() {
 }
 
 #[test]
+fn test_null_in_union_resolves_to_null_intrinsic() {
+    use crate::checker::types::IntrinsicTypeName;
+
+    let checker = check("model A { x: string | null; }");
+    assert!(
+        checker.diagnostics().is_empty(),
+        "`null` should resolve as a type: {:?}",
+        checker.diagnostics()
+    );
+
+    let Some(Type::Model(a)) = checker
+        .lookup_type_by_fqn("A")
+        .and_then(|id| checker.get_type(id))
+    else {
+        panic!("A should be a model");
+    };
+    let Some(Type::ModelProperty(x)) = checker.get_type(a.properties["x"]) else {
+        panic!("x should be a property");
+    };
+    let Some(Type::Union(union)) = checker.get_type(x.r#type) else {
+        panic!("x should be a union");
+    };
+    let has_null = union.variants.values().any(|&id| {
+        let Some(Type::UnionVariant(v)) = checker.get_type(id) else {
+            return false;
+        };
+        matches!(
+            checker.get_type(v.r#type),
+            Some(Type::Intrinsic(i)) if i.name == IntrinsicTypeName::Null
+        )
+    });
+    assert!(has_null, "the union should hold the null intrinsic");
+}
+
+#[test]
+fn test_null_as_property_and_alias_type() {
+    let checker = check("alias N = null; model A { x: null; y: N; z: string[] | null; }");
+    assert!(
+        checker.diagnostics().is_empty(),
+        "`null` should resolve as a type: {:?}",
+        checker.diagnostics()
+    );
+}
+
+#[test]
 fn test_default_value_null_for_nullable() {
     // Ported from TS: property defaults - "foo?: int32 | null = null"
     let checker = check("model A { x?: int32 | null = null }");
     let diags = checker.diagnostics();
     assert!(
-        !diags.iter().any(|d| d.code == "unassignable"),
+        diags.is_empty(),
         "Should NOT report error for null default on nullable type: {:?}",
         diags
     );

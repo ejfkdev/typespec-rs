@@ -27,6 +27,7 @@ This project is in **early development**. The core compiler pipeline works:
 | YAML Emitter | Working |
 | JSON Emitter | Working |
 | OpenAPI 3 Emitter | Working |
+| JSON Schema Emitter | Subset (`json-schema` feature) |
 | Protobuf Library | Working |
 | CLI (`tspc`) | Working |
 | WASM Extensions | Working |
@@ -69,6 +70,31 @@ let json = to_json(src).unwrap();
 println!("{}", json.output);
 ```
 
+JSON Schema output needs the `json-schema` feature, which adds `serde_json`:
+
+```toml
+[dependencies]
+typespec_rs = { version = "0.5.7", features = ["json-schema"] }
+```
+
+```rust
+use typespec_rs::checker::Checker;
+use typespec_rs::emit::JsonSchemaEmitter;
+use typespec_rs::parser::parse;
+
+let pr = parse("model Pet { name: string; age?: uint8; }");
+let mut checker = Checker::new();
+checker.set_parse_result(pr.root_id, pr.builder.clone());
+checker.check_program();
+
+// A serde_json::Value
+let schema = JsonSchemaEmitter::new()
+    .width_format(true)         // also write `format: "uint8"` etc.
+    .seal_object_schemas(true)  // reject undeclared keys
+    .emit_value(&checker);
+println!("{schema:#}");
+```
+
 ### CLI
 
 Install `tspc`:
@@ -93,6 +119,12 @@ tspc -f openapi petstore.tsp
 
 # OpenAPI 3.1
 tspc -f openapi --openapi-version 3.1.0 petstore.tsp
+
+# JSON Schema (draft 2020-12) bundle
+tspc -f json-schema petstore.tsp
+
+# JSON Schema with widths as `format`, and objects closed to undeclared keys
+tspc -f json-schema --width-format --seal-object-schemas petstore.tsp
 
 # Write to file
 tspc -f openapi petstore.tsp -o petstore.openapi.json
@@ -340,7 +372,7 @@ Source Code → Scanner → Parser → AST → Checker → Typed AST → Emitter
 - **Scanner** (`scanner/`) — Tokenizes TypeSpec source into `TokenKind` stream
 - **Parser** (`parser/`) — Builds an AST from the token stream
 - **Checker** (`checker/`) — Type checking, symbol resolution, decorator validation
-- **Emitter** (`emit/`) — Converts checked types to YAML, JSON, or OpenAPI
+- **Emitter** (`emit/`) — Converts checked types to YAML, JSON, OpenAPI, or JSON Schema
 - **CLI** (`crates/tspc/`) — Command-line interface with WASM extension support
 - **Libs** (`libs/`) — Built-in library sources (HTTP, OpenAPI, etc.)
 
@@ -421,6 +453,7 @@ cargo run --example quick_start
 |-------|---------|
 | [`regex`](https://crates.io/crates/regex) | Pattern matching in scanner |
 | [`bitflags`](https://crates.io/crates/bitflags) | Bitflag types for visibility, symbol flags |
+| [`serde_json`](https://crates.io/crates/serde_json) | JSON Schema emitter output (optional, `json-schema` feature) |
 
 ## Contributing
 

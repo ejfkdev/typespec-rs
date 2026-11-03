@@ -1,6 +1,6 @@
 //! tspc — TypeSpec Compiler CLI
 //!
-//! Converts TypeSpec (.tsp) files to JSON, YAML, OpenAPI and other formats.
+//! Converts TypeSpec (.tsp) files to JSON, YAML, OpenAPI, JSON Schema and other formats.
 //! Supports WASM extensions for custom decorators and output formats.
 
 mod pipeline;
@@ -18,9 +18,11 @@ use std::process;
     name = "tspc",
     version,
     about = "TypeSpec Compiler CLI",
-    long_about = "Compile TypeSpec (.tsp) files and emit JSON, YAML, or OpenAPI.\n\n\
+    long_about = "Compile TypeSpec (.tsp) files and emit JSON, YAML, OpenAPI, or JSON Schema.\n\n\
 The HTTP library is preloaded, so decorators such as @service, @route, @get, \
-@header, @query, @body, and @statusCode are available without imports.\n\
+@header, @query, @body, and @statusCode are available without imports. \
+The JSON Schema library is preloaded too: `using TypeSpec.JsonSchema;` brings \
+@extension into scope.\n\
 Compiler features (for example union-extends, declaration-expressions, \
 auto-decorators) can be enabled with --features.",
     after_help = "Examples:\n  \
@@ -28,6 +30,7 @@ auto-decorators) can be enabled with --features.",
   tspc -f yaml api.tsp                 Emit YAML\n  \
   tspc -f openapi api.tsp              Emit OpenAPI 3.0\n  \
   tspc -f openapi --openapi-version 3.1.0 api.tsp\n  \
+  tspc -f json-schema api.tsp          Emit a JSON Schema bundle\n  \
   tspc --no-emit api.tsp               Type-check only\n  \
   tspc --features union-extends api.tsp"
 )]
@@ -35,13 +38,23 @@ struct Cli {
     /// TypeSpec source file path, or "-" for stdin
     input: String,
 
-    /// Output format: json, yaml, openapi
+    /// Output format: json, yaml, openapi, json-schema
     #[arg(short, long, default_value = "json", value_name = "FORMAT")]
     format: String,
 
     /// OpenAPI version: 3.0.0, 3.1.0
     #[arg(long, default_value = "3.0.0")]
     openapi_version: String,
+
+    /// JSON Schema: also write each fixed-width numeric scalar's name
+    /// (int8, uint16, float32, ...) as `format`
+    #[arg(long)]
+    width_format: bool,
+
+    /// JSON Schema: close object schemas to undeclared keys
+    /// (the official `seal-object-schemas` option)
+    #[arg(long)]
+    seal_object_schemas: bool,
 
     /// Output file path (default: stdout)
     #[arg(short, long)]
@@ -79,6 +92,10 @@ fn main() {
     typespec_rs::parser::register_library(
         "http-client",
         typespec_rs::libs::http_client::HTTP_CLIENT_TSP.to_string(),
+    );
+    typespec_rs::parser::register_library(
+        "json-schema",
+        typespec_rs::libs::json_schema::JSON_SCHEMA_DECORATORS_TSP.to_string(),
     );
 
     let cli = Cli::parse();
@@ -142,6 +159,8 @@ fn main() {
         source,
         format: cli.format,
         openapi_version: cli.openapi_version,
+        width_format: cli.width_format,
+        seal_object_schemas: cli.seal_object_schemas,
         output: cli.output,
         no_stdlib: cli.no_stdlib,
         no_emit: cli.no_emit,

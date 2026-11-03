@@ -1,0 +1,160 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "sealed.json",
+    "$defs": {
+        "Inner": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Inner.json",
+            "type": "object",
+            "properties": {
+                "x": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "x"
+            ],
+            "unevaluatedProperties": {
+                "not": {}
+            }
+        },
+        "Base": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Base.json",
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id"
+            ]
+        },
+        "Derived": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Derived.json",
+            "type": "object",
+            "properties": {
+                "d": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "d"
+            ],
+            "allOf": [
+                {
+                    "$ref": "Base.json"
+                }
+            ],
+            "unevaluatedProperties": {
+                "not": {}
+            }
+        },
+        "Spread": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Spread.json",
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "a"
+            ],
+            "unevaluatedProperties": {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647
+            }
+        },
+        "IsRecord": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "IsRecord.json",
+            "type": "object",
+            "properties": {},
+            "unevaluatedProperties": {
+                "type": "string"
+            }
+        },
+        "ExtendsRecord": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "ExtendsRecord.json",
+            "type": "object",
+            "properties": {
+                "b": {
+                    "$ref": "Inner.json"
+                }
+            },
+            "required": [
+                "b"
+            ],
+            "allOf": [
+                {
+                    "$ref": "RecordInner.json"
+                }
+            ],
+            "unevaluatedProperties": {
+                "not": {}
+            }
+        },
+        "RecordInner": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "RecordInner.json",
+            "type": "object",
+            "properties": {},
+            "unevaluatedProperties": {
+                "$ref": "Inner.json"
+            }
+        },
+        "Holder": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Holder.json",
+            "type": "object",
+            "properties": {
+                "anon": {
+                    "type": "object",
+                    "properties": {
+                        "q": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "q"
+                    ],
+                    "unevaluatedProperties": {
+                        "not": {}
+                    }
+                },
+                "nested": {
+                    "$ref": "RecordInner.json"
+                },
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "Inner.json"
+                    }
+                }
+            },
+            "required": [
+                "anon",
+                "nested",
+                "list"
+            ],
+            "unevaluatedProperties": {
+                "not": {}
+            }
+        },
+        "Empty": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Empty.json",
+            "type": "object",
+            "properties": {},
+            "unevaluatedProperties": {
+                "not": {}
+            }
+        }
+    }
+}

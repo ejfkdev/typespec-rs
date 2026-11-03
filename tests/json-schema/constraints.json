@@ -1,0 +1,54 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "constraints.json",
+    "$defs": {
+        "Constrained": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Constrained.json",
+            "type": "object",
+            "properties": {
+                "rating": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                },
+                "ratio": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "exclusiveMaximum": 1.5
+                },
+                "slug": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 8,
+                    "pattern": "^[a-z]+$"
+                },
+                "codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": -2147483648,
+                        "maximum": 2147483647
+                    },
+                    "minItems": 1,
+                    "maxItems": 3
+                },
+                "email": {
+                    "type": "string",
+                    "format": "email"
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid"
+                }
+            },
+            "required": [
+                "rating",
+                "ratio",
+                "slug",
+                "codes",
+                "email"
+            ]
+        }
+    }
+}

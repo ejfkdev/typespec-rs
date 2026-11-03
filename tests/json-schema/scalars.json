@@ -1,0 +1,168 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "scalars.json",
+    "$defs": {
+        "Numbers": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Numbers.json",
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "integer",
+                    "minimum": -128,
+                    "maximum": 127
+                },
+                "b": {
+                    "type": "integer",
+                    "minimum": -32768,
+                    "maximum": 32767
+                },
+                "c": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                },
+                "d": {
+                    "type": "string"
+                },
+                "e": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                },
+                "f": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 65535
+                },
+                "g": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                },
+                "h": {
+                    "type": "string"
+                },
+                "i": {
+                    "type": "number"
+                },
+                "j": {
+                    "type": "number"
+                },
+                "k": {
+                    "type": "integer"
+                },
+                "l": {
+                    "type": "number"
+                },
+                "m": {
+                    "type": "number"
+                },
+                "n": {
+                    "type": "integer"
+                },
+                "o": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "a",
+                "b",
+                "c",
+                "d",
+                "e",
+                "f",
+                "g",
+                "h",
+                "i",
+                "j",
+                "k",
+                "l",
+                "m",
+                "n",
+                "o"
+            ]
+        },
+        "Others": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Others.json",
+            "type": "object",
+            "properties": {
+                "s": {
+                    "type": "string"
+                },
+                "b": {
+                    "type": "boolean"
+                },
+                "dt": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "odt": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "date": {
+                    "type": "string",
+                    "format": "date"
+                },
+                "time": {
+                    "type": "string",
+                    "format": "time"
+                },
+                "dur": {
+                    "type": "string",
+                    "format": "duration"
+                },
+                "link": {
+                    "type": "string",
+                    "format": "uri"
+                },
+                "data": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                },
+                "ts": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                },
+                "slug": {
+                    "$ref": "Slug.json"
+                },
+                "small": {
+                    "$ref": "Small.json"
+                },
+                "anything": {}
+            },
+            "required": [
+                "s",
+                "b",
+                "dt",
+                "odt",
+                "date",
+                "time",
+                "dur",
+                "link",
+                "data",
+                "ts",
+                "slug",
+                "small",
+                "anything"
+            ]
+        },
+        "Slug": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Slug.json",
+            "type": "string",
+            "minLength": 2
+        },
+        "Small": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Small.json",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+        }
+    }
+}

@@ -1125,4 +1125,36 @@ mod namespace_tests {
             "Model A should be declared"
         );
     }
+
+    #[test]
+    fn test_namespace_members_in_declaration_order() {
+        // Forward references and `extends`/`is` check some types out of order;
+        // the namespace still lists its members as declared.
+        let checker = check(
+            r#"
+        namespace Foo {
+            model B { c: C; }
+            model A extends B { }
+            model C is D;
+            model D { }
+            enum Y { y }
+            enum X { x }
+            union V { v: string }
+            union U { u: string }
+            scalar S extends string;
+            scalar R extends S;
+        }
+    "#,
+        );
+        let ns_id = checker
+            .lookup_type_by_fqn("Foo")
+            .expect("namespace Foo should exist");
+        let Some(Type::Namespace(ns)) = checker.get_type(ns_id) else {
+            panic!("Foo should be a namespace");
+        };
+        assert_eq!(ns.model_names, ["B", "A", "C", "D"]);
+        assert_eq!(ns.enum_names, ["Y", "X"]);
+        assert_eq!(ns.union_names, ["V", "U"]);
+        assert_eq!(ns.scalar_names, ["S", "R"]);
+    }
 }

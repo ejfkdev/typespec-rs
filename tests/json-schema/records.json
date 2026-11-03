@@ -1,0 +1,149 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "records.json",
+    "$defs": {
+        "Inner": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Inner.json",
+            "type": "object",
+            "properties": {
+                "x": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "x"
+            ]
+        },
+        "Spread": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Spread.json",
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "a"
+            ],
+            "unevaluatedProperties": {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647
+            }
+        },
+        "IsRecord": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "IsRecord.json",
+            "type": "object",
+            "properties": {},
+            "unevaluatedProperties": {
+                "type": "string"
+            }
+        },
+        "ExtendsRecord": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "ExtendsRecord.json",
+            "type": "object",
+            "properties": {
+                "b": {
+                    "$ref": "Inner.json"
+                }
+            },
+            "required": [
+                "b"
+            ],
+            "allOf": [
+                {
+                    "$ref": "RecordInner.json"
+                }
+            ]
+        },
+        "RecordInner": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "RecordInner.json",
+            "type": "object",
+            "properties": {},
+            "unevaluatedProperties": {
+                "$ref": "Inner.json"
+            }
+        },
+        "SpreadUnknown": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "SpreadUnknown.json",
+            "type": "object",
+            "properties": {},
+            "unevaluatedProperties": {}
+        },
+        "Holder": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Holder.json",
+            "type": "object",
+            "properties": {
+                "nested": {
+                    "$ref": "RecordInner.json"
+                },
+                "again": {
+                    "$ref": "RecordInner.json"
+                },
+                "anything": {
+                    "$ref": "RecordUnknown.json"
+                },
+                "ints": {
+                    "$ref": "RecordInt32.json"
+                },
+                "page": {
+                    "$ref": "PageInner.json"
+                },
+                "literal": {
+                    "type": "object",
+                    "properties": {},
+                    "unevaluatedProperties": {
+                        "type": "string",
+                        "const": "a"
+                    }
+                }
+            },
+            "required": [
+                "nested",
+                "again",
+                "anything",
+                "ints",
+                "page",
+                "literal"
+            ]
+        },
+        "RecordUnknown": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "RecordUnknown.json",
+            "type": "object",
+            "properties": {},
+            "unevaluatedProperties": {}
+        },
+        "RecordInt32": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "RecordInt32.json",
+            "type": "object",
+            "properties": {},
+            "unevaluatedProperties": {
+                "type": "integer",
+                "minimum": -2147483648,
+                "maximum": 2147483647
+            }
+        },
+        "PageInner": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "PageInner.json",
+            "type": "object",
+            "properties": {
+                "item": {
+                    "$ref": "Inner.json"
+                }
+            },
+            "required": [
+                "item"
+            ]
+        }
+    }
+}

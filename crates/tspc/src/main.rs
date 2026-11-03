@@ -51,6 +51,11 @@ struct Cli {
     #[arg(long)]
     width_format: bool,
 
+    /// JSON Schema: close object schemas to undeclared keys
+    /// (the official `seal-object-schemas` option)
+    #[arg(long)]
+    seal_object_schemas: bool,
+
     /// Output file path (default: stdout)
     #[arg(short, long)]
     output: Option<PathBuf>,
@@ -155,6 +160,7 @@ fn main() {
         format: cli.format,
         openapi_version: cli.openapi_version,
         width_format: cli.width_format,
+        seal_object_schemas: cli.seal_object_schemas,
         output: cli.output,
         no_stdlib: cli.no_stdlib,
         no_emit: cli.no_emit,

@@ -8,6 +8,10 @@
 //!   `required`), `extends` as `allOf`, arrays and tuples;
 //! - enums, named unions, union expressions (including `T | null`) and literal
 //!   types;
+//! - records: `Record<T>`, `...Record<T>` spreads, `is`/`extends Record<T>`,
+//!   as `unevaluatedProperties`; template instances such as `Record<Inner>` or
+//!   `Page<Inner>` are declared under the official names (`RecordInner`);
+//! - the official `seal-object-schemas` option;
 //! - standard scalars (sized integers carry their `minimum`/`maximum`; `int64`
 //!   and `uint64` are strings) and custom scalars;
 //! - `@minValue`, `@maxValue`, `@minValueExclusive`, `@maxValueExclusive`,
@@ -21,8 +25,6 @@
 //! references to it are `{"$ref": "<Name>.json"}`.
 //!
 //! The emitter reads only the public `Checker` API.
-
-use std::collections::HashSet;
 
 use serde_json::{Map, Value, json};
 
@@ -54,6 +56,7 @@ const WIDTH_SCALARS: &[&str] = &[
 pub struct JsonSchemaEmitter {
     bundle_id: Option<String>,
     width_format: bool,
+    seal_object_schemas: bool,
 }
 
 impl JsonSchemaEmitter {
@@ -76,13 +79,22 @@ impl JsonSchemaEmitter {
         self
     }
 
+    /// Close object schemas to undeclared keys with
+    /// `"unevaluatedProperties": {"not": {}}`, like the official
+    /// `seal-object-schemas` option. Models with a `Record` indexer or with
+    /// derived models stay open. Off by default.
+    pub fn seal_object_schemas(mut self, on: bool) -> Self {
+        self.seal_object_schemas = on;
+        self
+    }
+
     /// Build the JSON Schema bundle for every project type in the checked program.
     pub fn emit_value(&self, checker: &Checker) -> Value {
         let mut walk = Walk {
             checker,
             width_format: self.width_format,
+            seal_object_schemas: self.seal_object_schemas,
             defs: Map::new(),
-            started: HashSet::new(),
         };
         if let Some(global) = checker.global_namespace_type {
             walk.namespace(global);
@@ -127,8 +139,8 @@ impl Emitter for JsonSchemaEmitter {
 struct Walk<'a> {
     checker: &'a Checker,
     width_format: bool,
+    seal_object_schemas: bool,
     defs: Map<String, Value>,
-    started: HashSet<TypeId>,
 }
 
 impl Walk<'_> {
@@ -153,10 +165,24 @@ impl Walk<'_> {
         ];
         for (names, ids) in declared {
             for id in names.iter().filter_map(|n| ids.get(n)) {
-                if self.is_project(*id) && self.declared_name(*id).is_some() {
+                if self.is_project(*id)
+                    && !self.is_template_instance(*id)
+                    && self.declared_name(*id).is_some()
+                {
                     self.reference(*id);
                 }
             }
+        }
+    }
+
+    /// Whether a type is a template instance. Instances are declared when
+    /// referenced, never by the namespace walk; a namespace can list an
+    /// instance under its template's name.
+    fn is_template_instance(&self, id: TypeId) -> bool {
+        match self.checker.get_type(id) {
+            Some(Type::Model(m)) => m.template_mapper.is_some(),
+            Some(Type::Union(u)) => u.template_mapper.is_some(),
+            _ => false,
         }
     }
 
@@ -174,9 +200,17 @@ impl Walk<'_> {
     }
 
     /// The `$defs` key of a type that is hoisted into its own declaration.
-    fn declared_name(&self, id: TypeId) -> Option<&str> {
+    fn declared_name(&self, id: TypeId) -> Option<String> {
         let name = match self.checker.get_type(id)? {
-            Type::Model(m) if !self.is_template(m) => &m.name,
+            Type::Model(m) if self.is_array_literal(m) || is_template_declaration(m) => {
+                return None;
+            }
+            Type::Model(m) => match &m.template_mapper {
+                Some(mapper) if !m.name.is_empty() => {
+                    return self.instance_name(&m.name, &mapper.args);
+                }
+                _ => &m.name,
+            },
             Type::Enum(e) => &e.name,
             Type::Union(u)
                 if !u.expression && u.template_node.is_none() && u.template_mapper.is_none() =>
@@ -186,22 +220,51 @@ impl Walk<'_> {
             Type::Scalar(s) if !self.checker.is_std_type(id, None) => &s.name,
             _ => return None,
         };
-        (!name.is_empty()).then_some(name.as_str())
+        (!name.is_empty()).then(|| name.clone())
     }
 
-    /// Whether a model is a template declaration or instance, including the
-    /// standard `Array` and `Record`; these are written in place.
-    fn is_template(&self, m: &ModelType) -> bool {
-        let std_template = (m.name == "Array" || m.name == "Record")
-            && (m.namespace.is_none()
-                || m.namespace == self.checker.lookup_type_by_fqn("TypeSpec"));
-        std_template || m.template_node.is_some() || m.template_mapper.is_some()
+    /// Whether a model is a `T[]` array written in place.
+    fn is_array_literal(&self, m: &ModelType) -> bool {
+        m.name == "Array" && is_array_model_type(&self.checker.type_store, m)
+    }
+
+    /// The official name of a template instance: the template's name followed
+    /// by each argument's capitalized name (`Record<Inner>` is `RecordInner`).
+    /// `None` when an argument has no name, such as a literal; the instance
+    /// is then written in place.
+    fn instance_name(&self, name: &str, args: &[TypeId]) -> Option<String> {
+        let mut full = name.to_string();
+        for &arg in args {
+            let arg_name = self.argument_name(arg)?;
+            let mut chars = arg_name.chars();
+            let first = chars.next()?;
+            full.extend(first.to_uppercase());
+            full.push_str(chars.as_str());
+        }
+        Some(full)
+    }
+
+    /// A template argument's name, as it appears in an instance name.
+    fn argument_name(&self, id: TypeId) -> Option<String> {
+        match self.checker.get_type(id)? {
+            Type::Model(m) if self.is_array_literal(m) => {
+                let (_, item) = m.indexer?;
+                self.instance_name("Array", &[item])
+            }
+            Type::Model(_) => self.declared_name(id),
+            Type::Scalar(s) => Some(s.name.clone()),
+            Type::Union(u) if u.expression => None,
+            t @ (Type::Enum(_) | Type::Union(_) | Type::Intrinsic(_)) => {
+                t.name().filter(|n| !n.is_empty()).map(str::to_string)
+            }
+            _ => None,
+        }
     }
 
     /// The schema that stands for a type where it is used.
     fn reference(&mut self, id: TypeId) -> Value {
-        if let Some(name) = self.declared_name(id).map(str::to_string) {
-            if self.started.insert(id) {
+        if let Some(name) = self.declared_name(id) {
+            if !self.defs.contains_key(&name) {
                 self.defs.insert(name.clone(), Value::Null);
                 let schema = self.declaration(id, &name);
                 self.defs.insert(name.clone(), Value::Object(schema));
@@ -316,10 +379,37 @@ impl Walk<'_> {
         if let Some(base) = m.base_model {
             schema.insert("allOf".into(), Value::Array(vec![self.reference(base)]));
         }
-        if let Some((_, value)) = m.indexer {
+        if let Some((_, value)) = self.own_indexer(m) {
             schema.insert("unevaluatedProperties".into(), self.reference(value));
+        } else if self.seal_object_schemas && !self.has_derived_models(m) {
+            schema.insert("unevaluatedProperties".into(), json!({ "not": {} }));
         }
         schema
+    }
+
+    /// A model's indexer unless it is the one inherited from its base: the
+    /// checker copies a base's indexer onto models that `extends` it.
+    fn own_indexer(&self, m: &ModelType) -> Option<(TypeId, TypeId)> {
+        let inherited = match m.base_model.and_then(|b| self.checker.get_type(b)) {
+            Some(Type::Model(base)) => base.indexer,
+            _ => None,
+        };
+        m.indexer.filter(|&indexer| Some(indexer) != inherited)
+    }
+
+    /// Whether a model has derived models that count for sealing: not
+    /// template declarations, nor template instances without derived models.
+    fn has_derived_models(&self, m: &ModelType) -> bool {
+        m.derived_models
+            .iter()
+            .any(|&d| match self.checker.get_type(d) {
+                Some(Type::Model(d)) => {
+                    !is_template_declaration(d)
+                        && (d.template_mapper.as_ref().is_none_or(|t| t.args.is_empty())
+                            || !d.derived_models.is_empty())
+                }
+                _ => false,
+            })
     }
 
     fn enum_schema(&self, e: &EnumType) -> Map<String, Value> {
@@ -509,6 +599,12 @@ impl Walk<'_> {
     }
 }
 
+/// Whether a model is a template declaration (`model Page<T>`), as opposed to
+/// an instance of one or a plain model.
+fn is_template_declaration(m: &ModelType) -> bool {
+    m.template_mapper.is_none() && m.template_node.is_some() && m.template_node == m.node
+}
+
 /// `{"type": kind, "const": value}`.
 fn literal(kind: &str, value: Value) -> Map<String, Value> {
     object([("type", kind.into()), ("const", value)])
@@ -552,20 +648,30 @@ mod tests {
     }
 
     /// Compare with the official emitter's output, keyword order included.
-    fn assert_matches_reference(name: &str, source: &str, reference: &str) {
+    fn assert_matches_reference(
+        emitter: JsonSchemaEmitter,
+        name: &str,
+        source: &str,
+        reference: &str,
+    ) {
         let expected: Value = serde_json::from_str(reference).expect("reference is JSON");
-        let actual = JsonSchemaEmitter::new()
+        let actual = emitter
             .bundle_id(&format!("{name}.json"))
             .emit_value(&check(source));
         let pretty = |v: &Value| serde_json::to_string_pretty(v).expect("serializable");
         assert_eq!(pretty(&actual), pretty(&expected), "fixture {name}");
     }
 
+    /// A fixture's emitter options mirror its `<name>.options` sidecar.
     macro_rules! reference_test {
         ($test:ident, $name:literal) => {
+            reference_test!($test, $name, JsonSchemaEmitter::new());
+        };
+        ($test:ident, $name:literal, $emitter:expr) => {
             #[test]
             fn $test() {
                 assert_matches_reference(
+                    $emitter,
                     $name,
                     include_str!(concat!("../../tests/json-schema/", $name, ".tsp")),
                     include_str!(concat!("../../tests/json-schema/", $name, ".json")),
@@ -579,6 +685,75 @@ mod tests {
     reference_test!(test_reference_constraints, "constraints");
     reference_test!(test_reference_unions, "unions");
     reference_test!(test_reference_extensions, "extensions");
+    reference_test!(test_reference_records, "records");
+    reference_test!(
+        test_reference_sealed,
+        "sealed",
+        JsonSchemaEmitter::new().seal_object_schemas(true)
+    );
+
+    #[test]
+    fn test_record_spread_is_unevaluated_properties() {
+        let d = defs("model M { a: string; ...Record<boolean> }");
+        assert_eq!(
+            d["M"]["unevaluatedProperties"],
+            json!({ "type": "boolean" })
+        );
+    }
+
+    #[test]
+    fn test_record_instance_declared_by_official_name() {
+        let d = defs("model Inner {} model M { r: Record<Inner>; u: Record<unknown>; }");
+        assert_eq!(
+            d["M"]["properties"]["r"],
+            json!({ "$ref": "RecordInner.json" })
+        );
+        assert_eq!(
+            d["M"]["properties"]["u"],
+            json!({ "$ref": "RecordUnknown.json" })
+        );
+        assert_eq!(
+            d["RecordInner"]["unevaluatedProperties"],
+            json!({ "$ref": "Inner.json" })
+        );
+        assert_eq!(d["RecordUnknown"]["unevaluatedProperties"], json!({}));
+    }
+
+    #[test]
+    fn test_instance_with_literal_argument_is_inline() {
+        let d = defs(r#"model M { r: Record<"a">; }"#);
+        assert_eq!(
+            d["M"]["properties"]["r"]["unevaluatedProperties"],
+            json!({ "type": "string", "const": "a" })
+        );
+        assert_eq!(d.as_object().expect("object").len(), 1);
+    }
+
+    #[test]
+    fn test_extends_record_does_not_repeat_indexer() {
+        let d = defs("model Inner {} model M extends Record<Inner> { b: Inner; }");
+        assert!(d["M"].get("unevaluatedProperties").is_none());
+        assert_eq!(d["M"]["allOf"], json!([{ "$ref": "RecordInner.json" }]));
+    }
+
+    #[test]
+    fn test_unsealed_by_default() {
+        let d = defs("model M { a: string; }");
+        assert!(d["M"].get("unevaluatedProperties").is_none());
+    }
+
+    #[test]
+    fn test_sealed_skips_base_and_records() {
+        let checker =
+            check("model Base {} model Derived extends Base {} model R { ...Record<string> }");
+        let v = JsonSchemaEmitter::new()
+            .seal_object_schemas(true)
+            .emit_value(&checker);
+        let d = &v["$defs"];
+        assert!(d["Base"].get("unevaluatedProperties").is_none());
+        assert_eq!(d["Derived"]["unevaluatedProperties"], json!({ "not": {} }));
+        assert_eq!(d["R"]["unevaluatedProperties"], json!({ "type": "string" }));
+    }
 
     #[test]
     fn test_optional_property_not_required() {

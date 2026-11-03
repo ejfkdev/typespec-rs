@@ -18,6 +18,8 @@ pub struct Pipeline {
     pub openapi_version: String,
     /// JSON Schema: write numeric scalar widths as `format`.
     pub width_format: bool,
+    /// JSON Schema: close object schemas to undeclared keys.
+    pub seal_object_schemas: bool,
     pub output: Option<PathBuf>,
     pub no_stdlib: bool,
     pub no_emit: bool,
@@ -164,7 +166,9 @@ impl Pipeline {
                 Ok(result.output)
             }
             "json-schema" => {
-                let emitter = JsonSchemaEmitter::new().width_format(self.width_format);
+                let emitter = JsonSchemaEmitter::new()
+                    .width_format(self.width_format)
+                    .seal_object_schemas(self.seal_object_schemas);
                 let result = emitter.emit_from_checker(checker)?;
                 Ok(result.output)
             }

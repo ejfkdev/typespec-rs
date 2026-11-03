@@ -11,7 +11,12 @@ npm install --silent @typespec/compiler@1 @typespec/json-schema@1
 for tsp in "$here"/*.tsp; do
   name=$(basename "$tsp" .tsp)
   { echo 'import "@typespec/json-schema";'; cat "$tsp"; } > main.tsp
-  npx tsp compile main.tsp --emit @typespec/json-schema \
+  # A sidecar <name>.options holds extra emitter options, one key=value per line.
+  set --
+  if [ -f "$here/$name.options" ]; then
+    while read -r opt; do set -- "$@" --option "@typespec/json-schema.$opt"; done < "$here/$name.options"
+  fi
+  npx tsp compile main.tsp --emit @typespec/json-schema "$@" \
     --option "@typespec/json-schema.emitter-output-dir={cwd}/out" \
     --option "@typespec/json-schema.file-type=json" \
     --option "@typespec/json-schema.emitAllModels=true" \

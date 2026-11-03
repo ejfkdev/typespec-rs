@@ -3,6 +3,7 @@
 //! Emits TypeSpec to OpenAPI YAML format.
 
 use super::emitter::{get_name, get_type_string};
+use super::quote::yaml_scalar;
 use super::{EmitResult, Emitter};
 use crate::ast::types::*;
 use crate::parser::{AstBuilder, AstNode, ParseResult};
@@ -101,7 +102,7 @@ impl Emitter for YamlEmitter {
         if !aliases.is_empty() {
             yaml.push_str("aliases:\n");
             for alias in aliases {
-                yaml.push_str(&format!("  - {}\n", alias));
+                yaml.push_str(&format!("  - {}\n", yaml_scalar(&alias)));
             }
         }
 
@@ -116,16 +117,19 @@ impl Emitter for YamlEmitter {
 impl YamlEmitter {
     fn emit_model(&self, builder: &AstBuilder, model: &ModelDeclaration, name: &str) -> String {
         let mut s = String::new();
-        s.push_str(&format!("  {}:\n", name));
+        s.push_str(&format!("  {}:\n", yaml_scalar(name)));
         s.push_str("    type: object\n");
         s.push_str("    properties:\n");
 
         for &prop_id in &model.properties {
             if let Some(AstNode::ModelProperty(prop)) = builder.nodes.get(&prop_id) {
                 let prop_name = get_name(builder, prop.name);
-                let type_str = get_type_string(builder, prop.value);
                 let optional = if prop.optional { "?" } else { "" };
-                s.push_str(&format!("      {}{}: {}\n", prop_name, optional, type_str));
+                s.push_str(&format!(
+                    "      {}: {}\n",
+                    yaml_scalar(&format!("{}{}", prop_name, optional)),
+                    yaml_type(builder, prop.value)
+                ));
             }
         }
 
@@ -139,7 +143,7 @@ impl YamlEmitter {
         name: &str,
     ) -> String {
         let mut s = String::new();
-        s.push_str(&format!("  {}:\n", name));
+        s.push_str(&format!("  {}:\n", yaml_scalar(name)));
         s.push_str("    operations:\n");
 
         for &op_id in &interface.operations {
@@ -148,11 +152,15 @@ impl YamlEmitter {
                 let return_type = if let Some(AstNode::OperationSignatureDeclaration(sig)) =
                     builder.nodes.get(&op.signature)
                 {
-                    get_type_string(builder, sig.return_type)
+                    yaml_type(builder, sig.return_type)
                 } else {
                     "void".to_string()
                 };
-                s.push_str(&format!("      {}: {}\n", op_name, return_type));
+                s.push_str(&format!(
+                    "      {}: {}\n",
+                    yaml_scalar(&op_name),
+                    return_type
+                ));
             }
         }
 
@@ -161,17 +169,27 @@ impl YamlEmitter {
 
     fn emit_enum(&self, builder: &AstBuilder, enum_decl: &EnumDeclaration, name: &str) -> String {
         let mut s = String::new();
-        s.push_str(&format!("  {}:\n", name));
+        s.push_str(&format!("  {}:\n", yaml_scalar(name)));
         s.push_str("    values:\n");
 
         for &member_id in &enum_decl.members {
             if let Some(AstNode::EnumMember(member)) = builder.nodes.get(&member_id) {
                 let member_name = get_name(builder, member.name);
-                s.push_str(&format!("      - {}\n", member_name));
+                s.push_str(&format!("      - {}\n", yaml_scalar(&member_name)));
             }
         }
 
         s
+    }
+}
+
+/// A type as a YAML value. A string literal type keeps its double-quoted
+/// literal form; other type text is quoted only when YAML needs it.
+fn yaml_type(builder: &AstBuilder, node_id: u32) -> String {
+    let type_str = get_type_string(builder, node_id);
+    match builder.nodes.get(&node_id) {
+        Some(AstNode::StringLiteral(_)) => type_str,
+        _ => yaml_scalar(&type_str),
     }
 }
 
@@ -216,5 +234,15 @@ mod tests {
         let result = parse(src);
         let output = emitter.emit(&result).unwrap();
         assert_eq!(output.format, "yaml");
+    }
+
+    #[test]
+    fn test_yaml_emitter_escapes_names_and_strings() {
+        // #19
+        let src = r#"model M { `a"b`: string; `#c`: string; k: "x\"y"; }"#;
+        let output = YamlEmitter::new().emit(&parse(src)).unwrap().output;
+        assert!(output.contains(r#"      "a\"b": string"#), "{output}");
+        assert!(output.contains(r##"      "#c": string"##), "{output}");
+        assert!(output.contains(r#"      k: "x\"y""#), "{output}");
     }
 }

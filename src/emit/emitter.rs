@@ -39,7 +39,8 @@ pub(crate) fn get_type_string(builder: &AstBuilder, node_id: u32) -> String {
                 .collect();
             opts.join(" | ")
         }
-        Some(AstNode::StringLiteral(s)) => format!("\"{}\"", s.value),
+        // A JSON string literal is also valid TypeSpec string literal syntax.
+        Some(AstNode::StringLiteral(s)) => super::quote::json_string(&s.value),
         Some(AstNode::NumericLiteral(n)) => n.value_as_string.clone(),
         Some(AstNode::BooleanLiteral(b)) => b.value.to_string(),
         _ => "<type>".to_string(),

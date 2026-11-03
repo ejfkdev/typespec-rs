@@ -2,6 +2,7 @@
 //!
 //! Emits TypeSpec to OpenAPI 3.x format based on the Checker's type graph.
 
+use super::quote::{yaml_scalar, yaml_single_quoted};
 use super::{EmitResult, Emitter};
 use crate::checker::Checker;
 use crate::checker::types::*;
@@ -158,7 +159,7 @@ impl OpenAPIEmitter {
 
     fn emit_model_schema(&self, checker: &Checker, m: &ModelType) -> String {
         let mut s = String::new();
-        s.push_str(&format!("    {}:\n", m.name));
+        s.push_str(&format!("    {}:\n", yaml_scalar(&m.name)));
         s.push_str("      type: object\n");
 
         // Required properties
@@ -184,7 +185,7 @@ impl OpenAPIEmitter {
         if !required.is_empty() {
             s.push_str("      required:\n");
             for r in &required {
-                s.push_str(&format!("        - {}\n", r));
+                s.push_str(&format!("        - {}\n", yaml_scalar(r)));
             }
         }
 
@@ -194,7 +195,7 @@ impl OpenAPIEmitter {
             if let Some(&prop_id) = m.properties.get(prop_name)
                 && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
             {
-                s.push_str(&format!("        {}:\n", prop_name));
+                s.push_str(&format!("        {}:\n", yaml_scalar(prop_name)));
                 s.push_str(&self.type_to_schema(checker, prop.r#type, 10));
             }
         }
@@ -204,18 +205,18 @@ impl OpenAPIEmitter {
 
     fn emit_enum_schema(&self, e: &EnumType) -> String {
         let mut s = String::new();
-        s.push_str(&format!("    {}:\n", e.name));
+        s.push_str(&format!("    {}:\n", yaml_scalar(&e.name)));
         s.push_str("      type: string\n");
         s.push_str("      enum:\n");
         for member_name in &e.member_names {
-            s.push_str(&format!("        - {}\n", member_name));
+            s.push_str(&format!("        - {}\n", yaml_scalar(member_name)));
         }
         s
     }
 
     fn emit_union_schema(&self, checker: &Checker, u: &UnionType) -> String {
         let mut s = String::new();
-        s.push_str(&format!("    {}:\n", u.name));
+        s.push_str(&format!("    {}:\n", yaml_scalar(&u.name)));
         s.push_str("      oneOf:\n");
         for variant_name in &u.variant_names {
             if let Some(&variant_id) = u.variants.get(variant_name)
@@ -248,10 +249,10 @@ impl OpenAPIEmitter {
         // Resolve HTTP verb from decorator state
         let verb = self.resolve_verb(checker, op);
 
-        s.push_str(&format!("    {}:\n", path));
+        s.push_str(&format!("    {}:\n", yaml_scalar(&path)));
         s.push_str(&format!("      {}:\n", verb.to_lowercase()));
-        s.push_str(&format!("        operationId: {}\n", op.name));
-        s.push_str(&format!("        summary: {}\n", op.name));
+        s.push_str(&format!("        operationId: {}\n", yaml_scalar(&op.name)));
+        s.push_str(&format!("        summary: {}\n", yaml_scalar(&op.name)));
 
         // Parameters from operation parameters model. Body properties become
         // `requestBody`; status codes are response-only and are skipped.
@@ -280,7 +281,7 @@ impl OpenAPIEmitter {
                     }
                     let param_in = self.resolve_param_location(checker, prop_id);
                     s.push_str("          - name: ");
-                    s.push_str(param_name);
+                    s.push_str(&yaml_scalar(param_name));
                     s.push('\n');
                     s.push_str(&format!("            in: {}\n", param_in));
                     if !prop.optional {
@@ -375,14 +376,14 @@ impl OpenAPIEmitter {
                         s.push_str("          '204':\n");
                         s.push_str(&format!(
                             "            description: {}\n",
-                            description.as_deref().unwrap_or("No Content")
+                            yaml_scalar(description.as_deref().unwrap_or("No Content"))
                         ));
                         continue;
                     }
                     s.push_str("          '200':\n");
                     s.push_str(&format!(
                         "            description: {}\n",
-                        description.as_deref().unwrap_or("Success")
+                        yaml_scalar(description.as_deref().unwrap_or("Success"))
                     ));
                     s.push_str("            content:\n");
                     s.push_str("              application/json:\n");
@@ -399,7 +400,7 @@ impl OpenAPIEmitter {
                     s.push_str(&format!("          '{}':\n", status_code));
                     s.push_str(&format!(
                         "            description: {}\n",
-                        description.as_deref().unwrap_or("Success")
+                        yaml_scalar(description.as_deref().unwrap_or("Success"))
                     ));
                     if let Some(body_id) = body_type {
                         s.push_str("            content:\n");
@@ -515,7 +516,7 @@ impl OpenAPIEmitter {
                         }
                     } else if !m.name.is_empty() {
                         // Named model → $ref
-                        format!("{}$ref: '#/components/schemas/{}'\n", pad, m.name)
+                        format!("{}$ref: {}\n", pad, schema_ref(&m.name))
                     } else {
                         // Anonymous model → inline object
                         let mut s = format!("{}type: object\n", pad);
@@ -524,7 +525,7 @@ impl OpenAPIEmitter {
                             if let Some(&prop_id) = m.properties.get(prop_name)
                                 && let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id)
                             {
-                                s.push_str(&format!("{}  {}:\n", pad, prop_name));
+                                s.push_str(&format!("{}  {}:\n", pad, yaml_scalar(prop_name)));
                                 s.push_str(&self.type_to_schema(checker, prop.r#type, indent + 4));
                             }
                         }
@@ -533,7 +534,7 @@ impl OpenAPIEmitter {
                 }
                 Type::ModelProperty(p) => self.type_to_schema(checker, p.r#type, indent),
                 Type::Enum(e) => {
-                    format!("{}$ref: '#/components/schemas/{}'\n", pad, e.name)
+                    format!("{}$ref: {}\n", pad, schema_ref(&e.name))
                 }
                 Type::Union(u) => {
                     if u.expression {
@@ -590,7 +591,7 @@ impl OpenAPIEmitter {
                         }
                     } else {
                         // Named union → $ref
-                        format!("{}$ref: '#/components/schemas/{}'\n", pad, u.name)
+                        format!("{}$ref: {}\n", pad, schema_ref(&u.name))
                     }
                 }
                 Type::Scalar(s) => {
@@ -619,7 +620,7 @@ impl OpenAPIEmitter {
                         // Custom scalars → $ref if named, otherwise string
                         _ => {
                             if s.base_scalar.is_some() {
-                                format!("{}$ref: '#/components/schemas/{}'\n", pad, s.name)
+                                format!("{}$ref: {}\n", pad, schema_ref(&s.name))
                             } else {
                                 format!("{}type: string\n", pad)
                             }
@@ -651,16 +652,16 @@ impl OpenAPIEmitter {
                     s
                 }
                 Type::Interface(iface) => {
-                    format!("{}$ref: '#/components/schemas/{}'\n", pad, iface.name)
+                    format!("{}$ref: {}\n", pad, schema_ref(&iface.name))
                 }
                 Type::Operation(op) => {
-                    format!("{}$ref: '#/components/schemas/{}'\n", pad, op.name)
+                    format!("{}$ref: {}\n", pad, schema_ref(&op.name))
                 }
                 Type::EnumMember(em) => {
                     if let Some(eid) = em.r#enum
                         && let Some(Type::Enum(e)) = checker.get_type(eid)
                     {
-                        format!("{}$ref: '#/components/schemas/{}'\n", pad, e.name)
+                        format!("{}$ref: {}\n", pad, schema_ref(&e.name))
                     } else {
                         format!("{}type: string\n", pad)
                     }
@@ -721,6 +722,13 @@ impl Emitter for OpenAPIEmitter {
     fn format(&self) -> &str {
         "openapi"
     }
+}
+
+/// A `$ref` to a component schema, as a quoted YAML scalar. `~` and `/`
+/// in the name are escaped as JSON Pointer requires.
+fn schema_ref(name: &str) -> String {
+    let token = name.replace('~', "~0").replace('/', "~1");
+    yaml_single_quoted(&format!("#/components/schemas/{}", token))
 }
 
 #[cfg(test)]
@@ -913,5 +921,24 @@ mod tests {
         // Check array return type
         assert!(yaml.contains("type: array"));
         assert!(yaml.contains("$ref"));
+    }
+
+    #[test]
+    fn test_openapi_quotes_names_yaml_would_misread() {
+        // #19: `#c` unquoted is a YAML comment.
+        let checker = check(r#"model M { `a"b`: string; `#c`: string; }"#);
+        let output = OpenAPIEmitter::new().emit_from_checker(&checker).unwrap();
+        let yaml = &output.output;
+        assert!(yaml.contains(r##"        - "#c""##), "{yaml}");
+        assert!(yaml.contains(r##"        "#c":"##), "{yaml}");
+        assert!(yaml.contains(r#"        - "a\"b""#), "{yaml}");
+        assert!(yaml.contains(r#"        "a\"b":"#), "{yaml}");
+    }
+
+    #[test]
+    fn test_openapi_schema_ref_escapes_quote() {
+        assert_eq!(schema_ref("Pet"), "'#/components/schemas/Pet'");
+        assert_eq!(schema_ref("it's"), "'#/components/schemas/it''s'");
+        assert_eq!(schema_ref("a/b~c"), "'#/components/schemas/a~1b~0c'");
     }
 }

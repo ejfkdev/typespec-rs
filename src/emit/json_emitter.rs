@@ -3,6 +3,7 @@
 //! Emits TypeSpec to OpenAPI JSON format.
 
 use super::emitter::{get_name, get_type_string};
+use super::quote::json_string;
 use super::{EmitResult, Emitter};
 use crate::ast::types::*;
 use crate::parser::{AstBuilder, AstNode, ParseResult};
@@ -97,7 +98,12 @@ impl Emitter for JsonEmitter {
                 json.push(',');
                 json.push_str(sep);
             }
-            json.push_str(&format!("{}    \"{}\": {{{}", indent_str, name, sep));
+            json.push_str(&format!(
+                "{}    {}: {{{}",
+                indent_str,
+                json_string(name),
+                sep
+            ));
             json.push_str(&format!("{}      \"type\": \"object\",{}", indent_str, sep));
             json.push_str(&format!("{}      \"properties\": {{{}", indent_str, sep));
 
@@ -108,8 +114,10 @@ impl Emitter for JsonEmitter {
                 }
                 let opt_marker = if *optional { "?" } else { "" };
                 json.push_str(&format!(
-                    "{}        \"{}{}\": \"{}\"",
-                    indent_str, prop_name, opt_marker, prop_type
+                    "{}        {}: {}",
+                    indent_str,
+                    json_string(&format!("{}{}", prop_name, opt_marker)),
+                    json_string(prop_type)
                 ));
                 first_prop = false;
             }
@@ -128,7 +136,12 @@ impl Emitter for JsonEmitter {
                 json.push(',');
                 json.push_str(sep);
             }
-            json.push_str(&format!("{}    \"{}\": {{{}", indent_str, name, sep));
+            json.push_str(&format!(
+                "{}    {}: {{{}",
+                indent_str,
+                json_string(name),
+                sep
+            ));
             json.push_str(&format!(
                 "{}      \"type\": \"interface\",{}",
                 indent_str, sep
@@ -141,8 +154,10 @@ impl Emitter for JsonEmitter {
                     json.push(',');
                 }
                 json.push_str(&format!(
-                    "{}        \"{}\": \"{}\"",
-                    indent_str, op_name, return_type
+                    "{}        {}: {}",
+                    indent_str,
+                    json_string(op_name),
+                    json_string(return_type)
                 ));
                 first_op = false;
             }
@@ -160,12 +175,21 @@ impl Emitter for JsonEmitter {
                 json.push(',');
                 json.push_str(sep);
             }
-            json.push_str(&format!("{}    \"{}\": {{{}", indent_str, name, sep));
+            json.push_str(&format!(
+                "{}    {}: {{{}",
+                indent_str,
+                json_string(name),
+                sep
+            ));
             json.push_str(&format!("{}      \"type\": \"enum\",{}", indent_str, sep));
             json.push_str(&format!(
                 "{}      \"values\": [{}]",
                 indent_str,
-                members.join(", ")
+                members
+                    .iter()
+                    .map(|m| json_string(m))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
             json.push_str(sep);
             json.push_str(&format!("{}    }}", indent_str));
@@ -183,7 +207,7 @@ impl Emitter for JsonEmitter {
                 indent_str,
                 aliases
                     .iter()
-                    .map(|s| format!("\"{}\"", s))
+                    .map(|s| json_string(s))
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
@@ -302,5 +326,18 @@ mod tests {
         let result = parse(src);
         let output = emitter.emit(&result).unwrap();
         assert_eq!(output.format, "json");
+    }
+
+    #[test]
+    fn test_json_emitter_escapes_names_and_strings() {
+        // #19
+        let src = r#"
+            model M { `a"b`: string; k: "x\"y"; }
+            enum E { `c"d` }
+        "#;
+        let output = JsonEmitter::new().emit(&parse(src)).unwrap().output;
+        assert!(output.contains(r#""a\"b": "string""#), "{output}");
+        assert!(output.contains(r#""k": "\"x\\\"y\"""#), "{output}");
+        assert!(output.contains(r#""values": ["c\"d"]"#), "{output}");
     }
 }

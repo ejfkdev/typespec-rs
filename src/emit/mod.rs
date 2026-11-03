@@ -29,6 +29,7 @@ pub mod json_emitter;
 #[cfg(feature = "json-schema")]
 pub mod json_schema_emitter;
 pub mod openapi_emitter;
+mod quote;
 pub mod yaml_emitter;
 
 pub use asset_emitter::{

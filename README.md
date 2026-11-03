@@ -33,7 +33,9 @@ This project is in **early development**. The core compiler pipeline works:
 | Programmatic Decorator API | Working |
 | Auto Decorators (`auto dec`) | Working |
 
-3,300+ tests passing (synced with upstream TypeSpec through v1.13+ and later fixes).
+3,300+ tests passing (synced with `@typespec/compiler` 1.17.0, upstream `microsoft/typespec@a22c5330`).
+
+**MSRV:** Rust 1.95. **Upstream sync:** `@typespec/compiler` 1.17.0.
 
 ## Quick Start
 

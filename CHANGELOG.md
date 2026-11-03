@@ -24,7 +24,8 @@ dependency refresh.
 ### Changed
 - Dependencies updated: regex 1.13.1, bitflags 2.13.2, anyhow 1.0.104,
   clap 4.6.7, serde 1.0.229, serde_json 1.0.154, wasmtime 47.0.4.
-  wasmtime 48+ requires Rust 1.97, so the MSRV stays at 1.95.
+  wasmtime 48+ requires Rust 1.97, so the MSRV stays at Rust 1.95
+  (`rust-toolchain.toml` and both crates pin 1.95).
 - CI uses `actions/checkout@v7`.
 
 ### Fixed

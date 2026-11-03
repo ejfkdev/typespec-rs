@@ -40,6 +40,12 @@
 //! are functional. See the [repository](https://github.com/ejfkdev/typespec-rs) for
 //! the latest status.
 
+/// The upstream `@typespec/compiler` version this port is synced with.
+pub const UPSTREAM_TYPESPEC_COMPILER_VERSION: &str = "1.17.0";
+
+/// The upstream `microsoft/typespec` commit this port is synced with.
+pub const UPSTREAM_TYPESPEC_COMMIT: &str = "a22c5330";
+
 // Primary user-facing modules
 pub mod ast;
 pub mod checker;

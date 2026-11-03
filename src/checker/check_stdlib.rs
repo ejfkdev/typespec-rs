@@ -581,6 +581,7 @@ impl Checker {
             namespace: Some(namespace_id),
             members: members_map,
             member_names,
+            expression: false,
             decorators: Vec::new(),
             doc: None,
             summary: None,

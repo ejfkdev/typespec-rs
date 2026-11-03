@@ -184,6 +184,12 @@ pub fn is_boolean_literal_type(t: &Type) -> bool {
     matches!(t, Type::Boolean(_))
 }
 
+/// Whether a namespace is the standard `TypeSpec` namespace; built-in types
+/// are printed without a namespace prefix (upstream getNamespacePrefix).
+fn in_typespec_namespace(store: &TypeStore, namespace: Option<TypeId>) -> bool {
+    namespace.is_some_and(|ns| get_fully_qualified_name(store, ns) == "TypeSpec")
+}
+
 /// Get the string value of a type for display purposes.
 /// Handles string literals, numeric literals, boolean literals, and enum members.
 /// Ported from TS typeReferenceToString() / getEntityName()
@@ -207,20 +213,65 @@ fn type_to_string_inner(
         Some(Type::Boolean(b)) => if b.value { "true" } else { "false" }.to_string(),
         Some(Type::Intrinsic(intr)) => format!("{:?}", intr.name).to_lowercase(),
         Some(Type::Model(m)) => {
-            if m.name.is_empty() {
-                "{ ... }".to_string()
+            if !m.name.is_empty() {
+                // Expressions are not namespace-qualified (upstream getModelName).
+                if m.expression || in_typespec_namespace(store, m.namespace) {
+                    m.name.clone()
+                } else {
+                    get_fully_qualified_name(store, type_id)
+                }
+            } else if m.properties.is_empty() {
+                "{}".to_string()
+            } else {
+                let props: Vec<String> = m
+                    .property_names
+                    .iter()
+                    .filter_map(|name| m.properties.get(name))
+                    .filter_map(|&prop_id| match store.get(prop_id) {
+                        Some(Type::ModelProperty(p)) => Some(format!(
+                            "{}: {}",
+                            p.name,
+                            type_to_string_inner(store, p.r#type, seen)
+                        )),
+                        _ => None,
+                    })
+                    .collect();
+                format!("{{ {} }}", props.join(", "))
+            }
+        }
+        Some(Type::Scalar(s)) => {
+            if s.name.is_empty() {
+                match s.base_scalar {
+                    Some(base) => {
+                        format!("scalar extends {}", type_to_string_inner(store, base, seen))
+                    }
+                    None => "scalar".to_string(),
+                }
+            } else if s.expression || in_typespec_namespace(store, s.namespace) {
+                s.name.clone()
             } else {
                 get_fully_qualified_name(store, type_id)
             }
         }
-        Some(Type::Scalar(_s)) => get_fully_qualified_name(store, type_id),
-        Some(Type::Enum(_e)) => get_fully_qualified_name(store, type_id),
+        Some(Type::Enum(e)) => {
+            if e.name.is_empty() {
+                format!("{{ {} }}", e.member_names.join(", "))
+            } else if e.expression || in_typespec_namespace(store, e.namespace) {
+                e.name.clone()
+            } else {
+                get_fully_qualified_name(store, type_id)
+            }
+        }
         Some(Type::Union(u)) => {
             // Named unions print their name (upstream getUnionName); anonymous
             // unions expand their variants.
             if !u.name.is_empty() {
                 seen.remove(&type_id);
-                return get_fully_qualified_name(store, type_id);
+                return if u.expression {
+                    u.name.clone()
+                } else {
+                    get_fully_qualified_name(store, type_id)
+                };
             }
             let variant_names: Vec<String> = u
                 .variant_names
@@ -530,7 +581,7 @@ mod tests {
         assert_eq!(type_to_string(&store, bool_lit), "true");
         assert_eq!(type_to_string(&store, void_type), "void");
         assert_eq!(type_to_string(&store, model), "Foo");
-        assert_eq!(type_to_string(&store, anon_model), "{ ... }");
+        assert_eq!(type_to_string(&store, anon_model), "{}");
     }
 
     #[test]

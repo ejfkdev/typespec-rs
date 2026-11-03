@@ -117,7 +117,9 @@ impl Checker {
 
         // Use pre-registered type if available, otherwise create new
         let current_ns = self.current_namespace;
-        let type_id = if let Some(&existing_id) = self.node_type_map.get(&node_id) {
+        let type_id = if ctx.mapper.is_none()
+            && let Some(&existing_id) = self.node_type_map.get(&node_id)
+        {
             // Update pre-registered type in-place
             if let Some(t) = self.get_type_mut(existing_id)
                 && let Type::Scalar(s) = t
@@ -126,6 +128,7 @@ impl Checker {
                 s.template_node = template_node;
                 s.constructors = own_constructors;
                 s.namespace = current_ns;
+                s.expression = node.expression;
             }
             existing_id
         } else {
@@ -139,6 +142,7 @@ impl Checker {
                 );
                 s.constructors = own_constructors;
                 s.template_node = template_node;
+                s.expression = node.expression;
                 self.create_type(Type::Scalar(s))
             };
 

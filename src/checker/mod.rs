@@ -2368,6 +2368,14 @@ impl Checker {
                     {
                         return current;
                     }
+                    // An alias of a scalar declaration expression (`alias S =
+                    // scalar extends string`) points at the expression scalar;
+                    // resolve through it, unlike a real scalar `extends` chain.
+                    if matches!(self.get_type(base_id), Some(Type::Scalar(base)) if base.expression)
+                    {
+                        current = base_id;
+                        continue;
+                    }
                     if matches!(self.get_type(base_id), Some(Type::Scalar(_))) {
                         // Scalar extends Scalar — stop here, don't follow extends chain
                         return current;

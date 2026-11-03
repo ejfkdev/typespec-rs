@@ -1465,6 +1465,38 @@ impl<'a> Parser<'a> {
             }
             TokenKind::HashBrace => self.parse_object_literal(),
             TokenKind::HashBracket => self.parse_array_literal(),
+            // Decorators may precede a declaration used as an expression
+            // (`p: @doc("x") enum { a }`); anything else cannot be decorated.
+            TokenKind::At => {
+                let decorators = self.parse_decorator_list();
+                match self.current_token() {
+                    TokenKind::ModelKeyword
+                    | TokenKind::EnumKeyword
+                    | TokenKind::UnionKeyword
+                    | TokenKind::ScalarKeyword => {
+                        self.declaration_expression_mode = true;
+                        let id = match self.current_token() {
+                            TokenKind::ModelKeyword => {
+                                self.parse_model_statement(pos, decorators, vec![])
+                            }
+                            TokenKind::EnumKeyword => {
+                                self.parse_enum_statement(pos, decorators, vec![])
+                            }
+                            TokenKind::UnionKeyword => {
+                                self.parse_union_statement(pos, decorators, vec![])
+                            }
+                            _ => self.parse_scalar_statement(pos, decorators, vec![]),
+                        };
+                        self.declaration_expression_mode = false;
+                        self.mark_expression_declaration(id);
+                        id
+                    }
+                    _ => {
+                        self.error("invalid-decorator-location", "Cannot decorate expression.");
+                        self.parse_primary_expression()
+                    }
+                }
+            }
             TokenKind::ValueOfKeyword => {
                 self.next_token();
                 let target = self.parse_expression();

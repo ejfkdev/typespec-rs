@@ -31,7 +31,9 @@ impl Checker {
         let current_ns = self.current_namespace;
 
         // Use pre-registered type if available, otherwise create new
-        let type_id = if let Some(&existing_id) = self.node_type_map.get(&node_id) {
+        let type_id = if ctx.mapper.is_none()
+            && let Some(&existing_id) = self.node_type_map.get(&node_id)
+        {
             // Update pre-registered type in-place
             if let Some(t) = self.get_type_mut(existing_id)
                 && let Type::Union(u) = t
@@ -140,7 +142,7 @@ impl Checker {
 
         let mut variants = HashMap::new();
         let mut variant_names = Vec::new();
-        for &variant_id in &node.variants {
+        for (variant_index, &variant_id) in node.variants.iter().enumerate() {
             let variant_node = match ast.id_to_node(variant_id) {
                 Some(AstNode::UnionVariant(v)) => v.clone(),
                 _ => continue,
@@ -150,6 +152,13 @@ impl Checker {
                 .name
                 .map(|n| Self::get_identifier_name(&ast, n))
                 .unwrap_or_default();
+            // Anonymous variants need distinct map keys; upstream keys them by
+            // symbol. Keep `UnionVariantType.name` empty for display.
+            let variant_key = if variant_name.is_empty() {
+                format!("\u{0}anonymous{variant_index}")
+            } else {
+                variant_name.clone()
+            };
 
             // Check for duplicate variant
             if !variant_name.is_empty() && variants.contains_key(&variant_name) {
@@ -200,8 +209,8 @@ impl Checker {
             // Check variant decorators
             self.check_and_store_decorators(ctx, variant_type_id, &variant_node.decorators);
 
-            variants.insert(variant_name.clone(), variant_type_id);
-            variant_names.push(variant_name);
+            variants.insert(variant_key.clone(), variant_type_id);
+            variant_names.push(variant_key);
         }
 
         if let Some(t) = self.get_type_mut(type_id)

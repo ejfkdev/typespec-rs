@@ -120,6 +120,10 @@ impl Checker {
             new_id
         };
 
+        if let Some(Type::Model(m)) = self.get_type_mut(type_id) {
+            m.expression = is_expression;
+        }
+
         // Process directives (e.g., #deprecated) BEFORE checking properties,
         // so that the type is marked as deprecated when checking property type references.
         // This allows emit_deprecated_warning_if_needed to skip warnings when
@@ -814,6 +818,88 @@ impl Checker {
             }
             Some(AstNode::ModelProperty(mp)) => {
                 self.collect_template_param_refs(ast, mp.value, param_names, used);
+                if let Some(default) = mp.default {
+                    self.collect_template_param_refs(ast, default, param_names, used);
+                }
+                for &dec_id in &mp.decorators {
+                    self.collect_template_param_refs(ast, dec_id, param_names, used);
+                }
+            }
+            Some(AstNode::ModelDeclaration(decl)) => {
+                for &dec_id in &decl.decorators {
+                    self.collect_template_param_refs(ast, dec_id, param_names, used);
+                }
+                for &prop_id in &decl.properties {
+                    self.collect_template_param_refs(ast, prop_id, param_names, used);
+                }
+                if let Some(ext_id) = decl.extends {
+                    self.collect_template_param_refs(ast, ext_id, param_names, used);
+                }
+                if let Some(is_id) = decl.is {
+                    self.collect_template_param_refs(ast, is_id, param_names, used);
+                }
+            }
+            Some(AstNode::ModelExpression(expr)) => {
+                for &prop_id in &expr.properties {
+                    self.collect_template_param_refs(ast, prop_id, param_names, used);
+                }
+            }
+            Some(AstNode::EnumDeclaration(decl)) => {
+                for &dec_id in &decl.decorators {
+                    self.collect_template_param_refs(ast, dec_id, param_names, used);
+                }
+                for &member_id in &decl.members {
+                    self.collect_template_param_refs(ast, member_id, param_names, used);
+                }
+            }
+            Some(AstNode::EnumMember(member)) => {
+                if let Some(value) = member.value {
+                    self.collect_template_param_refs(ast, value, param_names, used);
+                }
+                for &dec_id in &member.decorators {
+                    self.collect_template_param_refs(ast, dec_id, param_names, used);
+                }
+            }
+            Some(AstNode::UnionDeclaration(decl)) => {
+                for &dec_id in &decl.decorators {
+                    self.collect_template_param_refs(ast, dec_id, param_names, used);
+                }
+                for &variant_id in &decl.variants {
+                    self.collect_template_param_refs(ast, variant_id, param_names, used);
+                }
+                if let Some(ext_id) = decl.extends {
+                    self.collect_template_param_refs(ast, ext_id, param_names, used);
+                }
+            }
+            Some(AstNode::UnionVariant(variant)) => {
+                self.collect_template_param_refs(ast, variant.value, param_names, used);
+                for &dec_id in &variant.decorators {
+                    self.collect_template_param_refs(ast, dec_id, param_names, used);
+                }
+            }
+            Some(AstNode::ScalarDeclaration(decl)) => {
+                for &dec_id in &decl.decorators {
+                    self.collect_template_param_refs(ast, dec_id, param_names, used);
+                }
+                if let Some(ext_id) = decl.extends {
+                    self.collect_template_param_refs(ast, ext_id, param_names, used);
+                }
+                for &ctor_id in &decl.constructors {
+                    self.collect_template_param_refs(ast, ctor_id, param_names, used);
+                }
+            }
+            Some(AstNode::ArrayLiteral(array)) => {
+                for &value in &array.values {
+                    self.collect_template_param_refs(ast, value, param_names, used);
+                }
+            }
+            Some(AstNode::ObjectLiteral(object)) => {
+                for &prop_id in &object.properties {
+                    self.collect_template_param_refs(ast, prop_id, param_names, used);
+                }
+            }
+            Some(AstNode::ObjectLiteralProperty(prop)) => {
+                self.collect_template_param_refs(ast, prop.value, param_names, used);
             }
             Some(AstNode::ModelSpreadProperty(ms)) => {
                 self.collect_template_param_refs(ast, ms.target, param_names, used);
@@ -888,19 +974,6 @@ impl Checker {
                 }
                 for &dec_id in &decl.decorators {
                     self.collect_template_param_refs(ast, dec_id, param_names, used);
-                }
-            }
-            Some(AstNode::ModelExpression(me)) => {
-                for &prop_id in &me.properties {
-                    self.collect_template_param_refs(ast, prop_id, param_names, used);
-                }
-            }
-            Some(AstNode::UnionVariant(uv)) => {
-                self.collect_template_param_refs(ast, uv.value, param_names, used);
-            }
-            Some(AstNode::EnumMember(em)) => {
-                if let Some(val) = em.value {
-                    self.collect_template_param_refs(ast, val, param_names, used);
                 }
             }
             _ => {}

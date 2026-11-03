@@ -31,6 +31,18 @@ impl Checker {
                 if crate::checker::type_utils::is_template_instance(child_type) {
                     return None;
                 }
+                // Named declaration expressions (`m: model Inner { ... }`) have
+                // a name but are not namespace members.
+                let is_expression = match child_type {
+                    Type::Model(m) => m.expression,
+                    Type::Enum(e) => e.expression,
+                    Type::Scalar(s) => s.expression,
+                    Type::Union(u) => u.expression,
+                    _ => false,
+                };
+                if is_expression {
+                    return None;
+                }
                 let kind = child_type.kind_name();
                 let is_declaration = declaration_node(child_type) == Some(node_id);
                 Some((!is_declaration, node_id, name, child_type_id, kind))

@@ -199,6 +199,9 @@ pub struct ModelType {
     /// TS: ModelType.sourceModels (SourceModel[])
     pub source_models: Vec<SourceModel>,
     pub indexer: Option<(TypeId, TypeId)>, // (key_type, value_type)
+    /// Whether this model was written as a declaration expression (`model { ... }`).
+    /// TS: Model.expression (microsoft/typespec#11019)
+    pub expression: bool,
     pub template_node: Option<NodeId>,
     /// Template mapper for template instances. None for template declarations and non-templated types.
     /// TS: TemplatedType.templateMapper
@@ -226,6 +229,7 @@ impl ModelType {
             source_model: None,
             source_models: vec![],
             indexer: None,
+            expression: false,
             template_node: None,
             template_mapper: None,
             decorators: Vec::new(),
@@ -355,6 +359,9 @@ pub struct EnumType {
     pub namespace: Option<TypeId>,
     pub members: HashMap<String, TypeId>,
     pub member_names: Vec<String>,
+    /// Whether this enum was written as a declaration expression (`enum { ... }`).
+    /// TS: Enum.expression (microsoft/typespec#11019)
+    pub expression: bool,
     pub decorators: Vec<DecoratorApplication>,
     /// Documentation comment
     pub doc: Option<String>,
@@ -372,6 +379,7 @@ impl EnumType {
             namespace,
             members: HashMap::new(),
             member_names: Vec::new(),
+            expression: false,
             decorators: Vec::new(),
             doc: None,
             summary: None,
@@ -483,6 +491,9 @@ pub struct ScalarType {
     /// Template mapper for template instances. None for template declarations and non-templated types.
     /// TS: TemplatedType.templateMapper
     pub template_mapper: Option<Box<TypeMapper>>,
+    /// Whether this scalar was written as a declaration expression (`scalar ...`).
+    /// TS: Scalar.expression (microsoft/typespec#11019)
+    pub expression: bool,
     pub decorators: Vec<DecoratorApplication>,
     /// Documentation comment
     pub doc: Option<String>,
@@ -509,6 +520,7 @@ impl ScalarType {
             derived_scalars: Vec::new(),
             template_node: None,
             template_mapper: None,
+            expression: false,
             decorators: Vec::new(),
             doc: None,
             summary: None,
@@ -1703,6 +1715,7 @@ mod tests {
             properties: HashMap::new(),
             property_names: vec![],
             indexer: None,
+            expression: false,
             base_model: None,
             derived_models: vec![],
             source_model: None,
@@ -1758,6 +1771,7 @@ mod tests {
             properties: HashMap::new(),
             property_names: vec![],
             indexer: None,
+            expression: false,
             base_model: None,
             derived_models: vec![],
             source_model: None,
@@ -1790,6 +1804,7 @@ mod tests {
             properties: HashMap::new(),
             property_names: vec![],
             indexer: None,
+            expression: false,
             base_model: None,
             derived_models: vec![],
             source_model: None,

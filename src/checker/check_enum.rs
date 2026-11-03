@@ -21,7 +21,9 @@ impl Checker {
         let current_ns = self.current_namespace;
 
         // Use pre-registered type if available, otherwise create new
-        let type_id = if let Some(&existing_id) = self.node_type_map.get(&node_id) {
+        let type_id = if ctx.mapper.is_none()
+            && let Some(&existing_id) = self.node_type_map.get(&node_id)
+        {
             // Update namespace in case it was set incorrectly during pre-registration
             if let Some(t) = self.get_type_mut(existing_id)
                 && let Type::Enum(e) = t
@@ -44,6 +46,10 @@ impl Checker {
             }
             new_id
         };
+
+        if let Some(Type::Enum(e)) = self.get_type_mut(type_id) {
+            e.expression = node.expression;
+        }
 
         // Process directives (e.g., #deprecated) early so deprecated context works
         self.process_and_mark_directives(node_id, type_id);

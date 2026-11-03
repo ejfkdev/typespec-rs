@@ -484,14 +484,25 @@ impl Checker {
         for (dec_name, args) in decorator_apps {
             match dec_name.as_str() {
                 "doc" => {
-                    if let Some(arg) = args.first()
-                        && let Some(DecoratorMarshalledValue::String(doc_text)) = &arg.js_value
-                    {
+                    // A reference to a string literal (e.g. `@doc(T)` where a
+                    // template parameter maps to "alpha") is passed as a type;
+                    // accept it like a string argument.
+                    let doc_text = args.first().and_then(|arg| match &arg.js_value {
+                        Some(DecoratorMarshalledValue::String(s)) => Some(s.clone()),
+                        Some(DecoratorMarshalledValue::Type(id)) => {
+                            match self.get_type(self.resolve_alias_chain(*id)) {
+                                Some(Type::String(s)) => Some(s.value.clone()),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    });
+                    if let Some(doc_text) = doc_text {
                         self.set_type_doc(type_id, doc_text.clone());
                         crate::libs::compiler::apply_doc_with_source(
                             &mut self.state_accessors,
                             type_id,
-                            doc_text,
+                            &doc_text,
                             crate::intrinsic_type_state::DocSource::Decorator,
                         );
                     }

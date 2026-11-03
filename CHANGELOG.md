@@ -41,6 +41,14 @@ dependency refresh.
 - CI uses `actions/checkout@v7`.
 
 ### Fixed
+- Declaration expressions (microsoft/typespec#11019) now fully track their
+  `expression` flag on models, enums, and scalars, keep anonymous union
+  variants distinct, stay out of namespace member lists, render names like
+  upstream (`{ x: string }`, `{ a, b }`, `scalar extends string`, unqualified
+  named expressions), resolve through aliases and alias member access, accept
+  decorators in expression position, and are re-checked per template
+  instantiation. Template parameter usage is counted inside nested declaration
+  expressions, and `@doc(T)` accepts a template-mapped string literal.
 - `#suppress`/`#deprecated` directives followed by a newline no longer consume
   the next model property or operation parameter name as a directive argument
 - Namespace members are registered in declaration order, making `model_names`

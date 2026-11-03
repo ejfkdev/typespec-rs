@@ -83,7 +83,9 @@ impl Checker {
             }
         }
 
-        // Look up the property in the base type
+        // Look up the property in the base type. Aliases are Scalar wrappers
+        // in this port; resolve them so `alias E = enum { a }; E.a` works.
+        let base_type = self.resolve_alias_chain(base_type);
         #[allow(clippy::let_and_return)]
         let result_type = match self.get_type(base_type) {
             Some(Type::TemplateParameter(_)) | Some(Type::TemplateParameterAccess(_)) => {

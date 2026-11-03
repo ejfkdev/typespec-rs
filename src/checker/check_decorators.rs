@@ -1160,7 +1160,7 @@ impl Checker {
             Some(AstNode::NumericLiteral(n)) => Some(DecoratorMarshalledValue::Number(n.value)),
             Some(AstNode::BooleanLiteral(b)) => Some(DecoratorMarshalledValue::Boolean(b.value)),
             Some(AstNode::ObjectLiteral(obj)) => {
-                let mut record = HashMap::new();
+                let mut record = MarshalledRecord::new(RecordSource::ObjectValue);
                 for &prop_id in &obj.properties {
                     match ast.id_to_node(prop_id) {
                         Some(AstNode::ObjectLiteralProperty(prop)) => {
@@ -1178,7 +1178,7 @@ impl Checker {
             }
             Some(AstNode::ModelExpression(model_expr)) => {
                 // `{name: "X-Request-Id"}` in decorator args is a ModelExpression
-                let mut record = HashMap::new();
+                let mut record = MarshalledRecord::new(RecordSource::ModelExpression);
                 for &prop_id in &model_expr.properties {
                     if let Some(AstNode::ModelProperty(prop)) = ast.id_to_node(prop_id) {
                         let key = Self::get_identifier_name(&ast, prop.name);

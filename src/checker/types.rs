@@ -1462,12 +1462,96 @@ pub struct DecoratorArgument {
 pub enum DecoratorMarshalledValue {
     Type(TypeId),
     Value(TypeId),
-    Record(HashMap<String, TypeId>),
+    /// An object argument: an object value `#{...}` or a model expression
+    /// `{...}`, with its properties in source order.
+    Record(MarshalledRecord),
     Array(Vec<TypeId>),
     String(String),
     Number(f64),
     Boolean(bool),
     Null,
+}
+
+/// What an object decorator argument was written as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordSource {
+    /// An object value, `#{ a: 1 }`.
+    ObjectValue,
+    /// A model expression, `{ a: 1 }`.
+    ModelExpression,
+}
+
+/// The properties of an object decorator argument, in source order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MarshalledRecord {
+    /// Whether the argument was `#{...}` or `{...}`.
+    pub source: RecordSource,
+    /// Property names and value types, in source order.
+    pub properties: Vec<(String, TypeId)>,
+}
+
+impl MarshalledRecord {
+    /// An empty record written as `source`.
+    pub fn new(source: RecordSource) -> Self {
+        Self {
+            source,
+            properties: Vec::new(),
+        }
+    }
+
+    /// Set a property. A repeated key keeps its first position and takes the
+    /// new value.
+    pub fn insert(&mut self, key: String, value: TypeId) {
+        match self.properties.iter_mut().find(|(k, _)| *k == key) {
+            Some(entry) => entry.1 = value,
+            None => self.properties.push((key, value)),
+        }
+    }
+
+    /// The value type of a property.
+    pub fn get(&self, key: &str) -> Option<&TypeId> {
+        self.properties
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v)
+    }
+
+    /// Whether the record has a property.
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.get(key).is_some()
+    }
+
+    /// Property names, in source order.
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.properties.iter().map(|(k, _)| k)
+    }
+
+    /// Properties, in source order.
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &TypeId)> {
+        self.properties.iter().map(|(k, v)| (k, v))
+    }
+
+    /// The number of properties.
+    pub fn len(&self) -> usize {
+        self.properties.len()
+    }
+
+    /// Whether the record has no properties.
+    pub fn is_empty(&self) -> bool {
+        self.properties.is_empty()
+    }
+}
+
+impl<'a> IntoIterator for &'a MarshalledRecord {
+    type Item = (&'a String, &'a TypeId);
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'a, (String, TypeId)>,
+        fn(&'a (String, TypeId)) -> (&'a String, &'a TypeId),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.properties.iter().map(|(k, v)| (k, v))
+    }
 }
 
 /// DecoratorApplication - a decorator applied to a declaration

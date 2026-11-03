@@ -870,3 +870,31 @@ fn test_decorator_arg_object_members_named_prototype_keys() {
         ));
     }
 }
+
+#[test]
+fn test_object_arg_keeps_key_order_and_source() {
+    // #16: object arguments marshalled through a HashMap lost key order, and
+    // `#{}` and `{}` marshalled identically.
+    use crate::checker::types::RecordSource;
+    let checker = crate::checker::test_utils::check(
+        r#"
+        extern dec meta(target: unknown, value: unknown);
+        @meta(#{ b: 1, a: 2, c: 3 }) model V {}
+        @meta({ b: 1, a: 2, c: 3 }) model T {}
+        "#,
+    );
+    for (name, source) in [
+        ("V", RecordSource::ObjectValue),
+        ("T", RecordSource::ModelExpression),
+    ] {
+        let id = checker.lookup_type_by_fqn(name).expect("model");
+        let dec = checker.find_decorator(id, "meta").expect("@meta");
+        let Some(DecoratorMarshalledValue::Record(record)) = &dec.args[0].js_value else {
+            panic!("{name}: expected Record, got {:?}", dec.args[0].js_value);
+        };
+        assert_eq!(record.source, source, "{name}");
+        assert_eq!(record.keys().collect::<Vec<_>>(), ["b", "a", "c"], "{name}");
+        let a = record.get("a").copied().expect("a");
+        assert!(matches!(checker.get_type(a), Some(Type::Number(n)) if n.value == 2.0));
+    }
+}

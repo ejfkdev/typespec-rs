@@ -93,6 +93,9 @@ tspc -f openapi petstore.tsp
 # OpenAPI 3.1
 tspc -f openapi --openapi-version 3.1.0 petstore.tsp
 
+# JSON Schema (draft 2020-12) bundle
+tspc -f json-schema petstore.tsp
+
 # Write to file
 tspc -f openapi petstore.tsp -o petstore.openapi.json
 

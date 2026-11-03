@@ -8,7 +8,7 @@ use typespec_rs::checker::Checker;
 #[cfg(feature = "wasm-extensions")]
 use typespec_rs::checker::types::{DecoratorApplication, Type, TypeId};
 use typespec_rs::diagnostics::{CompilerOptions, DiagnosticSeverity};
-use typespec_rs::emit::{Emitter, JsonEmitter, OpenAPIEmitter, YamlEmitter};
+use typespec_rs::emit::{Emitter, JsonEmitter, JsonSchemaEmitter, OpenAPIEmitter, YamlEmitter};
 use typespec_rs::parser::{ParseOptions, parse_with_libraries};
 
 /// Compilation pipeline configuration
@@ -16,6 +16,8 @@ pub struct Pipeline {
     pub source: String,
     pub format: String,
     pub openapi_version: String,
+    /// JSON Schema: write numeric scalar widths as `format`.
+    pub width_format: bool,
     pub output: Option<PathBuf>,
     pub no_stdlib: bool,
     pub no_emit: bool,
@@ -161,8 +163,13 @@ impl Pipeline {
                 let result = emitter.emit_from_checker(checker)?;
                 Ok(result.output)
             }
+            "json-schema" => {
+                let emitter = JsonSchemaEmitter::new().width_format(self.width_format);
+                let result = emitter.emit_from_checker(checker)?;
+                Ok(result.output)
+            }
             _ => Err(format!(
-                "Unknown format '{}'. Supported: json, yaml, openapi",
+                "Unknown format '{}'. Supported: json, yaml, openapi, json-schema",
                 self.format
             )),
         }

@@ -16,7 +16,7 @@ name = "tspc"
 path = "src/main.rs"
 
 [dependencies]
-typespec_rs = { version = "0.5.7", path = "../.." }
+typespec_rs = { version = "0.5.7", path = "../..", features = ["json-schema"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

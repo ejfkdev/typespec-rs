@@ -1157,4 +1157,34 @@ mod namespace_tests {
         assert_eq!(ns.union_names, ["V", "U"]);
         assert_eq!(ns.scalar_names, ["S", "R"]);
     }
+
+    #[test]
+    fn test_blockless_dotted_namespace_name_is_last_segment() {
+        // #17: `namespace A.B;` reported "A.A.B".
+        let checker = check("namespace A.B;\nmodel M {}");
+        let ns_id = checker.lookup_type_by_fqn("A.B").expect("A.B");
+        let Some(Type::Namespace(ns)) = checker.get_type(ns_id) else {
+            panic!("A.B should be a namespace");
+        };
+        assert_eq!(ns.name, "B");
+        assert_eq!(
+            crate::checker::type_utils::get_namespace_string(&checker.type_store, Some(ns_id)),
+            "A.B"
+        );
+        let m = checker.lookup_type_by_fqn("A.B.M").expect("A.B.M");
+        assert_eq!(
+            crate::checker::type_utils::get_fully_qualified_name(&checker.type_store, m),
+            "A.B.M"
+        );
+    }
+
+    #[test]
+    fn test_blockless_three_segment_namespace_name() {
+        let checker = check("namespace A.B.C;\nmodel M {}");
+        let ns_id = checker.lookup_type_by_fqn("A.B.C").expect("A.B.C");
+        assert_eq!(
+            crate::checker::type_utils::get_namespace_string(&checker.type_store, Some(ns_id)),
+            "A.B.C"
+        );
+    }
 }

@@ -124,78 +124,62 @@ impl Checker {
         }
     }
 
-    /// Ensure parent namespaces exist for dotted names like A.B
-    /// For A.B, ensures namespace A exists and returns its TypeId.
-    /// For simple names like Foo, returns None (no parent needed).
+    /// Ensure the parent namespaces of a dotted name like `A.B.C` exist,
+    /// relative to the current namespace, and return the immediate parent
+    /// (`A.B`). A simple name has no parent to create and returns `None`.
     pub fn ensure_parent_namespaces(
         &mut self,
         ast: &AstBuilder,
         name_id: NodeId,
-        current_parent: Option<TypeId>,
     ) -> Option<TypeId> {
         match ast.id_to_node(name_id) {
-            Some(AstNode::Identifier(_)) => {
-                // Simple name - no parent namespace to create
-                None
-            }
-            Some(AstNode::MemberExpression(expr)) => {
-                // Dotted name like A.B - ensure A exists first
-                let base_id = self.ensure_parent_namespaces(ast, expr.object, current_parent);
-                let prop_name = Self::get_identifier_name(ast, expr.property);
-
-                // If the base is a MemberExpression, base_id is the immediate parent
-                // If the base is a simple Identifier, we need to find/create it
-                let parent_id = if let Some(id) = base_id {
-                    id
-                } else {
-                    // Base is a simple identifier - look it up or create it
-                    let base_name = Self::get_identifier_name(ast, expr.object);
-                    if let Some(existing_id) = self.get_declared_type_in_scope(&base_name) {
-                        existing_id
-                    } else {
-                        // Create the parent namespace
-                        let new_id =
-                            self.create_type(Type::Namespace(Box::new(NamespaceType::new(
-                                self.next_type_id(),
-                                base_name.clone(),
-                                None,
-                                current_parent,
-                                true,
-                            ))));
-                        self.register_declared_type(&base_name, new_id);
-
-                        // Register in global namespace
-                        if let Some(global_ns) = self.global_namespace_type
-                            && let Some(t) = self.get_type_mut(global_ns)
-                            && let Type::Namespace(ns) = t
-                        {
-                            if !ns.namespaces.contains_key(&base_name) {
-                                ns.namespace_names.push(base_name.clone());
-                            }
-                            ns.namespaces.entry(base_name).or_insert(new_id);
-                        }
-                        new_id
-                    }
-                };
-
-                // Register prop_name as sub-namespace of parent
-                if !prop_name.is_empty() {
-                    let err_type = self.error_type;
-                    if let Some(t) = self.get_type_mut(parent_id)
-                        && let Type::Namespace(ns) = t
-                    {
-                        // Don't overwrite if already exists
-                        if !ns.namespaces.contains_key(&prop_name) {
-                            ns.namespace_names.push(prop_name.clone());
-                        }
-                        ns.namespaces.entry(prop_name).or_insert(err_type);
-                    }
-                }
-
-                Some(parent_id)
-            }
+            Some(AstNode::MemberExpression(expr)) => self.ensure_namespace_path(ast, expr.object),
             _ => None,
         }
+    }
+
+    /// Find or create the namespace a (possibly dotted) name refers to,
+    /// relative to the current namespace. Each segment becomes its own
+    /// namespace, named by that segment and parented to the one before it.
+    fn ensure_namespace_path(&mut self, ast: &AstBuilder, name_id: NodeId) -> Option<TypeId> {
+        let (parent, segment) = match ast.id_to_node(name_id) {
+            Some(AstNode::Identifier(ident)) => (self.current_namespace, ident.value.clone()),
+            Some(AstNode::MemberExpression(expr)) => (
+                Some(self.ensure_namespace_path(ast, expr.object)?),
+                Self::get_identifier_name(ast, expr.property),
+            ),
+            _ => return None,
+        };
+        if segment.is_empty() {
+            return parent;
+        }
+
+        let prev_ns = self.current_namespace;
+        self.current_namespace = parent;
+        let existing = self
+            .get_declared_type_in_scope(&segment)
+            .filter(|&id| matches!(self.get_type(id), Some(Type::Namespace(_))));
+        let ns_id = existing.unwrap_or_else(|| {
+            let id = self.create_type(Type::Namespace(Box::new(NamespaceType::new(
+                self.next_type_id(),
+                segment.clone(),
+                None,
+                parent,
+                true,
+            ))));
+            self.register_declared_type(&segment, id);
+            id
+        });
+        self.current_namespace = prev_ns;
+
+        if let Some(parent_id) = parent.or(self.global_namespace_type)
+            && let Some(Type::Namespace(ns)) = self.get_type_mut(parent_id)
+            && !ns.namespaces.contains_key(&segment)
+        {
+            ns.namespace_names.push(segment.clone());
+            ns.namespaces.insert(segment, ns_id);
+        }
+        Some(ns_id)
     }
 }
 

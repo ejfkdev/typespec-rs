@@ -6,7 +6,7 @@
 //!
 //! The typekit versions create synthetic TypeSpec types for client
 //! constructors. The Rust port models constructors as plain data instead, so
-//! callers do not need a mutable [`Checker`](crate::checker::Checker).
+//! callers do not need a mutable [`Checker`].
 
 use std::collections::{HashMap, HashSet};
 

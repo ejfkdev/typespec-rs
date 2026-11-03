@@ -375,6 +375,7 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 - Compiler feature flags (`CompilerOptions.features`) with per-library scoping (e.g. `auto-decorators`, `function-declarations`, `union-extends`, `declaration-expressions`)
 - Blockless file namespaces (`namespace Foo;`) with correct declaration scoping and `using` resolution rules
 - `#suppress` directive tracking: unused-suppression and duplicate-suppression diagnostics
+- Suppression inspection APIs (#12095): `collect_suppressions` on a parsed file (target, location, structural scope) and `Checker::get_suppressions` with observed usage (`used`)
 - Diagnostic code short-name resolution (`@typespec/http/x` ↔ `http/x`, library aliases, ambiguity detection)
 - Compilation stage tracking (`parsing` → `checking` → `validating` → `linting` → `emitting`) with stage-gated per-type caching (`use_cache`, HTTP operation resolution cache)
 - Union `extends` base-type clause (`union-extends` feature) — variant assignability validation and circular-base detection, with no inheritance semantics

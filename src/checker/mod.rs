@@ -43,6 +43,9 @@ pub mod types;
 
 // Re-exports
 pub use decorator_utils::*;
+pub use suppression_tracking::{
+    ProgramSuppression, Suppression, SuppressionScope, collect_suppressions,
+};
 pub use type_relation::{
     Related, RelationEnv, TypeRelationChecker, TypeRelationError, TypeRelationErrorCode,
 };

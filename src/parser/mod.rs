@@ -199,7 +199,7 @@ pub struct Parser<'a> {
     /// True while parsing a declaration used in expression position
     /// (`model { ... }`, `enum { a }`, ...) — microsoft/typespec#11019.
     declaration_expression_mode: bool,
-    /// Holds ownership of the combined source Box<str> so it's not leaked.
+    /// Holds ownership of the combined source `Box<str>` so it's not leaked.
     /// The lexer borrows from this via a raw pointer — safe because Parser is
     /// consumed by parse() and the Box outlives the borrow.
     source_hold: Option<Box<str>>,
@@ -2139,12 +2139,17 @@ impl<'a> Parser<'a> {
                 );
             }
 
-            // Parse arguments until newline or EOF
+            // Parse arguments until newline or EOF. The lexer skips
+            // whitespace/newlines, so compare the current token's line with the
+            // directive's line instead of looking for a newline token: without
+            // this, `#suppress "x"\np: string;` consumes `p` as an argument.
+            let directive_line = self.lexer.position().line;
             let mut args = Vec::new();
             while self.current_token() != TokenKind::EndOfFile && !self.current_token().is_trivia()
             {
                 // Stop at newline or semicolon or statement keywords
-                if self.current_token().is_statement_keyword()
+                if self.lexer.position().line != directive_line
+                    || self.current_token().is_statement_keyword()
                     || self.check_token(TokenKind::Semicolon)
                     || self.check_token(TokenKind::CloseBrace)
                 {

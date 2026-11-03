@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Sync with upstream TypeSpec `a22c5330` (`@typespec/compiler` 1.17.0) and
+dependency refresh.
+
+### Added
+- Suppression inspection APIs (#12095): `collect_suppressions` returns each
+  `#suppress` directive with its target, source span, and structural scope
+  without compiling; `Checker::get_suppressions` returns project suppressions
+  with the observed `used` flag from the existing tracker
+- `null` now resolves as a type in unions, property types, and aliases
+- Literal values are checked against scalar constraints (`@minValue`,
+  `@maxValue`, exclusive bounds, `@minLength`, `@maxLength`), and object
+  literals reject properties the target model lacks (except through spreads
+  or an indexer)
+
+### Changed
+- Dependencies updated: regex 1.13.1, bitflags 2.13.2, anyhow 1.0.104,
+  clap 4.6.7, serde 1.0.229, serde_json 1.0.154, wasmtime 47.0.4.
+  wasmtime 48+ requires Rust 1.97, so the MSRV stays at 1.95.
+- CI uses `actions/checkout@v7`.
+
+### Fixed
+- `#suppress`/`#deprecated` directives followed by a newline no longer consume
+  the next model property or operation parameter name as a directive argument
+- Rustdoc warnings for `Box<str>` and a redundant link target
+
 ## [0.5.7] - 2026-10-31
 
 Sync with upstream TypeSpec through `fc7cf891`, port the shared

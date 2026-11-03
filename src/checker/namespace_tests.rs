@@ -1187,4 +1187,40 @@ mod namespace_tests {
             "A.B.C"
         );
     }
+
+    #[test]
+    fn test_namespace_member_for_template_is_declaration() {
+        // #18: a template referenced as `Page<Inner>` must not replace the
+        // declaration `Page<T>` in its namespace.
+        let checker =
+            check("model Inner {}\nmodel Page<T> { item: T }\nmodel Holder { p: Page<Inner> }");
+        let global = checker.global_namespace_type.expect("global");
+        let Some(Type::Namespace(ns)) = checker.get_type(global) else {
+            panic!("global namespace");
+        };
+        let Some(Type::Model(page)) = checker.get_type(ns.models["Page"]) else {
+            panic!("Page should be a model");
+        };
+        assert!(
+            page.template_mapper.is_none(),
+            "models[\"Page\"] should be the declaration, got {:?}",
+            page.template_mapper.as_ref().map(|m| m.args.clone())
+        );
+        assert_eq!(ns.model_names, ["Inner", "Page", "Holder"]);
+    }
+
+    #[test]
+    fn test_namespace_member_for_template_in_namespace() {
+        let checker = check(
+            "namespace N { model Inner {} model Holder { p: Page<Inner> } model Page<T> { item: T } }",
+        );
+        let ns_id = checker.lookup_type_by_fqn("N").expect("N");
+        let Some(Type::Namespace(ns)) = checker.get_type(ns_id) else {
+            panic!("N should be a namespace");
+        };
+        let Some(Type::Model(page)) = checker.get_type(ns.models["Page"]) else {
+            panic!("Page should be a model");
+        };
+        assert!(page.template_mapper.is_none());
+    }
 }

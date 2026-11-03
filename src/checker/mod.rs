@@ -1436,8 +1436,26 @@ impl Checker {
 
         self.check_depth -= 1;
 
-        // Record the type in node_type_map
-        self.node_type_map.insert(node_id, result);
+        // Record the type in node_type_map. Instantiating a template checks
+        // its declaration node again under a mapper; that instance must not
+        // replace the declaration recorded for the node (#18).
+        let is_instance_of_declaration = ctx.mapper.is_some()
+            && self.node_type_map.contains_key(&node_id)
+            && self.ast.as_ref().is_some_and(|ast| {
+                matches!(
+                    ast.id_to_node(node_id),
+                    Some(
+                        AstNode::ModelDeclaration(_)
+                            | AstNode::ScalarDeclaration(_)
+                            | AstNode::InterfaceDeclaration(_)
+                            | AstNode::UnionDeclaration(_)
+                            | AstNode::OperationDeclaration(_)
+                    )
+                )
+            });
+        if !is_instance_of_declaration {
+            self.node_type_map.insert(node_id, result);
+        }
         result
     }
 

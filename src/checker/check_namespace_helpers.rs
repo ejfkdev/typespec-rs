@@ -11,12 +11,15 @@ impl Checker {
 
     /// Walk all types in node_type_map and register those whose namespace matches
     /// the given namespace TypeId into the namespace's type collections.
+    ///
+    /// Members are registered in declaration order: entries keyed by a type's
+    /// own declaration node come first, sorted by node id, then any others.
     pub fn populate_namespace(&mut self, type_id: TypeId) {
         // Collect matching children first (need immutable borrow of type_store)
-        let children: Vec<(String, TypeId, &'static str)> = self
+        let mut children: Vec<(bool, NodeId, String, TypeId, &'static str)> = self
             .node_type_map
             .iter()
-            .filter_map(|(&_node_id, &child_type_id)| {
+            .filter_map(|(&node_id, &child_type_id)| {
                 let child_type = self.get_type(child_type_id)?;
                 if child_type.namespace() != Some(type_id) {
                     return None;
@@ -26,9 +29,14 @@ impl Checker {
                     return None;
                 }
                 let kind = child_type.kind_name();
-                Some((name, child_type_id, kind))
+                let is_declaration = declaration_node(child_type) == Some(node_id);
+                Some((!is_declaration, node_id, name, child_type_id, kind))
             })
             .collect();
+        children.sort_by_key(|&(later, node_id, ..)| (later, node_id));
+        let children = children
+            .into_iter()
+            .map(|(_, _, name, id, kind)| (name, id, kind));
 
         // Now insert into namespace (mutable borrow)
         for (child_name, child_type_id, kind) in children {
@@ -188,5 +196,21 @@ impl Checker {
             }
             _ => None,
         }
+    }
+}
+
+/// The node a namespace member was declared by.
+fn declaration_node(t: &Type) -> Option<NodeId> {
+    match t {
+        Type::Model(t) => t.node,
+        Type::Scalar(t) => t.node,
+        Type::Interface(t) => t.node,
+        Type::Operation(t) => t.node,
+        Type::Enum(t) => t.node,
+        Type::Union(t) => t.node,
+        Type::Namespace(t) => t.node,
+        Type::Decorator(t) => t.node,
+        Type::FunctionType(t) => t.node,
+        _ => None,
     }
 }

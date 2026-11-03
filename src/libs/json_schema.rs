@@ -278,27 +278,30 @@ pub fn get_extensions(state: &StateAccessors, target: TypeId) -> Vec<ExtensionRe
 pub const JSON_SCHEMA_DECORATORS_TSP: &str = r#"
 namespace TypeSpec.JsonSchema;
 
-using TypeSpec.Reflection;
+extern dec jsonSchema(target: unknown, baseUri?: valueof string);
+extern dec baseUri(target: Reflection.Namespace, baseUri: valueof string);
+extern dec id(target: unknown, id: valueof string);
+extern dec oneOf(target: Reflection.Union | Reflection.ModelProperty);
+extern dec multipleOf(target: numeric | Reflection.ModelProperty, value: valueof numeric);
+extern dec contains(target: unknown[] | Reflection.ModelProperty, value: unknown);
+extern dec minContains(target: unknown[] | Reflection.ModelProperty, value: valueof int32);
+extern dec maxContains(target: unknown[] | Reflection.ModelProperty, value: valueof int32);
+extern dec uniqueItems(target: unknown[] | Reflection.ModelProperty);
+extern dec minProperties(target: Record<unknown> | Reflection.ModelProperty, value: valueof int32);
+extern dec maxProperties(target: Record<unknown> | Reflection.ModelProperty, value: valueof int32);
+extern dec contentEncoding(target: string | Reflection.ModelProperty, value: valueof string);
+extern dec prefixItems(target: unknown[] | Reflection.ModelProperty, value: unknown[]);
+extern dec contentMediaType(target: string | Reflection.ModelProperty, value: valueof string);
+extern dec contentSchema(target: string | Reflection.ModelProperty, value: unknown);
+extern dec extension(target: unknown, key: valueof string, value: (valueof unknown) | unknown);
 
-extern dec jsonSchema(target: Model | Union | Enum | Scalar | Namespace, baseUriOrId?: valueof string);
-extern dec baseUri(target: Namespace, uri: valueof string);
-extern dec id(target: Model | Union | Enum | Scalar, id: valueof string);
-extern dec multipleOf(target: numeric | ModelProperty, value: valueof numeric);
-extern dec oneOf(target: Union | ModelProperty);
-extern dec contains(target: unknown[] | ModelProperty, value: unknown);
-extern dec minContains(target: unknown[] | ModelProperty, value: valueof integer);
-extern dec maxContains(target: unknown[] | ModelProperty, value: valueof integer);
-extern dec uniqueItems(target: unknown[] | ModelProperty);
-extern dec minProperties(target: Model | ModelProperty, value: valueof integer);
-extern dec maxProperties(target: Model | ModelProperty, value: valueof integer);
-extern dec contentEncoding(target: string | ModelProperty, value: valueof string);
-extern dec contentMediaType(target: string | ModelProperty, value: valueof string);
-extern dec contentSchema(target: string | ModelProperty, value: unknown);
-extern dec prefixItems(target: unknown[] | ModelProperty, value: Tuple);
-extern dec extension(target: unknown, key: valueof string, value: unknown);
+@Private.validatesRawJson(Data)
+model Json<Data> {
+  value: Data;
+}
 
-model Json<T> {
-  value: T;
+namespace Private {
+  extern dec validatesRawJson(target: Reflection.Model, value: unknown);
 }
 "#;
 

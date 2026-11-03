@@ -28,6 +28,9 @@ impl Checker {
                 if name.is_empty() {
                     return None;
                 }
+                if crate::checker::type_utils::is_template_instance(child_type) {
+                    return None;
+                }
                 let kind = child_type.kind_name();
                 let is_declaration = declaration_node(child_type) == Some(node_id);
                 Some((!is_declaration, node_id, name, child_type_id, kind))
@@ -59,8 +62,12 @@ impl Checker {
                     ),
                     _ => continue,
                 };
-                if map.insert(child_name.clone(), child_type_id).is_none() {
-                    names.push(child_name);
+                // Declarations sort first; an entry from another node (such
+                // as a reference to the template instance `Page<Inner>`)
+                // must not replace the declaration `Page<T>` (#18).
+                if let std::collections::hash_map::Entry::Vacant(e) = map.entry(child_name) {
+                    names.push(e.key().clone());
+                    e.insert(child_type_id);
                 }
             }
         }

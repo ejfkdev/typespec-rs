@@ -122,21 +122,26 @@ impl Checker {
                         None,
                     ),
                     AstNode::NamespaceDeclaration(decl) => {
-                        let name = Self::get_identifier_name(ast, decl.name);
+                        // `namespace A.B;` declares `B` inside `A`: create the
+                        // parents first, then register the last segment there.
+                        let name = Self::get_last_identifier_name(ast, decl.name);
                         if name.is_empty() {
                             continue;
                         }
                         let child_stmts = decl.statements.clone();
+                        let outer_ns = self.current_namespace;
+                        if let Some(parent) = self.ensure_parent_namespaces(ast, decl.name) {
+                            self.current_namespace = Some(parent);
+                        }
                         // Namespace merging: special handling (FQN-based lookup)
                         if let Some(existing_id) = self.get_declared_type_in_scope(&name) {
                             let existing_is_ns =
                                 matches!(self.get_type(existing_id), Some(Type::Namespace(_)));
                             if existing_is_ns {
                                 self.node_type_map.insert(stmt_id, existing_id);
-                                let prev_ns = self.current_namespace;
                                 self.current_namespace = Some(existing_id);
                                 self.pre_register_declarations(ast, &child_stmts);
-                                self.current_namespace = prev_ns;
+                                self.current_namespace = outer_ns;
                                 continue;
                             }
                             let fqn = self.build_fqn(&name);
@@ -145,6 +150,7 @@ impl Checker {
                                 "duplicate-symbol",
                                 &format!("Duplicate symbol: '{}'", fqn),
                             );
+                            self.current_namespace = outer_ns;
                             continue;
                         }
                         let type_id =
@@ -157,10 +163,9 @@ impl Checker {
                             ))));
                         self.node_type_map.insert(stmt_id, type_id);
                         self.register_declared_type(&name, type_id);
-                        let prev_ns = self.current_namespace;
                         self.current_namespace = Some(type_id);
                         self.pre_register_declarations(ast, &child_stmts);
-                        self.current_namespace = prev_ns;
+                        self.current_namespace = outer_ns;
                         continue;
                     }
                     _ => continue,

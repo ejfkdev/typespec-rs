@@ -321,11 +321,11 @@ impl Pipeline {
         match ns_type_id {
             None => expected_ns.is_empty(),
             Some(id) => {
-                if let Some(Type::Namespace(ns)) = checker.type_store.get(id) {
-                    ns.name == expected_ns
-                } else {
-                    false
-                }
+                matches!(checker.type_store.get(id), Some(Type::Namespace(_)))
+                    && typespec_rs::checker::type_utils::get_namespace_string(
+                        &checker.type_store,
+                        Some(id),
+                    ) == expected_ns
             }
         }
     }

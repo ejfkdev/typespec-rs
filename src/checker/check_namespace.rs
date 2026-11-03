@@ -30,7 +30,7 @@ impl Checker {
         } else {
             let new_id = self.create_type(Type::Namespace(Box::new(NamespaceType::new(
                 self.next_type_id(),
-                full_name.clone(),
+                Self::get_last_identifier_name(&ast, node.name),
                 Some(node_id),
                 current_ns,
                 false,
@@ -43,10 +43,9 @@ impl Checker {
         // For dotted namespace names like A.B, ensure parent namespaces exist
         // and register this namespace as a child of its immediate parent
         let immediate_name = Self::get_last_identifier_name(&ast, node.name);
-        let parent_ns_id = self.ensure_parent_namespaces(&ast, node.name, self.current_namespace);
+        let parent_ns_id = self.ensure_parent_namespaces(&ast, node.name);
         if let Some(parent_id) = parent_ns_id {
             // Register this namespace as a child of the parent namespace
-            // Always update (overwrite the placeholder from ensure_parent_namespaces)
             if let Some(t) = self.get_type_mut(parent_id)
                 && let Type::Namespace(ns) = t
             {

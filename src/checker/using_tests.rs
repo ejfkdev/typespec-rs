@@ -529,10 +529,13 @@ fn test_blockless_namespace_membership() {
         checker.diagnostics()
     );
     let y = checker.get_type_by_name("Y").expect("Y should exist");
-    let ns_name = checker
-        .get_type(y)
-        .and_then(|t| t.namespace())
+    let ns = checker.get_type(y).and_then(|t| t.namespace());
+    let ns_name = ns
         .and_then(|ns| checker.get_type(ns))
         .and_then(|t| t.name().map(|s| s.to_string()));
-    assert_eq!(ns_name.as_deref(), Some("MyOrg.Svc"));
+    assert_eq!(ns_name.as_deref(), Some("Svc"));
+    assert_eq!(
+        crate::checker::type_utils::get_namespace_string(&checker.type_store, ns),
+        "MyOrg.Svc"
+    );
 }

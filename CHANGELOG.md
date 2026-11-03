@@ -20,6 +20,10 @@ dependency refresh.
   `@maxValue`, exclusive bounds, `@minLength`, `@maxLength`), and object
   literals reject properties the target model lacks (except through spreads
   or an indexer)
+- Object decorator arguments (`#{...}` / `{...}`) are now marshalled as
+  `MarshalledRecord`, preserving source order and the argument's origin
+  (`RecordSource`). **Breaking:** `DecoratorMarshalledValue::Record` no longer
+  holds a `HashMap<String, TypeId>`.
 - JSON Schema emitter (`json-schema` feature): `emit::JsonSchemaEmitter`
   emits a draft 2020-12 bundle matching the official
   `@typespec/json-schema` output for models, enums, unions, records, tuples,
@@ -41,6 +45,15 @@ dependency refresh.
   the next model property or operation parameter name as a directive argument
 - Namespace members are registered in declaration order, making `model_names`
   and the other ordered lists (and OpenAPI output) deterministic
+- Blockless dotted namespaces are named by their last segment and nested
+  correctly (`namespace A.B;` declares `B` inside `A`; `A.B.C` no longer
+  parented to `A`), and the WASM-extension decorator matcher compares
+  qualified namespace names
+- A template instance such as `Page<Inner>` no longer replaces the declaration
+  `Page<T>` in its namespace members or the declaration node's type entry
+- JSON, YAML, and OpenAPI emitters escape names and string values (including
+  quoting YAML values that would be misread and JSON enum values), and `$ref`
+  targets escape `'`, `~`, and `/`
 - The bundled `TypeSpec.JsonSchema` library loads: decorator signatures now
   match the official 1.x `lib/main.tsp` (`prefixItems` and friends)
 - Rustdoc warnings for `Box<str>` and a redundant link target

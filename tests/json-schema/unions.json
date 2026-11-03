@@ -1,0 +1,136 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "unions.json",
+    "$defs": {
+        "Choices": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Choices.json",
+            "type": "object",
+            "properties": {
+                "color": {
+                    "$ref": "Color.json"
+                },
+                "level": {
+                    "$ref": "Level.json"
+                },
+                "red": {
+                    "type": "string",
+                    "const": "Red"
+                },
+                "shape": {
+                    "$ref": "Shape.json"
+                },
+                "kind": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "const": "a"
+                        },
+                        {
+                            "type": "string",
+                            "const": "b"
+                        }
+                    ]
+                },
+                "count": {
+                    "type": "number",
+                    "const": 3
+                },
+                "flag": {
+                    "type": "boolean",
+                    "const": true
+                },
+                "either": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "integer",
+                            "minimum": -2147483648,
+                            "maximum": 2147483647
+                        }
+                    ]
+                },
+                "maybe": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "pair": {
+                    "type": "array",
+                    "prefixItems": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "integer",
+                            "minimum": -2147483648,
+                            "maximum": 2147483647
+                        }
+                    ],
+                    "minItems": 2,
+                    "maxItems": 2
+                }
+            },
+            "required": [
+                "color",
+                "level",
+                "red",
+                "shape",
+                "kind",
+                "count",
+                "flag",
+                "either",
+                "maybe",
+                "pair"
+            ]
+        },
+        "Color": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Color.json",
+            "type": "string",
+            "enum": [
+                "Red",
+                "Green"
+            ]
+        },
+        "Level": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Level.json",
+            "type": "number",
+            "enum": [
+                1,
+                10
+            ]
+        },
+        "Shape": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Shape.json",
+            "anyOf": [
+                {
+                    "type": "string"
+                },
+                {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                }
+            ]
+        },
+        "Named": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Named.json",
+            "type": "string",
+            "enum": [
+                "first",
+                "second"
+            ]
+        }
+    }
+}

@@ -26,6 +26,8 @@
 pub mod asset_emitter;
 pub mod emitter;
 pub mod json_emitter;
+#[cfg(feature = "json-schema")]
+pub mod json_schema_emitter;
 pub mod openapi_emitter;
 pub mod yaml_emitter;
 
@@ -36,6 +38,8 @@ pub use asset_emitter::{
 };
 pub use emitter::Emitter;
 pub use json_emitter::JsonEmitter;
+#[cfg(feature = "json-schema")]
+pub use json_schema_emitter::JsonSchemaEmitter;
 pub use openapi_emitter::OpenAPIEmitter;
 pub use yaml_emitter::YamlEmitter;
 

@@ -1,0 +1,47 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "extensions.json",
+    "$defs": {
+        "Tagged": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Tagged.json",
+            "type": "object",
+            "properties": {
+                "noted": {
+                    "type": "string",
+                    "x-note": "hi"
+                },
+                "flagged": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647,
+                    "x-flag": true
+                },
+                "listed": {
+                    "type": "string",
+                    "x-list": [
+                        "a",
+                        "b"
+                    ]
+                }
+            },
+            "required": [
+                "noted",
+                "flagged",
+                "listed"
+            ],
+            "x-order": 2,
+            "x-model": "m"
+        },
+        "Mode": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Mode.json",
+            "type": "string",
+            "enum": [
+                "On",
+                "Off"
+            ],
+            "x-enum": "e"
+        }
+    }
+}

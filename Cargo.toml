@@ -52,6 +52,12 @@ exclude = [".github/", ".claude/"]
 [dependencies]
 regex = "1"
 bitflags = "2"
+serde_json = { version = "1", optional = true, features = ["preserve_order"] }
+
+[features]
+default = []
+# JSON Schema emitter (`emit::JsonSchemaEmitter`), which builds `serde_json::Value`.
+json-schema = ["dep:serde_json"]
 
 [profile.release]
 opt-level = "z"

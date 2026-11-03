@@ -27,6 +27,7 @@ This project is in **early development**. The core compiler pipeline works:
 | YAML Emitter | Working |
 | JSON Emitter | Working |
 | OpenAPI 3 Emitter | Working |
+| JSON Schema Emitter | Subset (`json-schema` feature) |
 | Protobuf Library | Working |
 | CLI (`tspc`) | Working |
 | WASM Extensions | Working |
@@ -338,7 +339,7 @@ Source Code → Scanner → Parser → AST → Checker → Typed AST → Emitter
 - **Scanner** (`scanner/`) — Tokenizes TypeSpec source into `TokenKind` stream
 - **Parser** (`parser/`) — Builds an AST from the token stream
 - **Checker** (`checker/`) — Type checking, symbol resolution, decorator validation
-- **Emitter** (`emit/`) — Converts checked types to YAML, JSON, or OpenAPI
+- **Emitter** (`emit/`) — Converts checked types to YAML, JSON, OpenAPI, or JSON Schema
 - **CLI** (`crates/tspc/`) — Command-line interface with WASM extension support
 - **Libs** (`libs/`) — Built-in library sources (HTTP, OpenAPI, etc.)
 
@@ -419,6 +420,7 @@ cargo run --example quick_start
 |-------|---------|
 | [`regex`](https://crates.io/crates/regex) | Pattern matching in scanner |
 | [`bitflags`](https://crates.io/crates/bitflags) | Bitflag types for visibility, symbol flags |
+| [`serde_json`](https://crates.io/crates/serde_json) | JSON Schema emitter output (optional, `json-schema` feature) |
 
 ## Contributing
 

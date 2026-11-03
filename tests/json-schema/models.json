@@ -1,0 +1,120 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "models.json",
+    "$defs": {
+        "Address": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Address.json",
+            "type": "object",
+            "properties": {
+                "street": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "street"
+            ]
+        },
+        "Person": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Person.json",
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "home": {
+                    "$ref": "Address.json"
+                },
+                "previous": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "Address.json"
+                    }
+                },
+                "parent": {
+                    "anyOf": [
+                        {
+                            "$ref": "Person.json"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "inline": {
+                    "type": "object",
+                    "properties": {
+                        "x": {
+                            "type": "integer",
+                            "minimum": -2147483648,
+                            "maximum": 2147483647
+                        },
+                        "y": {
+                            "type": "integer",
+                            "minimum": -2147483648,
+                            "maximum": 2147483647
+                        }
+                    },
+                    "required": [
+                        "x"
+                    ]
+                }
+            },
+            "required": [
+                "name",
+                "home",
+                "previous",
+                "parent",
+                "tags",
+                "inline"
+            ]
+        },
+        "Employee": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Employee.json",
+            "type": "object",
+            "properties": {
+                "badge": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                }
+            },
+            "required": [
+                "badge"
+            ],
+            "allOf": [
+                {
+                    "$ref": "Person.json"
+                }
+            ]
+        },
+        "Tags": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Tags.json",
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "Empty": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "Empty.json",
+            "type": "object",
+            "properties": {}
+        }
+    }
+}

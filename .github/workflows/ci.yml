@@ -20,6 +20,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --features json-schema -- -D warnings
 
   test:
     strategy:
@@ -32,6 +33,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --lib
+      - run: cargo test --lib --features json-schema
       - run: cargo test -p tspc
       - run: cargo test --examples
 

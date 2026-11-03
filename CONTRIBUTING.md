@@ -67,7 +67,7 @@ cargo doc --open
 - [ ] `cargo fmt --all -- --check` clean
 - [ ] Version bumped in both `Cargo.toml` files
 - [ ] `CHANGELOG.md` updated
-- [ ] MSRV still supported (`cargo check --lib` with rust 1.95.0)
+- [ ] MSRV still supported (`cargo check --lib` with rust 1.97.0)
 
 ## License
 

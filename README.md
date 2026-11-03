@@ -35,7 +35,7 @@ This project is in **early development**. The core compiler pipeline works:
 
 3,300+ tests passing (synced with `@typespec/compiler` 1.17.0, upstream `microsoft/typespec@a22c5330`).
 
-**MSRV:** Rust 1.95. **Upstream sync:** `@typespec/compiler` 1.17.0.
+**MSRV:** Rust 1.97. **Upstream sync:** `@typespec/compiler` 1.17.0.
 
 ## Quick Start
 

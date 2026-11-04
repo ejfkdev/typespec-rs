@@ -2093,9 +2093,6 @@ pub fn validate_http_services(
             if operation.overloading.is_some() {
                 continue;
             }
-            if super::is_shared_route(state, operation.operation) {
-                continue;
-            }
             grouped
                 .entry((operation.path.clone(), operation.verb))
                 .or_default()
@@ -2105,33 +2102,60 @@ pub fn validate_http_services(
 
     let mut diagnostics = Vec::new();
     for ((path, verb), operations) in grouped {
-        if operations.len() < 2 {
-            continue;
+        let shared: Vec<&HttpOperation> = operations
+            .iter()
+            .filter(|operation| super::is_shared_route(state, operation.operation))
+            .collect();
+        let non_shared: Vec<&HttpOperation> = operations
+            .iter()
+            .filter(|operation| !super::is_shared_route(state, operation.operation))
+            .collect();
+
+        if !shared.is_empty() && !non_shared.is_empty() {
+            for operation in &operations {
+                diagnostics.push(HttpValidationDiagnostic {
+                    code: super::types::DIAG_SHARED_INCONSISTENCY,
+                    message: format!(
+                        "Each operation routed at \"{} {}\" needs to have the @sharedRoute decorator.",
+                        verb.as_str(),
+                        path
+                    ),
+                    target: checker
+                        .get_type(operation.operation)
+                        .and_then(|t| t.node_id_from_type())
+                        .unwrap_or(0),
+                    severity: ValidationSeverity::Error,
+                });
+            }
         }
-        for operation in operations {
-            let name = checker
-                .get_type(operation.operation)
-                .and_then(|t| t.name().map(|s| s.to_string()))
-                .unwrap_or_default();
-            diagnostics.push(HttpValidationDiagnostic {
-                code: super::types::DIAG_DUPLICATE_OPERATION,
-                message: format!(
-                    "Duplicate operation \"{name}\" routed at \"{} {}\".",
-                    verb.as_str(),
-                    path
-                ),
-                target: checker
+
+        if non_shared.len() >= 2 {
+            for operation in non_shared {
+                let name = checker
                     .get_type(operation.operation)
-                    .and_then(|t| t.node_id_from_type())
-                    .unwrap_or(0),
-                severity: ValidationSeverity::Error,
-            });
+                    .and_then(|t| t.name().map(|s| s.to_string()))
+                    .unwrap_or_default();
+                diagnostics.push(HttpValidationDiagnostic {
+                    code: super::types::DIAG_DUPLICATE_OPERATION,
+                    message: format!(
+                        "Duplicate operation \"{name}\" routed at \"{} {}\".",
+                        verb.as_str(),
+                        path
+                    ),
+                    target: checker
+                        .get_type(operation.operation)
+                        .and_then(|t| t.node_id_from_type())
+                        .unwrap_or(0),
+                    severity: ValidationSeverity::Error,
+                });
+            }
         }
     }
+
     diagnostics
 }
 
-/// Validate the response payload of an HTTP operation.
+/// Validate the response payload of an HTTP operation./// Validate the response payload of an HTTP operation.
 pub fn validate_http_response_operation(
     checker: &Checker,
     state: &StateAccessors,
@@ -4146,6 +4170,70 @@ mod tests {
         assert!(
             diagnostics_with_code(&checker, code).is_empty(),
             "unexpected duplicate-route-decorator: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    // ---- Shared route consistency (ported from http-decorators.test.ts) ----
+
+    #[test]
+    fn test_shared_route_consistency_mixed() {
+        let checker = compile_http(
+            r#"
+            @service namespace TestService;
+            @route("/test") @sharedRoute op test(): string;
+            @route("/test") @sharedRoute op test2(): string;
+            @route("/test") op test3(): string;
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_SHARED_INCONSISTENCY;
+        let diags = diagnostics_with_code(&checker, code);
+        assert_eq!(diags.len(), 3, "diagnostics: {:?}", checker.diagnostics());
+        for diag in diags {
+            assert_eq!(
+                diag.message,
+                "Each operation routed at \"get /test\" needs to have the @sharedRoute decorator."
+            );
+        }
+        let duplicate_code = crate::libs::http::types::DIAG_DUPLICATE_OPERATION;
+        assert!(
+            diagnostics_with_code(&checker, duplicate_code).is_empty(),
+            "unexpected duplicate-operation: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_shared_route_consistency_all_shared() {
+        let checker = compile_http(
+            r#"
+            @service namespace TestService;
+            @route("/test") @sharedRoute op test(): string;
+            @route("/test") @sharedRoute op test2(): string;
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_SHARED_INCONSISTENCY;
+        assert!(
+            diagnostics_with_code(&checker, code).is_empty(),
+            "unexpected shared-inconsistency: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_shared_route_consistency_different_verb() {
+        let checker = compile_http(
+            r#"
+            @service namespace TestService;
+            @route("/test") @sharedRoute op test(): string;
+            @route("/test") @sharedRoute op test2(): string;
+            @route("/test") @post op test3(): string;
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_SHARED_INCONSISTENCY;
+        assert!(
+            diagnostics_with_code(&checker, code).is_empty(),
+            "unexpected shared-inconsistency: {:?}",
             checker.diagnostics()
         );
     }

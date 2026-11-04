@@ -39,9 +39,10 @@ dependency refresh.
   `response-cookie-not-supported`, `multiple-status-codes`,
   `status-code-invalid`, `missing-uri-param`, `incompatible-uri-param`,
   `double-slash`, `use-uri-template`, `missing-server-param`,
-  `duplicate-operation`, `duplicate-route-decorator`, and
-  `http-verb-duplicate`, including nested-body handling, response payloads,
-  operation grouping by service, and `Content-Type` header name casing
+  `duplicate-operation`, `duplicate-route-decorator`, `http-verb-duplicate`,
+  and `shared-inconsistency`, including nested-body handling, response
+  payloads, operation grouping by service, and `Content-Type` header name
+  casing
 
 ### Changed
 - Dependencies updated: regex 1.13.1, bitflags 2.13.2, anyhow 1.0.104,

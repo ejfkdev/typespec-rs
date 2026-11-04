@@ -23,9 +23,9 @@ use super::types::{
     DIAG_CONTENT_TYPE_IGNORED, DIAG_CONTENT_TYPE_STRING, DIAG_DOUBLE_SLASH, DIAG_DUPLICATE_BODY,
     DIAG_FORMDATA_NO_PART_NAME, DIAG_HTTP_FILE_CONTENT_TYPE_NOT_STRING,
     DIAG_HTTP_FILE_CONTENTS_NOT_SCALAR, DIAG_HTTP_FILE_DISALLOWED_METADATA,
-    DIAG_HTTP_FILE_EXTRA_PROPERTY, DIAG_INCOMPATIBLE_URI_PARAM, DIAG_METADATA_IGNORED,
-    DIAG_MISSING_URI_PARAM, DIAG_MULTIPART_INVALID_CONTENT_TYPE, DIAG_MULTIPART_MODEL,
-    DIAG_MULTIPART_NESTED, DIAG_MULTIPART_PART, DIAG_MULTIPLE_STATUS_CODES,
+    DIAG_HTTP_FILE_EXTRA_PROPERTY, DIAG_HTTP_FILE_STRUCTURED, DIAG_INCOMPATIBLE_URI_PARAM,
+    DIAG_METADATA_IGNORED, DIAG_MISSING_URI_PARAM, DIAG_MULTIPART_INVALID_CONTENT_TYPE,
+    DIAG_MULTIPART_MODEL, DIAG_MULTIPART_NESTED, DIAG_MULTIPART_PART, DIAG_MULTIPLE_STATUS_CODES,
     DIAG_NO_IMPLICIT_MULTIPART, DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
     DIAG_RESPONSE_COOKIE_NOT_SUPPORTED, DIAG_STATUS_CODE_INVALID, DIAG_USE_URI_TEMPLATE, HttpVerb,
 };
@@ -1003,7 +1003,11 @@ fn process_envelope_response(
 
     // Determine body
     let body = payload.body_type.map(|bt| {
-        resolve_file_body(checker, state, bt, None)
+        payload
+            .content_type_props
+            .is_empty()
+            .then(|| resolve_file_body(checker, state, bt, None))
+            .flatten()
             .map(HttpPayloadBody::File)
             .unwrap_or_else(|| {
                 HttpPayloadBody::Single(HttpOperationBody {
@@ -1321,7 +1325,11 @@ fn build_http_operation_parameters(
         })
     } else {
         payload.body_type.map(|bt| {
-            resolve_file_body(checker, state, bt, None)
+            payload
+                .content_type_props
+                .is_empty()
+                .then(|| resolve_file_body(checker, state, bt, None))
+                .flatten()
                 .map(HttpPayloadBody::File)
                 .unwrap_or_else(|| {
                     HttpPayloadBody::Single(HttpOperationBody {
@@ -1969,6 +1977,38 @@ fn validate_payload(
         }
     }
 
+    if let Some(body_type) = payload.body_type {
+        if is_file_model(checker, state, body_type) && !payload.content_type_props.is_empty() {
+            let content_types: Vec<String> = payload
+                .content_type_props
+                .iter()
+                .filter_map(|&prop_id| match checker.get_type(prop_id) {
+                    Some(Type::ModelProperty(prop)) => {
+                        Some(content_type_values(checker, prop.r#type))
+                    }
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_HTTP_FILE_STRUCTURED,
+                message: format!(
+                    "HTTP File body is serialized as a structured model in '{}' instead of being treated as the contents of a file because an explicit Content-Type header is defined. Override the `contentType` property of the file model to declare the internal media type of the file's contents, or suppress this warning if you intend to serialize the File as a model.",
+                    content_types.join(", ")
+                ),
+                target: op_node,
+                severity: ValidationSeverity::Warning,
+            });
+        } else if union_contains_file(checker, state, body_type) {
+            diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_HTTP_FILE_STRUCTURED,
+                message: "An HTTP File in a union is serialized as a structured model instead of being treated as the contents of a file. Declare a separate operation using `@sharedRoute` that has only the File model as the body type to treat it as a file, or suppress this warning if you intend to serialize the File as a model.".to_string(),
+                target: op_node,
+                severity: ValidationSeverity::Warning,
+            });
+        }
+    }
+
     diagnostics
 }
 
@@ -1990,6 +2030,23 @@ fn is_file_model(checker: &Checker, state: &StateAccessors, type_id: TypeId) -> 
         }
     }
     false
+}
+
+/// Whether a union contains a file model (recursively).
+fn union_contains_file(checker: &Checker, state: &StateAccessors, type_id: TypeId) -> bool {
+    let resolved = checker.resolve_alias_chain(type_id);
+    match checker.get_type(resolved) {
+        Some(Type::Union(union)) => union.variant_names.iter().any(|name| {
+            union.variants.get(name).is_some_and(|&variant_id| {
+                matches!(checker.get_type(variant_id), Some(Type::UnionVariant(v)) if {
+                    let inner = checker.resolve_alias_chain(v.r#type);
+                    is_file_model(checker, state, inner)
+                        || union_contains_file(checker, state, inner)
+                })
+            })
+        }),
+        _ => false,
+    }
 }
 
 fn find_model_property(checker: &Checker, model_id: TypeId, name: &str) -> Option<TypeId> {
@@ -5472,5 +5529,74 @@ mod tests {
             Some(HttpPayloadBody::File(file)) => assert!(!file.is_text),
             other => panic!("expected response file body, got {other:?}"),
         }
+    }
+
+    // ---- File structured serialization (ported from file.test.ts) ----
+
+    #[test]
+    fn test_file_structured_with_explicit_content_type() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op example(
+              @header("content-type") contentType: "application/json",
+              @body file: File,
+            ): {
+              @header("content-type") contentType: "application/json",
+              @body file: File,
+            };
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_HTTP_FILE_STRUCTURED);
+        assert_eq!(diags.len(), 2, "diagnostics: {:?}", checker.diagnostics());
+        assert!(
+            diags[0]
+                .message
+                .contains("structured model in 'application/json'")
+        );
+
+        let op_id = find_operation(&checker, "example").unwrap();
+        let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
+        match &op.parameters.body {
+            Some(HttpPayloadBody::Single(body)) => {
+                assert_eq!(body.content_types, vec!["application/json".to_string()]);
+            }
+            other => panic!("expected structured single body, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_file_in_union_is_structured() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op example(@body file: File | string): void;
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_HTTP_FILE_STRUCTURED);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert!(
+            diags[0]
+                .message
+                .starts_with("An HTTP File in a union is serialized as a structured model")
+        );
+    }
+
+    #[test]
+    fn test_file_body_without_content_type_is_file() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op example(@body file: File): void;
+            "#,
+        );
+        assert!(
+            diagnostics_with_code(&checker, DIAG_HTTP_FILE_STRUCTURED).is_empty(),
+            "unexpected http-file-structured: {:?}",
+            checker.diagnostics()
+        );
+        let op_id = find_operation(&checker, "example").unwrap();
+        let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
+        assert!(matches!(op.parameters.body, Some(HttpPayloadBody::File(_))));
     }
 }

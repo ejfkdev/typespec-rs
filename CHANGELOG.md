@@ -52,7 +52,9 @@ dependency refresh.
 - `Http.File` models resolve to file bodies (content types, filename,
   contents, `isText`) in requests and responses, and derived file models are
   validated for extra properties, disallowed HTTP metadata, non-string
-  content types, and non-scalar contents
+  content types, and non-scalar contents. Explicit Content-Type headers and
+  files in unions fall back to structured model bodies and report
+  `http-file-structured`
 
 ### Changed
 - Dependencies updated: regex 1.13.1, bitflags 2.13.2, anyhow 1.0.104,

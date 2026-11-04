@@ -20,9 +20,10 @@ use super::auth::Authentication;
 use super::operation::*;
 use super::responses::ResponseIndex;
 use super::types::{
-    DIAG_CONTENT_TYPE_IGNORED, DIAG_CONTENT_TYPE_STRING, DIAG_DUPLICATE_BODY,
-    DIAG_METADATA_IGNORED, DIAG_NO_IMPLICIT_MULTIPART, DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
-    DIAG_RESPONSE_COOKIE_NOT_SUPPORTED, HttpVerb,
+    DIAG_CONTENT_TYPE_IGNORED, DIAG_CONTENT_TYPE_STRING, DIAG_DOUBLE_SLASH, DIAG_DUPLICATE_BODY,
+    DIAG_INCOMPATIBLE_URI_PARAM, DIAG_METADATA_IGNORED, DIAG_MISSING_URI_PARAM,
+    DIAG_MULTIPLE_STATUS_CODES, DIAG_NO_IMPLICIT_MULTIPART, DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
+    DIAG_RESPONSE_COOKIE_NOT_SUPPORTED, DIAG_STATUS_CODE_INVALID, HttpVerb,
 };
 use super::visibility::{Visibility, get_default_visibility_for_verb};
 // Import from parent mod.rs
@@ -1420,6 +1421,7 @@ struct ParamScan {
     duplicate_types: Vec<(String, Vec<&'static str>)>,
     metadata_in_body: Vec<(TypeId, &'static str)>,
     response_cookies: Vec<TypeId>,
+    status_codes: Vec<TypeId>,
 }
 
 fn annotation_kinds(state: &StateAccessors, prop_id: TypeId) -> Vec<&'static str> {
@@ -1535,6 +1537,11 @@ fn scan_parameters(
         }
 
         if is_content_type_property(state, prop_id) {
+            continue;
+        }
+
+        if disposition == HttpPayloadDisposition::Response && is_status_code(state, prop_id) {
+            scan.status_codes.push(prop_id);
             continue;
         }
 
@@ -1680,6 +1687,30 @@ fn collect_content_type_diagnostics(
     content_types
 }
 
+fn is_valid_status_code_type(checker: &Checker, type_id: TypeId) -> bool {
+    let resolved = checker.resolve_alias_chain(type_id);
+    match checker.get_type(resolved) {
+        Some(Type::Number(n)) => {
+            n.value.fract() == 0.0 && (100.0..=599.0).contains(&n.value)
+        }
+        Some(Type::String(s)) => s
+            .value
+            .parse::<i64>()
+            .map(|value| (100..=599).contains(&value))
+            .unwrap_or(false),
+        Some(Type::Union(u)) => u.variant_names.iter().all(|name| {
+            u.variants.get(name).is_some_and(|&variant_id| {
+                matches!(checker.get_type(variant_id), Some(Type::UnionVariant(v)) if is_valid_status_code_type(checker, v.r#type))
+            })
+        }),
+        Some(Type::Scalar(_)) | Some(Type::ModelProperty(_)) => {
+            let (start, end) = super::operation::get_status_codes_range(checker, resolved);
+            matches!((start, end), (Some(start), Some(end)) if (100.0..=599.0).contains(&start) && (100.0..=599.0).contains(&end))
+        }
+        _ => false,
+    }
+}
+
 fn validate_payload(
     checker: &Checker,
     state: &StateAccessors,
@@ -1755,6 +1786,44 @@ fn validate_payload(
         });
     }
 
+    if scan.status_codes.len() > 1 {
+        diagnostics.push(HttpValidationDiagnostic {
+            code: DIAG_MULTIPLE_STATUS_CODES,
+            message: "Multiple `@statusCode` decorators defined for this operation response."
+                .to_string(),
+            target: node_of(scan.status_codes[0]),
+            severity: ValidationSeverity::Error,
+        });
+    }
+    for &prop_id in &scan.status_codes {
+        let valid = match checker.get_type(prop_id) {
+            Some(Type::ModelProperty(p)) => {
+                let resolved = checker.resolve_alias_chain(p.r#type);
+                if matches!(checker.get_type(resolved), Some(Type::Scalar(_))) {
+                    let (start, end) = super::operation::get_status_codes_range(checker, prop_id);
+                    matches!(
+                        (start, end),
+                        (Some(start), Some(end))
+                            if (100.0..=599.0).contains(&start)
+                                && (100.0..=599.0).contains(&end)
+                    )
+                } else {
+                    is_valid_status_code_type(checker, p.r#type)
+                }
+            }
+            _ => continue,
+        };
+        if !valid {
+            diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_STATUS_CODE_INVALID,
+                message: "statusCode value must be a three digit code between 100 and 599"
+                    .to_string(),
+                target: node_of(prop_id),
+                severity: ValidationSeverity::Error,
+            });
+        }
+    }
+
     for &(prop_id, kind) in &scan.metadata_in_body {
         diagnostics.push(HttpValidationDiagnostic {
             code: DIAG_METADATA_IGNORED,
@@ -1804,6 +1873,191 @@ fn validate_payload(
     diagnostics
 }
 
+#[derive(Debug, Clone)]
+struct UriTemplateParamInfo {
+    name: String,
+    query: bool,
+    operator: char,
+    preceded_by_slash: bool,
+}
+
+/// Parse `{...}` expressions from a URI template into parameter references.
+fn parse_uri_template_params(template: &str) -> Vec<UriTemplateParamInfo> {
+    let mut params = Vec::new();
+    let mut in_brace = false;
+    let mut current = String::new();
+    let mut last_literal = None;
+    let mut preceded_by_slash = false;
+    for c in template.chars() {
+        match c {
+            '{' => {
+                in_brace = true;
+                preceded_by_slash = last_literal == Some('/');
+                current.clear();
+            }
+            '}' => {
+                if in_brace && let Some(first) = current.chars().next() {
+                    let (operator, rest) =
+                        if matches!(first, '+' | '#' | '.' | '/' | ';' | '?' | '&') {
+                            (first, &current[first.len_utf8()..])
+                        } else {
+                            (' ', current.as_str())
+                        };
+                    for variable in rest.split(',') {
+                        let mut name = variable;
+                        if let Some((head, _)) = name.split_once('*') {
+                            name = head;
+                        }
+                        if let Some((head, _)) = name.split_once(':') {
+                            name = head;
+                        }
+                        if !name.is_empty() {
+                            params.push(UriTemplateParamInfo {
+                                name: name.to_string(),
+                                query: operator == '?' || operator == '&',
+                                operator,
+                                preceded_by_slash,
+                            });
+                        }
+                    }
+                }
+                in_brace = false;
+                current.clear();
+            }
+            _ if in_brace => current.push(c),
+            _ => last_literal = Some(c),
+        }
+    }
+    params
+}
+
+fn validate_route_and_parameters(
+    checker: &Checker,
+    state: &StateAccessors,
+    operation_id: TypeId,
+    op_node: crate::ast::NodeId,
+) -> Vec<HttpValidationDiagnostic> {
+    let resolved = resolve_path_and_parameters(checker, state, operation_id);
+    let payload = resolve_http_payload(
+        checker,
+        state,
+        match checker.get_type(operation_id) {
+            Some(Type::Operation(op)) => match op.parameters {
+                Some(id) => id,
+                None => return Vec::new(),
+            },
+            _ => return Vec::new(),
+        },
+        Visibility::Create,
+        HttpPayloadDisposition::Request,
+    );
+
+    #[derive(Clone, Copy)]
+    enum ParamKind {
+        Path,
+        Query,
+        Implicit,
+    }
+
+    let mut by_name: std::collections::HashMap<String, (ParamKind, TypeId)> =
+        std::collections::HashMap::new();
+    for param in &payload.paths {
+        if let HttpOperationParameter::Path(p) = param {
+            by_name.insert(p.options.name.clone(), (ParamKind::Path, p.param));
+        }
+    }
+    for param in &payload.queries {
+        if let HttpOperationParameter::Query(p) = param {
+            by_name.insert(p.options.name.clone(), (ParamKind::Query, p.param));
+        }
+    }
+
+    // Unannotated top-level parameters implicitly satisfy route variables.
+    let mut scan = ParamScan::default();
+    let mut visited = std::collections::HashSet::new();
+    if let Some(Type::Operation(op)) = checker.get_type(operation_id)
+        && let Some(params_id) = op.parameters
+    {
+        scan_parameters(
+            checker,
+            state,
+            params_id,
+            true,
+            HttpPayloadDisposition::Request,
+            &mut visited,
+            &mut scan,
+        );
+    }
+    for &prop_id in &scan.unannotated {
+        if let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id) {
+            by_name
+                .entry(prop.name.clone())
+                .or_insert((ParamKind::Implicit, prop_id));
+        }
+    }
+
+    let mut diagnostics = Vec::new();
+    for param in parse_uri_template_params(&resolved.path) {
+        match by_name.get(&param.name) {
+            None => diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_MISSING_URI_PARAM,
+                message: format!(
+                    "Route reference parameter '{}' but wasn't found in operation parameters",
+                    param.name
+                ),
+                target: op_node,
+                severity: ValidationSeverity::Error,
+            }),
+            Some((kind, prop_id)) => {
+                let annotated = match kind {
+                    ParamKind::Path => Some("path"),
+                    ParamKind::Query => Some("query"),
+                    ParamKind::Implicit => None,
+                };
+                if let Some(annotation_kind) = annotated {
+                    let uri_kind = if param.query { "query" } else { "path" };
+                    if uri_kind != annotation_kind {
+                        diagnostics.push(HttpValidationDiagnostic {
+                            code: DIAG_INCOMPATIBLE_URI_PARAM,
+                            message: format!(
+                                "Parameter '{}' is defined in the uri as a {} but is annotated as a {}.",
+                                param.name, uri_kind, annotation_kind
+                            ),
+                            target: op_node,
+                            severity: ValidationSeverity::Error,
+                        });
+                    }
+                }
+                if param.operator == '/' && param.preceded_by_slash {
+                    let optional = matches!(
+                        checker.get_type(*prop_id),
+                        Some(Type::ModelProperty(p)) if p.optional
+                    );
+                    let message = if optional {
+                        format!(
+                            "Route will result in duplicate slashes when optional parameter '{}' is not set.",
+                            param.name
+                        )
+                    } else {
+                        format!(
+                            "Route will result in duplicate slashes as parameter '{}' use path expansion and is prefixed with a /",
+                            param.name
+                        )
+                    };
+                    diagnostics.push(HttpValidationDiagnostic {
+                        code: DIAG_DOUBLE_SLASH,
+                        message,
+                        target: op_node,
+                        severity: ValidationSeverity::Warning,
+                    });
+                }
+            }
+        }
+    }
+
+    diagnostics
+}
+
 /// Validate the request payload of an HTTP operation.
 pub fn validate_http_operation(
     checker: &Checker,
@@ -1817,14 +2071,21 @@ pub fn validate_http_operation(
         return Vec::new();
     };
     let op_node = op.node.unwrap_or(0);
-    validate_payload(
+    let mut diagnostics = validate_payload(
         checker,
         state,
         params_id,
         HttpPayloadDisposition::Request,
         Visibility::Create,
         op_node,
-    )
+    );
+    diagnostics.extend(validate_route_and_parameters(
+        checker,
+        state,
+        operation_id,
+        op_node,
+    ));
+    diagnostics
 }
 
 /// Validate the response payload of an HTTP operation.
@@ -3455,5 +3716,175 @@ mod tests {
                 "contentType parameter must be a string literal or union of string literals"
             );
         }
+    }
+
+    // ---- Route diagnostics (ported from routes.test.ts) ----
+
+    #[test]
+    fn test_route_maps_interpolated_params() {
+        let checker =
+            compile_http(r#"@route("/foo/{myParam}") op test(@path myParam: string): void;"#);
+        assert!(
+            diagnostics_with_code(&checker, DIAG_MISSING_URI_PARAM).is_empty(),
+            "unexpected missing-uri-param: {:?}",
+            checker.diagnostics()
+        );
+        assert!(
+            diagnostics_with_code(&checker, DIAG_INCOMPATIBLE_URI_PARAM).is_empty(),
+            "unexpected incompatible-uri-param: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_route_missing_uri_param() {
+        let checker =
+            compile_http(r#"@route("/foo/{myParam}/") op test(@path other: string): void;"#);
+        let diags = diagnostics_with_code(&checker, DIAG_MISSING_URI_PARAM);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Route reference parameter 'myParam' but wasn't found in operation parameters"
+        );
+    }
+
+    #[test]
+    fn test_route_incompatible_path_parameter_annotated_as_query() {
+        let checker = compile_http(r#"@route("/bar/{foo}") op foo(@query foo: string): void;"#);
+        let diags = diagnostics_with_code(&checker, DIAG_INCOMPATIBLE_URI_PARAM);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Parameter 'foo' is defined in the uri as a path but is annotated as a query."
+        );
+    }
+
+    #[test]
+    fn test_route_incompatible_query_parameter_annotated_as_path() {
+        let checker = compile_http(r#"@route("/bar/{?foo}") op foo(@path foo: string): void;"#);
+        let diags = diagnostics_with_code(&checker, DIAG_INCOMPATIBLE_URI_PARAM);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Parameter 'foo' is defined in the uri as a query but is annotated as a path."
+        );
+    }
+
+    #[test]
+    fn test_route_incompatible_query_continuation_parameter_annotated_as_path() {
+        let checker =
+            compile_http(r#"@route("/bar/?bar=def{&foo}") op foo(@path foo: string): void;"#);
+        let diags = diagnostics_with_code(&checker, DIAG_INCOMPATIBLE_URI_PARAM);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+    }
+
+    #[test]
+    fn test_route_double_slash_required_parameter() {
+        let checker =
+            compile_http(r#"@route("/foo/{/myPath}") op test(@path myPath: string): string;"#);
+        let diags = diagnostics_with_code(&checker, DIAG_DOUBLE_SLASH);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Route will result in duplicate slashes as parameter 'myPath' use path expansion and is prefixed with a /"
+        );
+    }
+
+    #[test]
+    fn test_route_double_slash_optional_parameter() {
+        for route in ["/foo/{/myPath}", "/foo/{/myPath}/bar"] {
+            let source = format!("@route(\"{route}\") op test(@path myPath?: string): string;");
+            let checker = compile_http(&source);
+            let diags = diagnostics_with_code(&checker, DIAG_DOUBLE_SLASH);
+            assert_eq!(
+                diags.len(),
+                1,
+                "route {route} diagnostics: {:?}",
+                checker.diagnostics()
+            );
+            assert_eq!(
+                diags[0].message,
+                "Route will result in duplicate slashes when optional parameter 'myPath' is not set."
+            );
+        }
+    }
+
+    #[test]
+    fn test_route_no_double_slash_without_preceding_slash() {
+        let checker =
+            compile_http(r#"@route("/foo{/myPath}") op test(@path myPath: string): string;"#);
+        assert!(
+            diagnostics_with_code(&checker, DIAG_DOUBLE_SLASH).is_empty(),
+            "unexpected double-slash: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    // ---- Status code diagnostics (ported from http-decorators.test.ts) ----
+
+    #[test]
+    fn test_multiple_status_codes_in_response() {
+        let checker = compile_http(
+            r#"
+            model CreatedOrUpdatedResponse {
+              @statusCode ok: "200";
+              @statusCode created: "201";
+            }
+            model DateHeader {
+              @header date: utcDateTime;
+            }
+            model Key {
+              key: string;
+            }
+            @put op create(): CreatedOrUpdatedResponse & DateHeader & Key;
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_MULTIPLE_STATUS_CODES);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Multiple `@statusCode` decorators defined for this operation response."
+        );
+    }
+
+    #[test]
+    fn test_invalid_status_codes() {
+        for (code, expected_message) in [
+            (
+                "\"Ok\"",
+                "statusCode value must be a three digit code between 100 and 599",
+            ),
+            (
+                "12345",
+                "statusCode value must be a three digit code between 100 and 599",
+            ),
+            (
+                "200.3",
+                "statusCode value must be a three digit code between 100 and 599",
+            ),
+        ] {
+            let source = format!("op test(): {{ @statusCode code: {code} }};");
+            let checker = compile_http(&source);
+            let diags = diagnostics_with_code(&checker, DIAG_STATUS_CODE_INVALID);
+            assert_eq!(
+                diags.len(),
+                1,
+                "status code {code} diagnostics: {:?}",
+                checker.diagnostics()
+            );
+            assert_eq!(diags[0].message, expected_message);
+        }
+    }
+
+    #[test]
+    fn test_valid_status_code_range() {
+        let checker = compile_http(
+            r#"op test(): { @statusCode @minValue(200) @maxValue(299) code: int32 };"#,
+        );
+        assert!(
+            diagnostics_with_code(&checker, DIAG_STATUS_CODE_INVALID).is_empty(),
+            "unexpected status-code-invalid: {:?}",
+            checker.diagnostics()
+        );
     }
 }

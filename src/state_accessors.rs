@@ -50,6 +50,27 @@ impl StateAccessors {
         self.state_sets.get(key)
     }
 
+    /// Copy every state-map value and state-set membership from `from` to `to`.
+    ///
+    /// Cloning a type (for example when intersecting models) re-runs decorators
+    /// on the clone upstream; copying the state gives the clone the same
+    /// decorator-applied metadata without re-evaluating the decorators.
+    pub fn copy_type_state(&mut self, from: TypeId, to: TypeId) {
+        if from == to {
+            return;
+        }
+        for map in self.state_maps.values_mut() {
+            if let Some(value) = map.get(&from).cloned() {
+                map.insert(to, value);
+            }
+        }
+        for set in self.state_sets.values_mut() {
+            if set.contains(&from) {
+                set.insert(to);
+            }
+        }
+    }
+
     /// Set a value in a state map
     pub fn set_state(&mut self, key: &str, type_id: TypeId, value: String) {
         self.state_maps

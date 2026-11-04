@@ -17,6 +17,9 @@ impl Checker {
             return self.error_type;
         }
         let result = self.clone_type_impl(type_id);
+        if result != self.error_type && result != type_id {
+            self.state_accessors.copy_type_state(type_id, result);
+        }
         self.check_depth -= 1;
         result
     }

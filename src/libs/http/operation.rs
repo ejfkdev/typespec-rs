@@ -437,7 +437,7 @@ fn validate_status_code_range(
 /// and a property can narrow a single bound with `@maxValue`.
 ///
 /// Ported from TS `getStatusCodesRange` (microsoft/typespec#12118).
-fn get_status_codes_range(
+pub(crate) fn get_status_codes_range(
     checker: &crate::checker::Checker,
     type_id: TypeId,
 ) -> (Option<f64>, Option<f64>) {

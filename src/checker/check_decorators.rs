@@ -531,6 +531,34 @@ impl Checker {
                         );
                     }
                 }
+                "returnsDoc" | "errorsDoc" => {
+                    let doc = args.first().and_then(|arg| match &arg.js_value {
+                        Some(DecoratorMarshalledValue::String(s)) => Some(s.clone()),
+                        Some(DecoratorMarshalledValue::Type(id)) => {
+                            match self.get_type(self.resolve_alias_chain(*id)) {
+                                Some(Type::String(s)) => Some(s.value.clone()),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    });
+                    if let Some(doc) = doc {
+                        if dec_name == "returnsDoc" {
+                            crate::libs::compiler::apply_returns_doc(
+                                &mut self.state_accessors,
+                                type_id,
+                                &doc,
+                            );
+                        } else {
+                            crate::libs::compiler::apply_errors_doc(
+                                &mut self.state_accessors,
+                                type_id,
+                                &doc,
+                            );
+                        }
+                    }
+                }
+
                 "summary" => {
                     if let Some(arg) = args.first()
                         && let Some(DecoratorMarshalledValue::String(summary_text)) = &arg.js_value

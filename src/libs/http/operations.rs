@@ -898,7 +898,32 @@ pub fn get_responses_for_operation(
         }
     }
 
-    response_index.into_values()
+    let mut responses = response_index.into_values();
+    let returns_doc = crate::libs::compiler::get_returns_doc(state, operation_id);
+    let errors_doc = crate::libs::compiler::get_errors_doc(state, operation_id);
+    for response in &mut responses {
+        if response.description.is_some() {
+            continue;
+        }
+        let is_error = {
+            let resolved = checker.resolve_alias_chain(response.response_type);
+            matches!(checker.get_type(resolved), Some(Type::Model(_)))
+                && crate::libs::compiler::is_error(state, resolved)
+        };
+        let operation_doc = if is_error {
+            errors_doc.clone()
+        } else {
+            returns_doc.clone()
+        };
+        response.description = operation_doc.or_else(|| {
+            if let super::operation::HttpStatusCodesEntry::Code(code) = response.status_codes {
+                super::operation::get_status_code_description(code).map(str::to_string)
+            } else {
+                None
+            }
+        });
+    }
+    responses
 }
 
 /// Process a plain response body (no HTTP envelope metadata).
@@ -929,15 +954,6 @@ fn process_plain_response(
         response_index.set(super::operation::HttpStatusCodesEntry::Code(204), response);
         return;
     }
-
-    // Default: 200 with body. The union variant / union doc wins over the
-    // model's own doc (microsoft/typespec#11785).
-    let description = description.or_else(|| {
-        checker.get_type(resolved).and_then(|t| match t {
-            Type::Model(m) => m.doc.clone(),
-            _ => None,
-        })
-    });
 
     let response = HttpOperationResponse {
         status_codes: super::operation::HttpStatusCodesEntry::Code(200),
@@ -1024,7 +1040,9 @@ fn process_envelope_response(
 
     // If no explicit status codes, infer them
     if status_codes.is_empty() {
-        if body.is_some() {
+        if crate::libs::compiler::is_error(state, resolved) {
+            status_codes.push(super::operation::HttpStatusCodesEntry::Wildcard);
+        } else if body.is_some() {
             status_codes.push(super::operation::HttpStatusCodesEntry::Code(200));
         } else {
             // No body → 204 No Content
@@ -5775,6 +5793,121 @@ mod tests {
         assert_eq!(
             diags[1].message,
             "Duplicate operation \"uploadString\" routed at \"post /uploadString\"."
+        );
+    }
+
+    // ---- Response descriptions (ported from response-descriptions.test.ts) ----
+
+    fn response_descriptions(checker: &Checker, op_name: &str) -> Vec<Option<String>> {
+        let op_id = find_operation(checker, op_name).unwrap();
+        let responses = get_responses_for_operation(checker, &checker.state_accessors, op_id);
+        responses
+            .iter()
+            .map(|response| response.description.clone())
+            .collect()
+    }
+
+    #[test]
+    fn test_response_default_status_description() {
+        let checker = compile_http_library(r#"op read(): {@statusCode _: 200, content: string};"#);
+        assert_eq!(
+            response_descriptions(&checker, "read"),
+            vec![Some("The request has succeeded.".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_response_returns_doc() {
+        let checker = compile_http_library(
+            r#"
+            @error model Error {}
+            @returnsDoc("A string")
+            op read(): { @statusCode _: 200, content: string } | { @statusCode _: 201, content: string } | Error;
+            "#,
+        );
+        let descriptions = response_descriptions(&checker, "read");
+        assert_eq!(
+            descriptions.len(),
+            3,
+            "diagnostics: {:?}",
+            checker.diagnostics()
+        );
+        assert_eq!(descriptions[0].as_deref(), Some("A string"));
+        assert_eq!(descriptions[1].as_deref(), Some("A string"));
+        assert_eq!(descriptions[2], None);
+    }
+
+    #[test]
+    fn test_response_errors_doc() {
+        let checker = compile_http_library(
+            r#"
+            @error model Error {}
+            @errorsDoc("Generic error")
+            op read(): { @statusCode _: 200, content: string } | { @statusCode _: 201, content: string } | Error;
+            "#,
+        );
+        let descriptions = response_descriptions(&checker, "read");
+        assert_eq!(
+            descriptions.len(),
+            3,
+            "diagnostics: {:?}",
+            checker.diagnostics()
+        );
+        assert_eq!(
+            descriptions[0].as_deref(),
+            Some("The request has succeeded.")
+        );
+        assert_eq!(
+            descriptions[1].as_deref(),
+            Some("The request has succeeded and a new resource has been created as a result.")
+        );
+        assert_eq!(descriptions[2].as_deref(), Some("Generic error"));
+    }
+
+    #[test]
+    fn test_response_model_doc_overrides_return_doc() {
+        let checker = compile_http_library(
+            r#"
+            @error model Error {}
+            @error @doc("Not found model") model NotFound {@statusCode _: 404}
+            @errorsDoc("Generic error")
+            op read(): { @statusCode _: 200, content: string } | { @statusCode _: 201, content: string } | NotFound | Error ;
+            "#,
+        );
+        let descriptions = response_descriptions(&checker, "read");
+        assert_eq!(
+            descriptions.len(),
+            4,
+            "diagnostics: {:?}",
+            checker.diagnostics()
+        );
+        assert_eq!(
+            descriptions[0].as_deref(),
+            Some("The request has succeeded.")
+        );
+        assert_eq!(
+            descriptions[1].as_deref(),
+            Some("The request has succeeded and a new resource has been created as a result.")
+        );
+        assert_eq!(descriptions[2].as_deref(), Some("Not found model"));
+        assert_eq!(descriptions[3].as_deref(), Some("Generic error"));
+    }
+
+    #[test]
+    fn test_response_envelope_model_doc() {
+        let checker = compile_http_library(
+            r#"
+            @doc("Explicit doc")
+            model Result {
+              @statusCode _: 201;
+              implicit: 200;
+            }
+            op read(): Result;
+            "#,
+        );
+        assert_eq!(
+            response_descriptions(&checker, "read"),
+            vec![Some("Explicit doc".to_string())]
         );
     }
 }

@@ -49,6 +49,9 @@ pub fn is_plain_response_body(checker: &Checker, type_id: TypeId) -> bool {
             IntrinsicTypeName::Void | IntrinsicTypeName::ErrorType
         ),
         Some(Type::Model(m)) => {
+            if crate::libs::compiler::is_error(&checker.state_accessors, resolved) {
+                return false;
+            }
             for name in &m.property_names {
                 if let Some(&prop_id) = m.properties.get(name)
                     && has_http_metadata_decorators(checker, prop_id)
@@ -282,11 +285,13 @@ impl ResponseIndex {
     /// Consume the index and return all responses sorted by status code.
     pub fn into_values(self) -> Vec<HttpOperationResponse> {
         let mut vals: Vec<_> = self.responses.into_values().collect();
-        vals.sort_by_key(|r| match &r.status_codes {
-            HttpStatusCodesEntry::Code(code) => code.to_string(),
-            HttpStatusCodesEntry::Range(range) => format!("{}-{}", range.start, range.end),
-            HttpStatusCodesEntry::Wildcard => "*".to_string(),
-        });
+        // Numeric status codes first, then ranges, then the wildcard default.
+        let sort_key = |r: &HttpOperationResponse| match &r.status_codes {
+            HttpStatusCodesEntry::Code(code) => (0u8, u32::from(*code)),
+            HttpStatusCodesEntry::Range(range) => (1, u32::from(range.start)),
+            HttpStatusCodesEntry::Wildcard => (2, u32::MAX),
+        };
+        vals.sort_by_key(sort_key);
         vals
     }
 

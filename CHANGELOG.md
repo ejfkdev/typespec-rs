@@ -55,6 +55,10 @@ dependency refresh.
   content types, and non-scalar contents. Explicit Content-Type headers and
   files in unions fall back to structured model bodies and report
   `http-file-structured`
+- Response descriptions now follow upstream precedence: union-variant /
+  envelope `@doc`, then operation `@returnsDoc` (success) or `@errorsDoc`
+  (error models), then the default status-code description. Error models
+  without an explicit status code produce a wildcard response.
 - HTTP overloads: `@overload(base)` inherits the base route and verb unless
   the overload declares its own, links both directions in `HttpOperation`,
   and only skips duplicate-route checks when it resolves to the same endpoint

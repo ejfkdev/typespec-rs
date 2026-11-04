@@ -23,7 +23,7 @@ use super::types::{
     DIAG_CONTENT_TYPE_IGNORED, DIAG_CONTENT_TYPE_STRING, DIAG_DOUBLE_SLASH, DIAG_DUPLICATE_BODY,
     DIAG_INCOMPATIBLE_URI_PARAM, DIAG_METADATA_IGNORED, DIAG_MISSING_URI_PARAM,
     DIAG_MULTIPLE_STATUS_CODES, DIAG_NO_IMPLICIT_MULTIPART, DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
-    DIAG_RESPONSE_COOKIE_NOT_SUPPORTED, DIAG_STATUS_CODE_INVALID, HttpVerb,
+    DIAG_RESPONSE_COOKIE_NOT_SUPPORTED, DIAG_STATUS_CODE_INVALID, DIAG_USE_URI_TEMPLATE, HttpVerb,
 };
 use super::visibility::{Visibility, get_default_visibility_for_verb};
 // Import from parent mod.rs
@@ -1873,62 +1873,29 @@ fn validate_payload(
     diagnostics
 }
 
-#[derive(Debug, Clone)]
-struct UriTemplateParamInfo {
-    name: String,
-    query: bool,
-    operator: char,
-    preceded_by_slash: bool,
-}
-
-/// Parse `{...}` expressions from a URI template into parameter references.
-fn parse_uri_template_params(template: &str) -> Vec<UriTemplateParamInfo> {
-    let mut params = Vec::new();
-    let mut in_brace = false;
-    let mut current = String::new();
-    let mut last_literal = None;
-    let mut preceded_by_slash = false;
-    for c in template.chars() {
-        match c {
-            '{' => {
-                in_brace = true;
-                preceded_by_slash = last_literal == Some('/');
-                current.clear();
-            }
-            '}' => {
-                if in_brace && let Some(first) = current.chars().next() {
-                    let (operator, rest) =
-                        if matches!(first, '+' | '#' | '.' | '/' | ';' | '?' | '&') {
-                            (first, &current[first.len_utf8()..])
-                        } else {
-                            (' ', current.as_str())
-                        };
-                    for variable in rest.split(',') {
-                        let mut name = variable;
-                        if let Some((head, _)) = name.split_once('*') {
-                            name = head;
-                        }
-                        if let Some((head, _)) = name.split_once(':') {
-                            name = head;
-                        }
-                        if !name.is_empty() {
-                            params.push(UriTemplateParamInfo {
-                                name: name.to_string(),
-                                query: operator == '?' || operator == '&',
-                                operator,
-                                preceded_by_slash,
-                            });
-                        }
-                    }
+/// Names of parameters whose `{/name}` expansion follows a literal ending in
+/// `/`, which would produce a duplicate slash.
+fn params_with_preceding_slash(path: &str) -> std::collections::HashSet<String> {
+    use crate::libs::uri_template::{UriTemplateSegment, parse_uri_template};
+    let template = parse_uri_template(path);
+    let mut result = std::collections::HashSet::new();
+    let mut last_literal: Option<String> = None;
+    for segment in &template.segments {
+        match segment {
+            UriTemplateSegment::Literal(text) => last_literal = Some(text.clone()),
+            UriTemplateSegment::Parameter(param) => {
+                if param.operator.as_deref() == Some("/")
+                    && last_literal
+                        .as_deref()
+                        .is_some_and(|text| text.ends_with('/'))
+                {
+                    result.insert(param.name.clone());
                 }
-                in_brace = false;
-                current.clear();
+                last_literal = None;
             }
-            _ if in_brace => current.push(c),
-            _ => last_literal = Some(c),
         }
     }
-    params
+    result
 }
 
 fn validate_route_and_parameters(
@@ -1997,7 +1964,10 @@ fn validate_route_and_parameters(
     }
 
     let mut diagnostics = Vec::new();
-    for param in parse_uri_template_params(&resolved.path) {
+    let template = crate::libs::uri_template::parse_uri_template(&resolved.path);
+    let duplicate_slash_params = params_with_preceding_slash(&resolved.path);
+    for param in &template.parameters {
+        let is_query_param = matches!(param.operator.as_deref(), Some("?") | Some("&"));
         match by_name.get(&param.name) {
             None => diagnostics.push(HttpValidationDiagnostic {
                 code: DIAG_MISSING_URI_PARAM,
@@ -2015,7 +1985,27 @@ fn validate_route_and_parameters(
                     ParamKind::Implicit => None,
                 };
                 if let Some(annotation_kind) = annotated {
-                    let uri_kind = if param.query { "query" } else { "path" };
+                    let has_options = match *kind {
+                        ParamKind::Path => state
+                            .get_state(super::types::STATE_PATH_OPTIONS, *prop_id)
+                            .is_some(),
+                        ParamKind::Query => state
+                            .get_state(super::types::STATE_QUERY_OPTIONS, *prop_id)
+                            .is_some(),
+                        ParamKind::Implicit => false,
+                    };
+                    if has_options {
+                        diagnostics.push(HttpValidationDiagnostic {
+                            code: DIAG_USE_URI_TEMPLATE,
+                            message: format!(
+                                "Parameter '{}' is already defined in the uri template. Explode, style and allowReserved property must be defined in the uri template as described by RFC 6570.",
+                                param.name
+                            ),
+                            target: op_node,
+                            severity: ValidationSeverity::Error,
+                        });
+                    }
+                    let uri_kind = if is_query_param { "query" } else { "path" };
                     if uri_kind != annotation_kind {
                         diagnostics.push(HttpValidationDiagnostic {
                             code: DIAG_INCOMPATIBLE_URI_PARAM,
@@ -2028,7 +2018,7 @@ fn validate_route_and_parameters(
                         });
                     }
                 }
-                if param.operator == '/' && param.preceded_by_slash {
+                if duplicate_slash_params.contains(&param.name) {
                     let optional = matches!(
                         checker.get_type(*prop_id),
                         Some(Type::ModelProperty(p)) if p.optional
@@ -3884,6 +3874,101 @@ mod tests {
         assert!(
             diagnostics_with_code(&checker, DIAG_STATUS_CODE_INVALID).is_empty(),
             "unexpected status-code-invalid: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    // ---- @server validation (ported from http-decorators.test.ts) ----
+
+    #[test]
+    fn test_server_missing_parameter() {
+        let checker = compile_http(
+            r#"
+            @server("https://example.com/{name}/foo", "My service url", {other: string})
+            namespace MyService {}
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_MISSING_SERVER_PARAM;
+        let diags = diagnostics_with_code(&checker, code);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Server url contains parameter 'name' but wasn't found in given parameters"
+        );
+    }
+
+    #[test]
+    fn test_server_with_declared_parameter() {
+        let checker = compile_http(
+            r#"
+            @server("https://example.com/{name}/foo", "My service url", {name: string})
+            namespace MyService {}
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_MISSING_SERVER_PARAM;
+        assert!(
+            diagnostics_with_code(&checker, code).is_empty(),
+            "unexpected missing-server-param: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    // ---- use-uri-template diagnostics (ported from routes.test.ts) ----
+
+    #[test]
+    fn test_use_uri_template_for_path_options() {
+        for options in [
+            "#{ allowReserved: false }",
+            "#{ allowReserved: true }",
+            "#{ explode: false }",
+            "#{ explode: true }",
+            "#{ style: \"simple\" }",
+            "#{ style: \"label\" }",
+            "#{ style: \"matrix\" }",
+            "#{ style: \"fragment\" }",
+            "#{ style: \"path\" }",
+        ] {
+            let source =
+                format!("@route(\"/bar/{{foo}}\") op foo(@path({options}) foo: string): void;");
+            let checker = compile_http(&source);
+            let diags = diagnostics_with_code(&checker, DIAG_USE_URI_TEMPLATE);
+            assert_eq!(
+                diags.len(),
+                1,
+                "options {options} diagnostics: {:?}",
+                checker.diagnostics()
+            );
+            assert_eq!(
+                diags[0].message,
+                "Parameter 'foo' is already defined in the uri template. Explode, style and allowReserved property must be defined in the uri template as described by RFC 6570."
+            );
+        }
+    }
+
+    #[test]
+    fn test_use_uri_template_for_query_explode() {
+        for options in ["#{ explode: false }", "#{ explode: true }"] {
+            let source =
+                format!("@route(\"/bar{{?foo}}\") op foo(@query({options}) foo: string): void;");
+            let checker = compile_http(&source);
+            let diags = diagnostics_with_code(&checker, DIAG_USE_URI_TEMPLATE);
+            assert_eq!(
+                diags.len(),
+                1,
+                "options {options} diagnostics: {:?}",
+                checker.diagnostics()
+            );
+        }
+    }
+
+    #[test]
+    fn test_path_options_allowed_when_not_in_uri_template() {
+        let checker = compile_http(
+            r#"@route("/foo") op foo(@path(#{ allowReserved: true }) one: string): void;"#,
+        );
+        assert!(
+            diagnostics_with_code(&checker, DIAG_USE_URI_TEMPLATE).is_empty(),
+            "unexpected use-uri-template: {:?}",
             checker.diagnostics()
         );
     }

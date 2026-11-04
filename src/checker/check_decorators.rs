@@ -794,6 +794,16 @@ impl Checker {
                             _ => None,
                         })
                     });
+                    if let Some(DecoratorMarshalledValue::Record(record)) =
+                        args.first().and_then(|a| a.js_value.as_ref())
+                        && record.properties.iter().any(|(key, _)| key == "explode")
+                    {
+                        self.state_accessors.set_state(
+                            crate::libs::http::types::STATE_QUERY_OPTIONS,
+                            type_id,
+                            "explode".to_string(),
+                        );
+                    }
                     crate::libs::http::apply_query(
                         &mut self.state_accessors,
                         type_id,
@@ -807,6 +817,18 @@ impl Checker {
                             _ => None,
                         })
                     });
+                    if let Some(DecoratorMarshalledValue::Record(record)) =
+                        args.first().and_then(|a| a.js_value.as_ref())
+                        && record.properties.iter().any(|(key, _)| {
+                            matches!(key.as_str(), "explode" | "style" | "allowReserved")
+                        })
+                    {
+                        self.state_accessors.set_state(
+                            crate::libs::http::types::STATE_PATH_OPTIONS,
+                            type_id,
+                            "options".to_string(),
+                        );
+                    }
                     crate::libs::http::apply_path(
                         &mut self.state_accessors,
                         type_id,
@@ -900,19 +922,57 @@ impl Checker {
                         // whose properties become server parameters. Use the
                         // checked model type so parameter property TypeIds are
                         // preserved for client SDK generators.
+                        let mut parameter_names: Vec<String> = Vec::new();
                         let parameters: Vec<TypeId> = args
                             .get(2)
                             .and_then(|a| self.node_type_map.get(&a.value))
                             .and_then(|&id| match self.get_type(self.resolve_alias_chain(id)) {
-                                Some(Type::Model(m)) => Some(
-                                    m.property_names
-                                        .iter()
-                                        .filter_map(|n| m.properties.get(n).copied())
-                                        .collect(),
-                                ),
+                                Some(Type::Model(m)) => {
+                                    parameter_names = m.property_names.clone();
+                                    Some(
+                                        m.property_names
+                                            .iter()
+                                            .filter_map(|n| m.properties.get(n).copied())
+                                            .collect(),
+                                    )
+                                }
                                 _ => None,
                             })
                             .unwrap_or_default();
+                        // Every `{param}` placeholder in the URL must have a
+                        // matching parameter property.
+                        let mut in_brace = false;
+                        let mut current = String::new();
+                        for ch in url.chars() {
+                            match ch {
+                                '{' => {
+                                    in_brace = true;
+                                    current.clear();
+                                }
+                                '}' => {
+                                    if in_brace {
+                                        let name = current.trim_start_matches([
+                                            '+', '#', '.', '/', ';', '?', '&',
+                                        ]);
+                                        if !name.is_empty()
+                                            && !parameter_names.iter().any(|p| p == name)
+                                        {
+                                            self.error(
+                                                crate::libs::http::types::DIAG_MISSING_SERVER_PARAM,
+                                                &format!(
+                                                    "Server url contains parameter '{}' but wasn't found in given parameters",
+                                                    name
+                                                ),
+                                            );
+                                        }
+                                    }
+                                    in_brace = false;
+                                    current.clear();
+                                }
+                                _ if in_brace => current.push(ch),
+                                _ => {}
+                            }
+                        }
                         crate::libs::http::apply_server(
                             &mut self.state_accessors,
                             type_id,

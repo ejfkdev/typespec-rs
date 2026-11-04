@@ -20,6 +20,10 @@ pub const STATE_COOKIE: &str = "TypeSpec.Http.cookie";
 pub const STATE_QUERY: &str = "TypeSpec.Http.query";
 /// State key for @path decorator
 pub const STATE_PATH: &str = "TypeSpec.Http.path";
+/// State key for explicit `@path` options (`style`, `explode`, `allowReserved`).
+pub const STATE_PATH_OPTIONS: &str = "TypeSpec.Http.pathOptions";
+/// State key for explicit `@query` options (`explode`).
+pub const STATE_QUERY_OPTIONS: &str = "TypeSpec.Http.queryOptions";
 /// State key for @body decorator
 pub const STATE_BODY: &str = "TypeSpec.Http.body";
 /// State key for @bodyRoot decorator

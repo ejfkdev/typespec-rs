@@ -37,9 +37,32 @@ impl Checker {
         // 7. Run deferred validations
         self.run_deferred_validations();
 
+        // 8. Validate HTTP route uniqueness inside declared services.
+        self.validate_http_services();
+
         // Checking complete: downstream consumers (emitters, etc.) observe the
         // "emitting" stage so per-type caches are active.
         self.current_stage.set(CompilationStage::Emitting);
+    }
+
+    /// Report duplicate HTTP operations (same verb and path) within services.
+    fn validate_http_services(&mut self) {
+        let services = crate::libs::compiler::list_services(&self.state_accessors);
+        if services.is_empty() {
+            return;
+        }
+        let namespaces: Vec<crate::checker::types::TypeId> = services
+            .iter()
+            .map(|service| service.namespace_type)
+            .collect();
+        let diagnostics = crate::libs::http::operations::validate_http_services(
+            self,
+            &self.state_accessors,
+            &namespaces,
+        );
+        for diagnostic in diagnostics {
+            self.error_at(diagnostic.target, diagnostic.code, &diagnostic.message);
+        }
     }
 
     /// Check a single source file (TypeSpecScript node)

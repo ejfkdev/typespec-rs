@@ -481,6 +481,16 @@ impl Checker {
             None => return,
         };
 
+        let verb_decorator_count = decorator_apps
+            .iter()
+            .filter(|(name, _)| {
+                matches!(
+                    name.as_str(),
+                    "get" | "post" | "put" | "patch" | "delete" | "head"
+                )
+            })
+            .count();
+
         for (dec_name, args) in decorator_apps {
             match dec_name.as_str() {
                 "doc" => {
@@ -724,40 +734,25 @@ impl Checker {
                 }
 
                 // ---- HTTP verb decorators ----
-                "get" => {
-                    crate::libs::http::apply_verb(
-                        &mut self.state_accessors,
-                        type_id,
-                        crate::libs::http::types::HttpVerb::Get,
-                    );
-                }
-                "post" => {
-                    crate::libs::http::apply_verb(
-                        &mut self.state_accessors,
-                        type_id,
-                        crate::libs::http::types::HttpVerb::Post,
-                    );
-                }
-                "put" => {
-                    crate::libs::http::apply_verb(
-                        &mut self.state_accessors,
-                        type_id,
-                        crate::libs::http::types::HttpVerb::Put,
-                    );
-                }
-                "delete" => {
-                    crate::libs::http::apply_verb(
-                        &mut self.state_accessors,
-                        type_id,
-                        crate::libs::http::types::HttpVerb::Delete,
-                    );
-                }
-                "head" => {
-                    crate::libs::http::apply_verb(
-                        &mut self.state_accessors,
-                        type_id,
-                        crate::libs::http::types::HttpVerb::Head,
-                    );
+                "get" | "post" | "put" | "delete" | "head" => {
+                    if verb_decorator_count > 1 {
+                        let name = self
+                            .get_type(type_id)
+                            .and_then(|t| t.name().map(|s| s.to_string()))
+                            .unwrap_or_default();
+                        self.error(
+                            crate::libs::http::types::DIAG_HTTP_VERB_DUPLICATE,
+                            &format!("HTTP verb already applied to {name}"),
+                        );
+                    }
+                    let verb = match dec_name.as_str() {
+                        "get" => crate::libs::http::types::HttpVerb::Get,
+                        "post" => crate::libs::http::types::HttpVerb::Post,
+                        "put" => crate::libs::http::types::HttpVerb::Put,
+                        "delete" => crate::libs::http::types::HttpVerb::Delete,
+                        _ => crate::libs::http::types::HttpVerb::Head,
+                    };
+                    crate::libs::http::apply_verb(&mut self.state_accessors, type_id, verb);
                 }
 
                 // ---- HTTP route decorator ----
@@ -765,6 +760,19 @@ impl Checker {
                     if let Some(arg) = args.first()
                         && let Some(DecoratorMarshalledValue::String(route_str)) = &arg.js_value
                     {
+                        // Merged namespace declarations may each carry @route;
+                        // they must agree (duplicate-route-decorator).
+                        if matches!(self.get_type(type_id), Some(Type::Namespace(_)))
+                            && let Some(existing) = self
+                                .state_accessors
+                                .get_state("TypeSpec.Http.route", type_id)
+                            && existing != route_str
+                        {
+                            self.error(
+                                crate::libs::http::types::DIAG_DUPLICATE_ROUTE_DECORATOR,
+                                "@route was defined twice on this namespace and has different values.",
+                            );
+                        }
                         crate::libs::http::apply_route(
                             &mut self.state_accessors,
                             type_id,

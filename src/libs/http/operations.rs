@@ -2078,6 +2078,59 @@ pub fn validate_http_operation(
     diagnostics
 }
 
+/// Validate route uniqueness across the operations of the given services.
+/// Ported from TS `validateRouteUnique()`.
+pub fn validate_http_services(
+    checker: &Checker,
+    state: &StateAccessors,
+    service_namespaces: &[TypeId],
+) -> Vec<HttpValidationDiagnostic> {
+    use std::collections::HashMap;
+
+    let mut grouped: HashMap<(String, HttpVerb), Vec<HttpOperation>> = HashMap::new();
+    for &namespace in service_namespaces {
+        for operation in collect_http_operations(checker, state, namespace) {
+            if operation.overloading.is_some() {
+                continue;
+            }
+            if super::is_shared_route(state, operation.operation) {
+                continue;
+            }
+            grouped
+                .entry((operation.path.clone(), operation.verb))
+                .or_default()
+                .push(operation);
+        }
+    }
+
+    let mut diagnostics = Vec::new();
+    for ((path, verb), operations) in grouped {
+        if operations.len() < 2 {
+            continue;
+        }
+        for operation in operations {
+            let name = checker
+                .get_type(operation.operation)
+                .and_then(|t| t.name().map(|s| s.to_string()))
+                .unwrap_or_default();
+            diagnostics.push(HttpValidationDiagnostic {
+                code: super::types::DIAG_DUPLICATE_OPERATION,
+                message: format!(
+                    "Duplicate operation \"{name}\" routed at \"{} {}\".",
+                    verb.as_str(),
+                    path
+                ),
+                target: checker
+                    .get_type(operation.operation)
+                    .and_then(|t| t.node_id_from_type())
+                    .unwrap_or(0),
+                severity: ValidationSeverity::Error,
+            });
+        }
+    }
+    diagnostics
+}
+
 /// Validate the response payload of an HTTP operation.
 pub fn validate_http_response_operation(
     checker: &Checker,
@@ -3969,6 +4022,130 @@ mod tests {
         assert!(
             diagnostics_with_code(&checker, DIAG_USE_URI_TEMPLATE).is_empty(),
             "unexpected use-uri-template: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    // ---- Verb and route uniqueness (ported from verbs/routes tests) ----
+
+    #[test]
+    fn test_http_verb_duplicate() {
+        for decorators in [["@get", "@post"], ["@post", "@put"]] {
+            let source = format!("{} op test(): string;", decorators.join(" "));
+            let checker = compile_http(&source);
+            let code = crate::libs::http::types::DIAG_HTTP_VERB_DUPLICATE;
+            let diags = diagnostics_with_code(&checker, code);
+            assert_eq!(
+                diags.len(),
+                2,
+                "decorators {decorators:?} diagnostics: {:?}",
+                checker.diagnostics()
+            );
+            for diag in diags {
+                assert_eq!(diag.message, "HTTP verb already applied to test");
+            }
+        }
+    }
+
+    #[test]
+    fn test_duplicate_operation_same_path_and_verb() {
+        let checker = compile_http(
+            r#"
+            @service namespace TestService;
+            @route("/test") op get1(): string;
+            @route("/test") op get2(): string;
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_DUPLICATE_OPERATION;
+        let diags = diagnostics_with_code(&checker, code);
+        assert_eq!(diags.len(), 2, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Duplicate operation \"get1\" routed at \"get /test\"."
+        );
+        assert_eq!(
+            diags[1].message,
+            "Duplicate operation \"get2\" routed at \"get /test\"."
+        );
+    }
+
+    #[test]
+    fn test_shared_routes_do_not_conflict() {
+        let checker = compile_http(
+            r#"
+            @service namespace TestService;
+            @route("/test") @sharedRoute op get1(): string;
+            @route("/test") @sharedRoute op get2(): string;
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_DUPLICATE_OPERATION;
+        assert!(
+            diagnostics_with_code(&checker, code).is_empty(),
+            "unexpected duplicate-operation: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_same_path_different_verbs_do_not_conflict() {
+        let checker = compile_http(
+            r#"
+            @service namespace TestService;
+            @route("/test") @get op get1(): string;
+            @route("/test") @post op get2(): string;
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_DUPLICATE_OPERATION;
+        assert!(
+            diagnostics_with_code(&checker, code).is_empty(),
+            "unexpected duplicate-operation: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_duplicate_route_decorator_on_merged_namespace() {
+        let checker = compile_http(
+            r#"
+            @route("/test1")
+            namespace Foo {
+              @route("/get1") op get1(): string;
+            }
+
+            @route("/test2")
+            namespace Foo {
+              @route("/get2") op get2(): string;
+            }
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_DUPLICATE_ROUTE_DECORATOR;
+        let diags = diagnostics_with_code(&checker, code);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "@route was defined twice on this namespace and has different values."
+        );
+    }
+
+    #[test]
+    fn test_same_route_on_merged_namespace_is_allowed() {
+        let checker = compile_http(
+            r#"
+            @route("/test")
+            namespace Foo {
+              @route("/get1") op get1(): string;
+            }
+
+            @route("/test")
+            namespace Foo {
+              @route("/get2") op get2(): string;
+            }
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_DUPLICATE_ROUTE_DECORATOR;
+        assert!(
+            diagnostics_with_code(&checker, code).is_empty(),
+            "unexpected duplicate-route-decorator: {:?}",
             checker.diagnostics()
         );
     }

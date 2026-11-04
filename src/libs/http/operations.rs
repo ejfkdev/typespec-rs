@@ -4308,4 +4308,17 @@ mod tests {
             .expect("expected path parameter");
         assert_eq!(path.options.name, "my-path");
     }
+
+    #[test]
+    fn test_duplicate_route_decorator_on_operation() {
+        let checker = compile_http("@route(\"/test\") @route(\"/test\") op get(): string;");
+        let diags = diagnostics_with_code(&checker, "duplicate-decorator");
+        assert_eq!(diags.len(), 2, "diagnostics: {:?}", checker.diagnostics());
+        for diag in diags {
+            assert_eq!(
+                diag.message,
+                "Decorator @route cannot be used twice on the same declaration."
+            );
+        }
+    }
 }

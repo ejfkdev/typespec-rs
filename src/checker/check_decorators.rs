@@ -411,23 +411,14 @@ impl Checker {
 
         for (fqn, name, node, is_duplicate, record) in applications {
             if is_duplicate {
+                let message = format!(
+                    "Decorator @{} cannot be used twice on the same declaration.",
+                    name
+                );
                 if let Some(n) = node {
-                    self.warning_at(
-                        n,
-                        "duplicate-decorator",
-                        &format!(
-                            "Decorator @{} cannot be used twice on the same declaration.",
-                            name
-                        ),
-                    );
+                    self.warning_at(n, "duplicate-decorator", &message);
                 } else {
-                    self.warning(
-                        "duplicate-decorator",
-                        &format!(
-                            "Decorator @{} cannot be used twice on the same declaration.",
-                            name
-                        ),
-                    );
+                    self.warning("duplicate-decorator", &message);
                 }
             }
             self.apply_auto_decorator(&fqn, type_id, record);
@@ -480,6 +471,29 @@ impl Checker {
             },
             None => return,
         };
+
+        // Only decorators that opt into upstream's
+        // `validateDecoratorUniqueOnNode` report duplicates. Auto decorators
+        // are handled when their values are stored.
+        const UNIQUE_DECORATORS: &[&str] = &["route", "service"];
+        let mut decorator_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        for (name, _) in &decorator_apps {
+            if UNIQUE_DECORATORS.contains(&name.as_str()) {
+                *decorator_counts.entry(name.as_str()).or_default() += 1;
+            }
+        }
+        for (name, _) in &decorator_apps {
+            if decorator_counts.get(name.as_str()).copied().unwrap_or(0) > 1 {
+                self.warning(
+                    "duplicate-decorator",
+                    &format!(
+                        "Decorator @{} cannot be used twice on the same declaration.",
+                        name
+                    ),
+                );
+            }
+        }
 
         let verb_decorator_count = decorator_apps
             .iter()

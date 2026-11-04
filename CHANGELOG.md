@@ -77,6 +77,9 @@ dependency refresh.
 - The bundled `TypeSpec.JsonSchema` library loads: decorator signatures now
   match the official 1.x `lib/main.tsp` (`prefixItems` and friends)
 - Rustdoc warnings for `Box<str>` and a redundant link target
+- Decorators that require uniqueness (for example `@route`) and auto
+  decorators now report `duplicate-decorator` once per repeated application,
+  matching upstream
 - A declaration named like a decorator (for example `@get op get()`) no
   longer shadows the decorator during resolution
 - Cloned types (for example properties merged by an intersection) inherit the

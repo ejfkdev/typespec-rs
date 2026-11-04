@@ -55,6 +55,10 @@ dependency refresh.
   content types, and non-scalar contents. Explicit Content-Type headers and
   files in unions fall back to structured model bodies and report
   `http-file-structured`
+- HTTP overloads: `@overload(base)` inherits the base route and verb unless
+  the overload declares its own, links both directions in `HttpOperation`,
+  and only skips duplicate-route checks when it resolves to the same endpoint
+  as its base
 
 ### Changed
 - Dependencies updated: regex 1.13.1, bitflags 2.13.2, anyhow 1.0.104,

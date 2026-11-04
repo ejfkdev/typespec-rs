@@ -36,6 +36,8 @@ pub const STATE_MULTIPART_BODY: &str = "TypeSpec.Http.multipartBody";
 pub const STATE_STATUS_CODE: &str = "TypeSpec.Http.statusCode";
 /// State key for HTTP verb decorators
 pub const STATE_VERBS: &str = "TypeSpec.Http.verbs";
+/// State key for the @overload base operation (`TypeSpec.Http.overload`).
+pub const STATE_OVERLOAD: &str = "TypeSpec.Http.overload";
 /// State key for @patch decorator options
 pub const STATE_PATCH_OPTIONS: &str = "TypeSpec.Http.patchOptions";
 /// State key for @server decorator

@@ -1238,6 +1238,12 @@ impl Checker {
                 "Overload must be in the same interface or namespace.",
             );
         }
+
+        self.state_accessors.set_state(
+            crate::libs::http::types::STATE_OVERLOAD,
+            target_type_id,
+            overload_base_type_id.to_string(),
+        );
     }
 
     // ========================================================================

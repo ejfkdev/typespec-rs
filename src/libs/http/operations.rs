@@ -1100,8 +1100,26 @@ fn get_http_operation_internal(
     // Resolve verb — if not explicitly set, infer it later
     let explicit_verb = get_verb(state, operation_id);
 
-    // Resolve route
-    let route = resolve_path_and_parameters(checker, state, operation_id);
+    // `@overload(base)` inherits the base operation's route and verb when the
+    // overload does not declare its own.
+    let overloading = state
+        .get_state(super::types::STATE_OVERLOAD, operation_id)
+        .and_then(|value| value.parse::<TypeId>().ok());
+    let overload_base = overloading.and_then(|base| get_http_operation(checker, state, base));
+
+    let own_route = resolve_path_and_parameters(checker, state, operation_id);
+    let route = if state.get_state(STATE_ROUTE, operation_id).is_none() {
+        overload_base
+            .as_ref()
+            .map(|base| RouteResolutionResult {
+                path: base.path.clone(),
+                path_params: extract_path_param_names(&base.path),
+                shared: super::is_shared_route(state, operation_id),
+            })
+            .unwrap_or(own_route)
+    } else {
+        own_route
+    };
 
     // Determine container (interface or namespace)
     let container = op.interface_.or(op.namespace).unwrap_or(operation_id);
@@ -1110,13 +1128,32 @@ fn get_http_operation_internal(
     let (parameters, inferred_verb) =
         resolve_operation_parameters(checker, state, op, &route, explicit_verb);
 
-    let verb = explicit_verb.unwrap_or(inferred_verb);
+    let verb = explicit_verb
+        .or_else(|| overload_base.as_ref().map(|base| base.verb))
+        .unwrap_or(inferred_verb);
 
     // Resolve responses
     let responses = get_responses_for_operation(checker, state, operation_id);
 
     // Resolve authentication
     let authentication = get_authentication_for_operation(state, operation_id, checker);
+
+    // Link the reverse relation: every operation whose `@overload` points at
+    // this one.
+    let overloads = checker
+        .type_store
+        .iter()
+        .filter_map(|(id, t)| {
+            if !matches!(t, Type::Operation(_)) {
+                return None;
+            }
+            let is_overload = state
+                .get_state(super::types::STATE_OVERLOAD, id)
+                .and_then(|value| value.parse::<TypeId>().ok())
+                == Some(operation_id);
+            is_overload.then_some(id)
+        })
+        .collect();
 
     Some(HttpOperation {
         uri_template: route.path.clone(),
@@ -1127,8 +1164,8 @@ fn get_http_operation_internal(
         responses,
         operation: operation_id,
         authentication,
-        overloading: None,
-        overloads: Vec::new(),
+        overloading,
+        overloads,
     })
 }
 
@@ -2800,7 +2837,14 @@ pub fn validate_http_services(
     let mut grouped: HashMap<(String, HttpVerb), Vec<HttpOperation>> = HashMap::new();
     for &namespace in service_namespaces {
         for operation in collect_http_operations(checker, state, namespace) {
-            if operation.overloading.is_some() {
+            // An overload that resolves to the same endpoint as its base is
+            // excluded from uniqueness checks; an overload that changes route
+            // or verb still participates.
+            if let Some(base_id) = operation.overloading
+                && let Some(base) = get_http_operation(checker, state, base_id)
+                && base.path == operation.path
+                && base.verb == operation.verb
+            {
                 continue;
             }
             grouped
@@ -5598,5 +5642,139 @@ mod tests {
         let op_id = find_operation(&checker, "example").unwrap();
         let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
         assert!(matches!(op.parameters.body, Some(HttpPayloadBody::File(_))));
+    }
+
+    // ---- Overloads (ported from overloads.test.ts) ----
+
+    #[test]
+    fn test_overload_inherits_base_route_and_verb() {
+        let checker = compile_http(
+            r#"
+            @route("/upload")
+            @put
+            op upload(data: string | bytes, @header contentType: "text/plain" | "application/octet-stream"): void;
+            @overload(upload)
+            op uploadString(data: string, @header contentType: "text/plain"): void;
+            @overload(upload)
+            op uploadBytes(data: bytes, @header contentType: "application/octet-stream"): void;
+            "#,
+        );
+        for name in ["uploadString", "uploadBytes"] {
+            let op_id = find_operation(&checker, name).unwrap();
+            let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
+            assert_eq!(op.path, "/upload", "operation {name}");
+            assert_eq!(op.verb, HttpVerb::Put, "operation {name}");
+        }
+    }
+
+    #[test]
+    fn test_overload_can_change_route_or_verb() {
+        let checker = compile_http(
+            r#"
+            @route("/upload")
+            @put
+            op upload(data: string | bytes, @header contentType: "text/plain" | "application/octet-stream"): void;
+            @overload(upload)
+            @route("/uploadString")
+            op uploadString(data: string, @header contentType: "text/plain"): void;
+            @overload(upload)
+            @post op uploadBytes(data: bytes, @header contentType: "application/octet-stream"): void;
+            "#,
+        );
+
+        let string_id = find_operation(&checker, "uploadString").unwrap();
+        let string_op = get_http_operation(&checker, &checker.state_accessors, string_id).unwrap();
+        assert_eq!(string_op.path, "/uploadString");
+        assert_eq!(string_op.verb, HttpVerb::Put);
+
+        let bytes_id = find_operation(&checker, "uploadBytes").unwrap();
+        let bytes_op = get_http_operation(&checker, &checker.state_accessors, bytes_id).unwrap();
+        assert_eq!(bytes_op.path, "/upload");
+        assert_eq!(bytes_op.verb, HttpVerb::Post);
+    }
+
+    #[test]
+    fn test_overload_links() {
+        let checker = compile_http(
+            r#"
+            @route("/upload")
+            @put
+            op upload(data: string | bytes, @header contentType: "text/plain" | "application/octet-stream"): void;
+            @overload(upload)
+            op uploadString(data: string, @header contentType: "text/plain"): void;
+            @overload(upload)
+            op uploadBytes(data: bytes, @header contentType: "application/octet-stream"): void;
+            "#,
+        );
+        let base_id = find_operation(&checker, "upload").unwrap();
+        let base = get_http_operation(&checker, &checker.state_accessors, base_id).unwrap();
+        let string_id = find_operation(&checker, "uploadString").unwrap();
+        let bytes_id = find_operation(&checker, "uploadBytes").unwrap();
+
+        let string_op = get_http_operation(&checker, &checker.state_accessors, string_id).unwrap();
+        let bytes_op = get_http_operation(&checker, &checker.state_accessors, bytes_id).unwrap();
+        assert_eq!(string_op.overloading, Some(base_id));
+        assert_eq!(bytes_op.overloading, Some(base_id));
+        assert!(base.overloads.contains(&string_id));
+        assert!(base.overloads.contains(&bytes_id));
+    }
+
+    #[test]
+    fn test_overload_base_route_still_unique() {
+        let checker = compile_http(
+            r#"
+            @service namespace TestService;
+            @route("/upload")
+            op otherUpload(data: bytes): void;
+
+            @route("/upload")
+            op upload(data: string | bytes, @header contentType: "text/plain" | "application/octet-stream"): void;
+            @overload(upload)
+            op uploadString(data: string, @header contentType: "text/plain"): void;
+            @overload(upload)
+            op uploadBytes(data: bytes, @header contentType: "application/octet-stream"): void;
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_DUPLICATE_OPERATION;
+        let diags = diagnostics_with_code(&checker, code);
+        assert_eq!(diags.len(), 2, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Duplicate operation \"otherUpload\" routed at \"post /upload\"."
+        );
+        assert_eq!(
+            diags[1].message,
+            "Duplicate operation \"upload\" routed at \"post /upload\"."
+        );
+    }
+
+    #[test]
+    fn test_overload_changed_route_still_unique() {
+        let checker = compile_http(
+            r#"
+            @service namespace TestService;
+            @route("/uploadString")
+            op otherUploadString(data: string): void;
+
+            @route("/upload")
+            op upload(data: string | bytes, @header contentType: "text/plain" | "application/octet-stream"): void;
+            @overload(upload)
+            @route("/uploadString")
+            op uploadString(data: string, @header contentType: "text/plain"): void;
+            @overload(upload)
+            op uploadBytes(data: bytes, @header contentType: "application/octet-stream"): void;
+            "#,
+        );
+        let code = crate::libs::http::types::DIAG_DUPLICATE_OPERATION;
+        let diags = diagnostics_with_code(&checker, code);
+        assert_eq!(diags.len(), 2, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Duplicate operation \"otherUploadString\" routed at \"post /uploadString\"."
+        );
+        assert_eq!(
+            diags[1].message,
+            "Duplicate operation \"uploadString\" routed at \"post /uploadString\"."
+        );
     }
 }

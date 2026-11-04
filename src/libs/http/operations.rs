@@ -4237,4 +4237,75 @@ mod tests {
             checker.diagnostics()
         );
     }
+
+    // ---- Decorator option records (ported from http-decorators.test.ts) ----
+
+    #[test]
+    fn test_header_options_name() {
+        let checker =
+            compile_http(r#"op test(@header(#{ name: "x-my-header" }) h: string): void;"#);
+        let op_id = find_operation(&checker, "test").unwrap();
+        let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
+        let header = op
+            .parameters
+            .parameters
+            .iter()
+            .find_map(|p| match p {
+                HttpOperationParameter::Header(h) => Some(h),
+                _ => None,
+            })
+            .expect("expected header parameter");
+        assert_eq!(header.options.name, "x-my-header");
+    }
+
+    #[test]
+    fn test_cookie_options_name() {
+        let checker = compile_http(r#"op test(@cookie(#{ name: "my-cookie" }) c: string): void;"#);
+        let op_id = find_operation(&checker, "test").unwrap();
+        let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
+        let cookie = op
+            .parameters
+            .parameters
+            .iter()
+            .find_map(|p| match p {
+                HttpOperationParameter::Cookie(c) => Some(c),
+                _ => None,
+            })
+            .expect("expected cookie parameter");
+        assert_eq!(cookie.options.name, "my-cookie");
+    }
+
+    #[test]
+    fn test_query_options_name() {
+        let checker = compile_http(r#"op test(@query(#{ name: "my-query" }) q: string): void;"#);
+        let op_id = find_operation(&checker, "test").unwrap();
+        let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
+        let query = op
+            .parameters
+            .parameters
+            .iter()
+            .find_map(|p| match p {
+                HttpOperationParameter::Query(q) => Some(q),
+                _ => None,
+            })
+            .expect("expected query parameter");
+        assert_eq!(query.options.name, "my-query");
+    }
+
+    #[test]
+    fn test_path_options_name() {
+        let checker = compile_http(r#"op test(@path(#{ name: "my-path" }) p: string): void;"#);
+        let op_id = find_operation(&checker, "test").unwrap();
+        let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
+        let path = op
+            .parameters
+            .parameters
+            .iter()
+            .find_map(|p| match p {
+                HttpOperationParameter::Path(p) => Some(p),
+                _ => None,
+            })
+            .expect("expected path parameter");
+        assert_eq!(path.options.name, "my-path");
+    }
 }

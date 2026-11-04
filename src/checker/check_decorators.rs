@@ -783,12 +783,7 @@ impl Checker {
 
                 // ---- HTTP parameter/metadata decorators ----
                 "header" => {
-                    let name = args.first().and_then(|a| {
-                        a.js_value.as_ref().and_then(|v| match v {
-                            DecoratorMarshalledValue::String(s) => Some(s.clone()),
-                            _ => None,
-                        })
-                    });
+                    let name = self.decorator_name_option(&args);
                     crate::libs::http::apply_header(
                         &mut self.state_accessors,
                         type_id,
@@ -796,12 +791,7 @@ impl Checker {
                     );
                 }
                 "query" => {
-                    let name = args.first().and_then(|a| {
-                        a.js_value.as_ref().and_then(|v| match v {
-                            DecoratorMarshalledValue::String(s) => Some(s.clone()),
-                            _ => None,
-                        })
-                    });
+                    let name = self.decorator_name_option(&args);
                     if let Some(DecoratorMarshalledValue::Record(record)) =
                         args.first().and_then(|a| a.js_value.as_ref())
                         && record.properties.iter().any(|(key, _)| key == "explode")
@@ -819,12 +809,7 @@ impl Checker {
                     );
                 }
                 "path" => {
-                    let name = args.first().and_then(|a| {
-                        a.js_value.as_ref().and_then(|v| match v {
-                            DecoratorMarshalledValue::String(s) => Some(s.clone()),
-                            _ => None,
-                        })
-                    });
+                    let name = self.decorator_name_option(&args);
                     if let Some(DecoratorMarshalledValue::Record(record)) =
                         args.first().and_then(|a| a.js_value.as_ref())
                         && record.properties.iter().any(|(key, _)| {
@@ -856,12 +841,7 @@ impl Checker {
                     crate::libs::http::apply_status_code(&mut self.state_accessors, type_id);
                 }
                 "cookie" => {
-                    let name = args.first().and_then(|a| {
-                        a.js_value.as_ref().and_then(|v| match v {
-                            DecoratorMarshalledValue::String(s) => Some(s.clone()),
-                            _ => None,
-                        })
-                    });
+                    let name = self.decorator_name_option(&args);
                     crate::libs::http::apply_cookie(
                         &mut self.state_accessors,
                         type_id,
@@ -1034,6 +1014,20 @@ impl Checker {
 
     /// Set the `doc` field on a type.
     /// Read a string literal type's value.
+    /// Extract a decorator parameter name from either a string argument or
+    /// an options record (`#{ name: "..." }`).
+    fn decorator_name_option(&self, args: &[DecoratorArgument]) -> Option<String> {
+        match args.first().and_then(|a| a.js_value.as_ref()) {
+            Some(DecoratorMarshalledValue::String(name)) => Some(name.clone()),
+            Some(DecoratorMarshalledValue::Record(record)) => record
+                .properties
+                .iter()
+                .find(|(key, _)| key == "name")
+                .and_then(|(_, value)| self.string_literal_value(*value)),
+            _ => None,
+        }
+    }
+
     fn string_literal_value(&self, type_id: TypeId) -> Option<String> {
         match self.get_type(self.resolve_alias_chain(type_id)) {
             Some(Type::String(s)) => Some(s.value.clone()),

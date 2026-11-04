@@ -13,3 +13,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # The action publishes branches for many future Rust versions, but only
+      # released toolchains can be installed. Keep the CI pin aligned with
+      # rust-toolchain.toml and bump it manually.
+      - dependency-name: "dtolnay/rust-toolchain"

@@ -866,6 +866,51 @@ impl Checker {
                     crate::libs::http::apply_multipart_body(&mut self.state_accessors, type_id);
                 }
 
+                // ---- HTTP private httpFile decorator ----
+                "httpFile" => {
+                    crate::libs::http::apply_http_file(&mut self.state_accessors, type_id);
+                }
+
+                // ---- HTTP private httpPart decorator (HttpPart<T, Options>) ----
+                "httpPart" => {
+                    let part_type = args.first().and_then(|arg| match &arg.js_value {
+                        Some(DecoratorMarshalledValue::Type(id))
+                        | Some(DecoratorMarshalledValue::Value(id)) => Some(*id),
+                        _ => None,
+                    });
+                    let name = match args.get(1).and_then(|arg| arg.js_value.as_ref()) {
+                        Some(DecoratorMarshalledValue::Record(record)) => record
+                            .properties
+                            .iter()
+                            .find(|(key, _)| key == "name")
+                            .and_then(|(_, value)| self.string_literal_value(*value)),
+                        Some(DecoratorMarshalledValue::Type(id)) => {
+                            match self.get_type(self.resolve_alias_chain(*id)) {
+                                Some(Type::Model(model)) => {
+                                    model.properties.get("name").and_then(|&prop_id| {
+                                        match self.get_type(prop_id) {
+                                            Some(Type::ModelProperty(prop)) => {
+                                                self.string_literal_value(prop.r#type)
+                                            }
+                                            _ => None,
+                                        }
+                                    })
+                                }
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some(part_type) = part_type {
+                        crate::libs::http::apply_http_part(
+                            &mut self.state_accessors,
+                            type_id,
+                            part_type,
+                            name.as_deref(),
+                        );
+                    }
+                }
+
                 // ---- HTTP visibility decorator ----
                 "visibility" => {
                     // @visibility takes one or more enum member references

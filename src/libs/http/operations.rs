@@ -21,8 +21,10 @@ use super::operation::*;
 use super::responses::ResponseIndex;
 use super::types::{
     DIAG_CONTENT_TYPE_IGNORED, DIAG_CONTENT_TYPE_STRING, DIAG_DOUBLE_SLASH, DIAG_DUPLICATE_BODY,
-    DIAG_INCOMPATIBLE_URI_PARAM, DIAG_METADATA_IGNORED, DIAG_MISSING_URI_PARAM,
-    DIAG_MULTIPLE_STATUS_CODES, DIAG_NO_IMPLICIT_MULTIPART, DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
+    DIAG_FORMDATA_NO_PART_NAME, DIAG_INCOMPATIBLE_URI_PARAM, DIAG_METADATA_IGNORED,
+    DIAG_MISSING_URI_PARAM, DIAG_MULTIPART_INVALID_CONTENT_TYPE, DIAG_MULTIPART_MODEL,
+    DIAG_MULTIPART_NESTED, DIAG_MULTIPART_PART, DIAG_MULTIPLE_STATUS_CODES,
+    DIAG_NO_IMPLICIT_MULTIPART, DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
     DIAG_RESPONSE_COOKIE_NOT_SUPPORTED, DIAG_STATUS_CODE_INVALID, DIAG_USE_URI_TEMPLATE, HttpVerb,
 };
 use super::visibility::{Visibility, get_default_visibility_for_verb};
@@ -391,10 +393,30 @@ pub fn resolve_http_payload(
 ) -> HttpPayload {
     let mut payload = HttpPayload::default();
 
-    let model = match checker.get_type(params_model_id) {
+    let resolved = checker.resolve_alias_chain(params_model_id);
+    let model = match checker.get_type(resolved) {
         Some(Type::Model(m)) => m,
-        _ => return payload,
+        Some(Type::Intrinsic(i))
+            if matches!(
+                i.name,
+                IntrinsicTypeName::Void | IntrinsicTypeName::ErrorType
+            ) =>
+        {
+            return payload;
+        }
+        _ => {
+            // Non-model payloads (scalars, literals, unions) are the body
+            // as-is. Ported from `resolveBody()`'s non-model branch.
+            payload.body_type = Some(resolved);
+            return payload;
+        }
     };
+
+    // Array payloads are the body as-is.
+    if model.indexer.is_some() {
+        payload.body_type = Some(resolved);
+        return payload;
+    }
 
     // If the model has no properties and no base model, nothing to classify
     if model.property_names.is_empty() && model.base_model.is_none() {
@@ -1181,7 +1203,7 @@ fn resolve_operation_parameters(
 
 /// Build HttpOperationParameters from a resolved payload.
 fn build_http_operation_parameters(
-    _checker: &Checker,
+    checker: &Checker,
     state: &StateAccessors,
     payload: &HttpPayload,
     params_model_id: TypeId,
@@ -1214,16 +1236,31 @@ fn build_http_operation_parameters(
     }
 
     // Determine body
-    let body = if !payload.multipart_body_props.is_empty() {
-        Some(HttpPayloadBody::Single(HttpOperationBody {
-            content_types: vec!["multipart/form-data".to_string()],
-            content_type_property: None,
-            property: payload.multipart_body_props.first().copied(),
-            body_type: params_model_id,
-            is_explicit: false,
-            contains_metadata_annotations: false,
-            body_kind: "single",
-        }))
+    let body = if let Some(&multipart_prop) = payload.multipart_body_props.first() {
+        let content_type_property = payload.content_type_props.first().copied();
+        let content_types: Option<Vec<String>> =
+            content_type_property.and_then(|prop_id| match checker.get_type(prop_id) {
+                Some(Type::ModelProperty(prop)) => Some(content_type_values(checker, prop.r#type)),
+                _ => None,
+            });
+        let resolution = resolve_multipart_body(
+            checker,
+            state,
+            multipart_prop,
+            content_type_property,
+            content_types.as_deref(),
+        );
+        resolution.body.map(HttpPayloadBody::Multipart).or_else(|| {
+            Some(HttpPayloadBody::Single(HttpOperationBody {
+                content_types: vec!["multipart/form-data".to_string()],
+                content_type_property: None,
+                property: Some(multipart_prop),
+                body_type: params_model_id,
+                is_explicit: false,
+                contains_metadata_annotations: false,
+                body_kind: "single",
+            }))
+        })
     } else {
         payload.body_type.map(|bt| {
             HttpPayloadBody::Single(HttpOperationBody {
@@ -1873,6 +1910,376 @@ fn validate_payload(
     diagnostics
 }
 
+/// Whether a model is (or extends) the HTTP `File` model.
+fn is_file_model(checker: &Checker, state: &StateAccessors, type_id: TypeId) -> bool {
+    let mut current = Some(checker.resolve_alias_chain(type_id));
+    while let Some(id) = current {
+        if super::is_http_file(state, id) {
+            return true;
+        }
+        match checker.get_type(id) {
+            Some(Type::Model(model)) => {
+                if model.name == "File" {
+                    return true;
+                }
+                current = model.base_model;
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
+fn find_model_property(checker: &Checker, model_id: TypeId, name: &str) -> Option<TypeId> {
+    let mut current = Some(checker.resolve_alias_chain(model_id));
+    while let Some(id) = current {
+        match checker.get_type(id) {
+            Some(Type::Model(model)) => {
+                if let Some(&prop_id) = model.properties.get(name) {
+                    return Some(prop_id);
+                }
+                current = model.base_model;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn scalar_extends(checker: &Checker, type_id: TypeId, name: &str) -> bool {
+    let mut current = Some(checker.resolve_alias_chain(type_id));
+    while let Some(id) = current {
+        match checker.get_type(id) {
+            Some(Type::Scalar(scalar)) => {
+                if scalar.name == name {
+                    return true;
+                }
+                current = scalar.base_scalar;
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// Default content type for an HttpPart payload. Ported from
+/// `resolveContentTypesForBody()`.
+fn default_part_content_type(
+    checker: &Checker,
+    state: &StateAccessors,
+    type_id: TypeId,
+) -> &'static str {
+    let resolved = checker.resolve_alias_chain(type_id);
+    if is_file_model(checker, state, resolved) {
+        return "*/*";
+    }
+    match checker.get_type(resolved) {
+        Some(Type::Model(model)) if model.indexer.is_some() => "application/json",
+        Some(Type::Model(_)) => "application/json",
+        Some(Type::Scalar(_)) => {
+            if scalar_extends(checker, resolved, "bytes") {
+                "application/octet-stream"
+            } else {
+                "text/plain"
+            }
+        }
+        Some(Type::String(_)) | Some(Type::Number(_)) => "text/plain",
+        _ => "application/json",
+    }
+}
+
+fn header_data_from_param(param: &HttpOperationParameter) -> Option<HeaderPropertyData> {
+    match param {
+        HttpOperationParameter::Header(header) => Some(HeaderPropertyData {
+            base: HttpPropertyBase {
+                property: header.param,
+                path: Vec::new(),
+            },
+            options: header.options.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// Resolve HttpPart information from decorator state, falling back to the
+/// model's template mapper arguments. The fallback is required because an
+/// array template argument can produce a distinct instance for the same
+/// `HttpPart<T>` type, and decorator state is keyed by type identity.
+fn get_http_part_info(
+    checker: &Checker,
+    state: &StateAccessors,
+    type_id: TypeId,
+) -> Option<super::HttpPart> {
+    if let Some(part) = super::get_http_part(state, type_id) {
+        return Some(part);
+    }
+    let resolved = checker.resolve_alias_chain(type_id);
+    let model = match checker.get_type(resolved) {
+        Some(Type::Model(model)) if model.name == "HttpPart" => model,
+        _ => return None,
+    };
+    let args = model.template_mapper.as_ref()?.args.clone();
+    let part_type = args.first().copied()?;
+    let name = args.get(1).and_then(|&options_id| {
+        match checker.get_type(checker.resolve_alias_chain(options_id)) {
+            Some(Type::Model(options)) => options.properties.get("name").and_then(|&prop_id| {
+                match checker.get_type(prop_id) {
+                    Some(Type::ModelProperty(prop)) => {
+                        match checker.get_type(checker.resolve_alias_chain(prop.r#type)) {
+                            Some(Type::String(value)) => Some(value.value.clone()),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            }),
+            _ => None,
+        }
+    });
+    Some(super::HttpPart { part_type, name })
+}
+
+struct ResolvedMultipartPart {
+    multi: bool,
+    name: Option<String>,
+    body: HttpPayloadBody,
+    headers: Vec<HeaderPropertyData>,
+    filename: Option<TypeId>,
+}
+
+fn resolve_multipart_part(
+    checker: &Checker,
+    state: &StateAccessors,
+    type_id: TypeId,
+    diagnostics: &mut Vec<HttpValidationDiagnostic>,
+) -> Option<ResolvedMultipartPart> {
+    let resolved = checker.resolve_alias_chain(type_id);
+    let (part_type, multi) = match checker.get_type(resolved) {
+        Some(Type::Model(model)) if model.indexer.is_some() => (
+            model.indexer.map(|(_, value)| value).unwrap_or(resolved),
+            true,
+        ),
+        _ => (resolved, false),
+    };
+
+    let Some(part) = get_http_part_info(checker, state, part_type) else {
+        diagnostics.push(HttpValidationDiagnostic {
+            code: DIAG_MULTIPART_PART,
+            message: "Expect item to be an HttpPart model.".to_string(),
+            target: checker
+                .get_type(part_type)
+                .and_then(|t| t.node_id_from_type())
+                .unwrap_or(0),
+            severity: ValidationSeverity::Error,
+        });
+        return None;
+    };
+
+    let payload = resolve_http_payload(
+        checker,
+        state,
+        part.part_type,
+        Visibility::Create,
+        HttpPayloadDisposition::Multipart,
+    );
+    if !payload.multipart_body_props.is_empty() {
+        diagnostics.push(HttpValidationDiagnostic {
+            code: DIAG_MULTIPART_NESTED,
+            message: "Cannot use @multipartBody inside of an HttpPart".to_string(),
+            target: checker
+                .get_type(part_type)
+                .and_then(|t| t.node_id_from_type())
+                .unwrap_or(0),
+            severity: ValidationSeverity::Error,
+        });
+        return None;
+    }
+
+    let body_type = payload
+        .body_type
+        .or_else(|| (!payload.body_property_props.is_empty()).then_some(part.part_type))?;
+
+    let content_types = payload
+        .content_type_props
+        .first()
+        .and_then(|&prop_id| match checker.get_type(prop_id) {
+            Some(Type::ModelProperty(prop)) => Some(content_type_values(checker, prop.r#type)),
+            _ => None,
+        })
+        .filter(|values| !values.is_empty())
+        .unwrap_or_else(|| vec![default_part_content_type(checker, state, body_type).to_string()]);
+
+    let headers = payload
+        .headers
+        .iter()
+        .filter_map(header_data_from_param)
+        .collect();
+    let filename = is_file_model(checker, state, part.part_type)
+        .then(|| find_model_property(checker, part.part_type, "filename"))
+        .flatten();
+
+    Some(ResolvedMultipartPart {
+        multi,
+        name: part.name,
+        body: HttpPayloadBody::Single(HttpOperationBody {
+            content_types,
+            content_type_property: payload.content_type_props.first().copied(),
+            property: None,
+            body_type,
+            is_explicit: payload.body_is_explicit,
+            contains_metadata_annotations: false,
+            body_kind: "single",
+        }),
+        headers,
+        filename,
+    })
+}
+
+struct MultipartResolution {
+    body: Option<HttpOperationMultipartBody>,
+    diagnostics: Vec<HttpValidationDiagnostic>,
+}
+
+/// Resolve a `@multipartBody` property into parts and diagnostics.
+/// Ported from TS `resolveMultiPartBody()`.
+fn resolve_multipart_body(
+    checker: &Checker,
+    state: &StateAccessors,
+    property_id: TypeId,
+    content_type_property: Option<TypeId>,
+    content_types: Option<&[String]>,
+) -> MultipartResolution {
+    let mut diagnostics = Vec::new();
+    let property_type = match checker.get_type(property_id) {
+        Some(Type::ModelProperty(prop)) => prop.r#type,
+        _ => {
+            return MultipartResolution {
+                body: None,
+                diagnostics,
+            };
+        }
+    };
+    let resolved = checker.resolve_alias_chain(property_type);
+
+    let resolved_content_types: Vec<String> = match content_types {
+        Some(values) => values.to_vec(),
+        None => vec!["multipart/form-data".to_string()],
+    };
+    if let Some(values) = content_types {
+        for content_type in values {
+            if !matches!(
+                content_type.as_str(),
+                "multipart/form-data" | "multipart/mixed"
+            ) {
+                diagnostics.push(HttpValidationDiagnostic {
+                    code: DIAG_MULTIPART_INVALID_CONTENT_TYPE,
+                    message: format!(
+                        "Content type '{content_type}' is not a multipart content type. Supported content types are: multipart/form-data, multipart/mixed."
+                    ),
+                    target: checker
+                        .get_type(resolved)
+                        .and_then(|t| t.node_id_from_type())
+                        .unwrap_or(0),
+                    severity: ValidationSeverity::Error,
+                });
+            }
+        }
+    }
+
+    let property = property_id;
+    let mut parts: Vec<HttpOperationPart> = Vec::new();
+    match checker.get_type(resolved) {
+        Some(Type::Model(model)) => {
+            for name in &model.property_names {
+                let Some(&prop_id) = model.properties.get(name) else {
+                    continue;
+                };
+                let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id) else {
+                    continue;
+                };
+                let Some(part) =
+                    resolve_multipart_part(checker, state, prop.r#type, &mut diagnostics)
+                else {
+                    continue;
+                };
+                parts.push(HttpOperationPart::Model(HttpOperationModelPart {
+                    body: part.body,
+                    filename: part.filename,
+                    headers: part.headers,
+                    multi: part.multi,
+                    name: part.name.unwrap_or_else(|| name.clone()),
+                    optional: prop.optional,
+                    property: prop_id,
+                }));
+            }
+        }
+        Some(Type::Tuple(tuple)) => {
+            // The no-name rule applies when the content type was declared
+            // explicitly as multipart/form-data (not for the implicit default).
+            let has_form_data = content_types
+                .is_some_and(|values| values.iter().any(|ct| ct == "multipart/form-data"));
+            for value in &tuple.values {
+                let Some(part) = resolve_multipart_part(checker, state, *value, &mut diagnostics)
+                else {
+                    continue;
+                };
+                if part.name.is_none() && has_form_data {
+                    diagnostics.push(HttpValidationDiagnostic {
+                        code: DIAG_FORMDATA_NO_PART_NAME,
+                        message: "Part used in multipart/form-data must have a name.".to_string(),
+                        target: checker
+                            .get_type(*value)
+                            .and_then(|t| t.node_id_from_type())
+                            .unwrap_or(0),
+                        severity: ValidationSeverity::Error,
+                    });
+                }
+                parts.push(HttpOperationPart::Tuple(HttpOperationTuplePart {
+                    body: part.body,
+                    filename: part.filename,
+                    headers: part.headers,
+                    multi: part.multi,
+                    name: part.name,
+                    optional: false,
+                }));
+            }
+        }
+        _ => {
+            diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_MULTIPART_MODEL,
+                message: "Multipart request body must be a model or a tuple of http parts."
+                    .to_string(),
+                target: checker
+                    .get_type(resolved)
+                    .and_then(|t| t.node_id_from_type())
+                    .unwrap_or(0),
+                severity: ValidationSeverity::Error,
+            });
+            return MultipartResolution {
+                body: None,
+                diagnostics,
+            };
+        }
+    }
+
+    MultipartResolution {
+        body: Some(HttpOperationMultipartBody {
+            content_types: resolved_content_types,
+            content_type_property,
+            property,
+            multipart_kind: if matches!(checker.get_type(resolved), Some(Type::Tuple(_))) {
+                MultipartKind::Tuple
+            } else {
+                MultipartKind::Model
+            },
+            model_type: resolved,
+            parts,
+            body_kind: "multipart",
+        }),
+        diagnostics,
+    }
+}
+
 /// Names of parameters whose `{/name}` expansion follows a literal ending in
 /// `/`, which would produce a duplicate slash.
 fn params_with_preceding_slash(path: &str) -> std::collections::HashSet<String> {
@@ -2042,6 +2449,25 @@ fn validate_route_and_parameters(
                     });
                 }
             }
+        }
+    }
+
+    if !payload.multipart_body_props.is_empty() {
+        let content_type_property = payload.content_type_props.first().copied();
+        let content_types: Option<Vec<String>> =
+            content_type_property.and_then(|prop_id| match checker.get_type(prop_id) {
+                Some(Type::ModelProperty(prop)) => Some(content_type_values(checker, prop.r#type)),
+                _ => None,
+            });
+        for &prop_id in &payload.multipart_body_props {
+            let resolution = resolve_multipart_body(
+                checker,
+                state,
+                prop_id,
+                content_type_property,
+                content_types.as_deref(),
+            );
+            diagnostics.extend(resolution.diagnostics);
         }
     }
 
@@ -4320,5 +4746,349 @@ mod tests {
                 "Decorator @route cannot be used twice on the same declaration."
             );
         }
+    }
+
+    // ---- HttpPart / multipart state ----
+
+    fn compile_http_library(source: &str) -> Checker {
+        let parse_result =
+            crate::parser::parse_with_options(source, crate::parser::ParseOptions::with_http());
+        let mut checker = Checker::new();
+        checker.set_parse_result(parse_result.root_id, parse_result.builder.clone());
+        checker.check_program();
+        checker
+    }
+
+    fn property_type_of(checker: &Checker, model: &str, property: &str) -> TypeId {
+        let model_id = checker.declared_types.get(model).copied().unwrap();
+        match checker.get_type(model_id) {
+            Some(Type::Model(m)) => {
+                let prop_id = m.properties.get(property).copied().unwrap();
+                match checker.get_type(prop_id) {
+                    Some(Type::ModelProperty(p)) => p.r#type,
+                    _ => panic!("expected model property"),
+                }
+            }
+            _ => panic!("expected model"),
+        }
+    }
+
+    #[test]
+    fn test_http_part_decorator_state() {
+        let checker =
+            compile_http_library("using TypeSpec.Http;\nmodel P { p: HttpPart<string>; }");
+        let part_type = property_type_of(&checker, "P", "p");
+        let part = super::super::get_http_part(&checker.state_accessors, part_type)
+            .expect("HttpPart<string> should carry @httpPart state");
+        let string_id = checker.std_types.get("string").copied().unwrap();
+        assert_eq!(part.part_type, string_id);
+        assert_eq!(part.name, None);
+    }
+
+    #[test]
+    fn test_http_part_decorator_state_with_options() {
+        let checker = compile_http_library(
+            "using TypeSpec.Http;\nmodel P { p: HttpPart<string, #{ name: \"myPart\" }>; }",
+        );
+        let part_type = property_type_of(&checker, "P", "p");
+        let part = super::super::get_http_part(&checker.state_accessors, part_type)
+            .expect("HttpPart with options should carry @httpPart state");
+        let string_id = checker.std_types.get("string").copied().unwrap();
+        assert_eq!(part.part_type, string_id);
+        assert_eq!(part.name.as_deref(), Some("myPart"));
+    }
+
+    // ---- Multipart diagnostics and resolution (ported from multipart.test.ts) ----
+
+    fn multipart_body(checker: &Checker, op_name: &str) -> HttpOperationMultipartBody {
+        let op_id = find_operation(checker, op_name).unwrap();
+        let op = get_http_operation(checker, &checker.state_accessors, op_id).unwrap();
+        match op.parameters.body {
+            Some(HttpPayloadBody::Multipart(body)) => body,
+            other => panic!("expected multipart body, got {other:?}"),
+        }
+    }
+
+    fn part_info(part: &HttpOperationPart) -> (Option<String>, bool, &HttpPayloadBody) {
+        match part {
+            HttpOperationPart::Model(part) => (Some(part.name.clone()), part.multi, &part.body),
+            HttpOperationPart::Tuple(part) => (part.name.clone(), part.multi, &part.body),
+        }
+    }
+
+    fn part_content_types(body: &HttpPayloadBody) -> Vec<String> {
+        match body {
+            HttpPayloadBody::Single(single) => single.content_types.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_multipart_invalid_content_type() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "application/json",
+              @multipartBody body: [HttpPart<string>]): void;
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_MULTIPART_INVALID_CONTENT_TYPE);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Content type 'application/json' is not a multipart content type. Supported content types are: multipart/form-data, multipart/mixed."
+        );
+    }
+
+    #[test]
+    fn test_multipart_formdata_requires_part_name() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/form-data",
+              @multipartBody body: [HttpPart<string>]): void;
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_FORMDATA_NO_PART_NAME);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Part used in multipart/form-data must have a name."
+        );
+    }
+
+    #[test]
+    fn test_multipart_mixed_allows_anonymous_part() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/mixed",
+              @multipartBody body: [HttpPart<string>]): void;
+            "#,
+        );
+        let body = multipart_body(&checker, "read");
+        assert_eq!(body.parts.len(), 1);
+        let (name, multi, _) = part_info(&body.parts[0]);
+        assert_eq!(name, None);
+        assert!(!multi);
+    }
+
+    #[test]
+    fn test_multipart_part_name_from_options() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/mixed",
+              @multipartBody body: [HttpPart<string, #{ name: "myPart" }>]): void;
+            "#,
+        );
+        let body = multipart_body(&checker, "read");
+        let (name, _, _) = part_info(&body.parts[0]);
+        assert_eq!(name.as_deref(), Some("myPart"));
+    }
+
+    #[test]
+    fn test_multipart_array_part_is_multi() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/mixed",
+              @multipartBody body: [HttpPart<string>[]]): void;
+            "#,
+        );
+        let body = multipart_body(&checker, "read");
+        let (_, multi, _) = part_info(&body.parts[0]);
+        assert!(multi);
+    }
+
+    #[test]
+    fn test_multipart_non_http_part_in_tuple() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/mixed",
+              @multipartBody body: [string]): void;
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_MULTIPART_PART);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(diags[0].message, "Expect item to be an HttpPart model.");
+    }
+
+    #[test]
+    fn test_multipart_non_http_part_in_model() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/mixed",
+              @multipartBody body: { part: string }): void;
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_MULTIPART_PART);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+    }
+
+    #[test]
+    fn test_multipart_model_part_name_from_property() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/mixed",
+              @multipartBody body: { myPropertyPart: HttpPart<string> }): void;
+            "#,
+        );
+        let body = multipart_body(&checker, "read");
+        let (name, _, _) = part_info(&body.parts[0]);
+        assert_eq!(name.as_deref(), Some("myPropertyPart"));
+    }
+
+    #[test]
+    fn test_multipart_nested_multipart_body() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/mixed",
+              @multipartBody body: [HttpPart<{@multipartBody nested: []}>]): void;
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_MULTIPART_NESTED);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Cannot use @multipartBody inside of an HttpPart"
+        );
+    }
+
+    #[test]
+    fn test_multipart_part_headers() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/mixed",
+              @header operationHeader: string;
+              @multipartBody body: [
+                HttpPart<{
+                  @body nested: string,
+                  @header partHeader: string;
+                }>]): void;
+            "#,
+        );
+        let body = multipart_body(&checker, "read");
+        assert_eq!(body.parts.len(), 1);
+        match &body.parts[0] {
+            HttpOperationPart::Tuple(part) => {
+                assert_eq!(part.headers.len(), 1);
+                assert_eq!(part.headers[0].options.name, "part-header");
+            }
+            _ => panic!("expected tuple part"),
+        }
+    }
+
+    #[test]
+    fn test_multipart_default_part_content_types() {
+        for (type_name, expected, extra) in [
+            ("bytes", "application/octet-stream", ""),
+            ("File", "*/*", ""),
+            ("string", "text/plain", ""),
+            ("int32", "text/plain", ""),
+            ("string[]", "application/json", ""),
+            ("Foo", "application/json", "model Foo { value: string }"),
+        ] {
+            let source = format!(
+                r#"
+                using TypeSpec.Http;
+                op upload(
+                  @header contentType: "multipart/mixed",
+                  @multipartBody body: [
+                    HttpPart<{type_name}>,
+                    HttpPart<{type_name}>[]
+                  ]): void;
+                {extra}
+                "#
+            );
+            let checker = compile_http_library(&source);
+            let body = multipart_body(&checker, "upload");
+            assert_eq!(body.parts.len(), 2, "type {type_name}");
+            for part in &body.parts {
+                let (_, multi, part_body) = part_info(part);
+                assert_eq!(
+                    part_content_types(part_body),
+                    vec![expected.to_string()],
+                    "type {type_name}"
+                );
+                let _ = multi;
+            }
+        }
+    }
+
+    fn part_filename_optional(checker: &Checker, part: &HttpOperationPart) -> Option<bool> {
+        let filename = match part {
+            HttpOperationPart::Model(part) => part.filename,
+            HttpOperationPart::Tuple(part) => part.filename,
+        }?;
+        match checker.get_type(filename) {
+            Some(Type::ModelProperty(prop)) => Some(prop.optional),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn test_multipart_file_optional_filename() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            op read(
+              @header contentType: "multipart/mixed",
+              @multipartBody body: [
+                HttpPart<File, #{ name: "file" }>
+              ]): void;
+            "#,
+        );
+        let body = multipart_body(&checker, "read");
+        assert_eq!(
+            body.parts.len(),
+            1,
+            "diagnostics: {:?}",
+            checker.diagnostics()
+        );
+        assert_eq!(part_filename_optional(&checker, &body.parts[0]), Some(true));
+    }
+
+    #[test]
+    fn test_multipart_file_required_filename() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model FileWithFilename extends File {
+              filename: string;
+            }
+            op read(
+              @header contentType: "multipart/mixed",
+              @multipartBody body: [
+                HttpPart<FileWithFilename, #{ name: "file" }>
+              ]): void;
+            "#,
+        );
+        let body = multipart_body(&checker, "read");
+        assert_eq!(
+            body.parts.len(),
+            1,
+            "diagnostics: {:?}",
+            checker.diagnostics()
+        );
+        assert_eq!(
+            part_filename_optional(&checker, &body.parts[0]),
+            Some(false)
+        );
     }
 }

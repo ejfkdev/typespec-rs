@@ -1741,6 +1741,17 @@ impl<'a> Parser<'a> {
         refs
     }
 
+    /// Consume `[]` suffixes following a template argument type reference.
+    fn parse_array_suffix(&mut self, mut node: u32, pos: usize) -> u32 {
+        while self.check_token(TokenKind::OpenBracket) {
+            self.next_token();
+            self.expect_token(TokenKind::CloseBracket);
+            let span = self.make_span(pos, self.previous_token_end);
+            node = self.builder.create_array_expression(node, span);
+        }
+        node
+    }
+
     fn parse_template_argument_list(&mut self) -> Vec<u32> {
         self.expect_token(TokenKind::LessThan);
         let mut args = Vec::new();
@@ -1805,15 +1816,18 @@ impl<'a> Parser<'a> {
                             self.builder
                                 .create_type_reference(name_id, template_args, span)
                         };
+                        let value = self.parse_array_suffix(value, pos);
                         let span = self.make_span(pos, self.previous_token_end);
                         self.builder.create_template_argument(None, value, span)
                     }
                 } else {
-                    // The identifier is a simple type reference (no template args)
+                    // The identifier is a simple type reference (no template args),
+                    // optionally followed by array suffixes (`string[]`).
                     let value = {
                         let span = self.make_span(pos, self.previous_token_end);
                         self.builder.create_type_reference(name_id, vec![], span)
                     };
+                    let value = self.parse_array_suffix(value, pos);
                     let span = self.make_span(pos, self.previous_token_end);
                     self.builder.create_template_argument(None, value, span)
                 }

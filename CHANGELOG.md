@@ -44,6 +44,11 @@ dependency refresh.
   payloads, operation grouping by service, and `Content-Type` header name
   casing. `@header`, `@cookie`, `@query`, and `@path` now read the `name`
   from their options record as well as from a string argument
+- Multipart request bodies now resolve `HttpPart<T, Options>` parts from
+  tuple and model forms, including part names, `multi`, headers, filenames,
+  fallback content types, nested-part detection, and the
+  `multipart-invalid-content-type`, `multipart-model`, `multipart-part`,
+  `multipart-nested`, and `formdata-no-part-name` diagnostics
 
 ### Changed
 - Dependencies updated: regex 1.13.1, bitflags 2.13.2, anyhow 1.0.104,
@@ -82,6 +87,8 @@ dependency refresh.
   matching upstream
 - A declaration named like a decorator (for example `@get op get()`) no
   longer shadows the decorator during resolution
+- Array type arguments inside template argument lists (`Box<string[]>`) no
+  longer swallow the `[]` suffix or mis-associate it with the outer type
 - Cloned types (for example properties merged by an intersection) inherit the
   source type's decorator state, so HTTP metadata survives the clone
 

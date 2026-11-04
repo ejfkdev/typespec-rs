@@ -159,6 +159,33 @@ impl Checker {
             &node.decorators,
             ctx.mapper.as_ref(),
         );
+
+        // Validate HTTP request payload rules once the operation is concrete.
+        // Template instantiations are validated when their declaration is
+        // checked in a non-template context.
+        if ctx.mapper.is_none() && node.template_parameters.is_empty() {
+            let request_diagnostics = crate::libs::http::operations::validate_http_operation(
+                self,
+                &self.state_accessors,
+                type_id,
+            );
+            let response_diagnostics =
+                crate::libs::http::operations::validate_http_response_operation(
+                    self,
+                    &self.state_accessors,
+                    type_id,
+                );
+            for diagnostic in request_diagnostics.into_iter().chain(response_diagnostics) {
+                match diagnostic.severity {
+                    crate::libs::http::operations::ValidationSeverity::Error => {
+                        self.error_at(diagnostic.target, diagnostic.code, &diagnostic.message)
+                    }
+                    crate::libs::http::operations::ValidationSeverity::Warning => {
+                        self.warning_at(diagnostic.target, diagnostic.code, &diagnostic.message)
+                    }
+                }
+            }
+        }
         type_id
     }
 }

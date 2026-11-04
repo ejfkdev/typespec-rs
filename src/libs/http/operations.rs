@@ -19,7 +19,11 @@ use crate::state_accessors::StateAccessors;
 use super::auth::Authentication;
 use super::operation::*;
 use super::responses::ResponseIndex;
-use super::types::HttpVerb;
+use super::types::{
+    DIAG_CONTENT_TYPE_IGNORED, DIAG_CONTENT_TYPE_STRING, DIAG_DUPLICATE_BODY,
+    DIAG_METADATA_IGNORED, DIAG_NO_IMPLICIT_MULTIPART, DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
+    DIAG_RESPONSE_COOKIE_NOT_SUPPORTED, HttpVerb,
+};
 use super::visibility::{Visibility, get_default_visibility_for_verb};
 // Import from parent mod.rs
 use super::{
@@ -631,7 +635,7 @@ fn determine_property_kind(
             .get_state(STATE_HEADER, prop_id)
             .filter(|s| !s.is_empty())
             .unwrap_or(prop_name);
-        if header_name.to_lowercase() == "content-type" {
+        if header_name.to_lowercase().replace('-', "") == "contenttype" {
             return HttpPropertyKind::ContentType;
         }
         return HttpPropertyKind::Header;
@@ -1387,6 +1391,488 @@ fn parse_status_codes(s: &str) -> Vec<super::operation::HttpStatusCodesEntry> {
             }
         })
         .collect()
+}
+
+// ============================================================================
+// Operation validation (request payload rules)
+// ============================================================================
+
+/// Severity of a validation diagnostic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationSeverity {
+    Error,
+    Warning,
+}
+
+/// A diagnostic produced while validating an HTTP operation.
+#[derive(Debug, Clone)]
+pub struct HttpValidationDiagnostic {
+    pub code: &'static str,
+    pub message: String,
+    pub target: crate::ast::NodeId,
+    pub severity: ValidationSeverity,
+}
+
+#[derive(Default)]
+struct ParamScan {
+    body_props: Vec<TypeId>,
+    unannotated: Vec<TypeId>,
+    duplicate_types: Vec<(String, Vec<&'static str>)>,
+    metadata_in_body: Vec<(TypeId, &'static str)>,
+    response_cookies: Vec<TypeId>,
+}
+
+fn annotation_kinds(state: &StateAccessors, prop_id: TypeId) -> Vec<&'static str> {
+    let mut kinds = Vec::new();
+    if is_header(state, prop_id) && !is_content_type_property(state, prop_id) {
+        kinds.push("header");
+    }
+    if is_cookie(state, prop_id) {
+        kinds.push("cookie");
+    }
+    if is_query(state, prop_id) {
+        kinds.push("query");
+    }
+    if is_path(state, prop_id) {
+        kinds.push("path");
+    }
+    if is_body(state, prop_id) {
+        kinds.push("body");
+    }
+    if is_body_root(state, prop_id) {
+        kinds.push("bodyRoot");
+    }
+    if is_multipart_body(state, prop_id) {
+        kinds.push("multipartBody");
+    }
+    if is_status_code(state, prop_id) {
+        kinds.push("statusCode");
+    }
+    kinds
+}
+
+fn is_content_type_property(state: &StateAccessors, prop_id: TypeId) -> bool {
+    state
+        .get_state(STATE_HEADER, prop_id)
+        .is_some_and(|name| name.to_lowercase().replace('-', "") == "contenttype")
+}
+
+/// `shouldTreatAsBodyProperty` from http-property.ts.
+fn is_treated_as_body_property(
+    state: &StateAccessors,
+    prop_id: TypeId,
+    disposition: HttpPayloadDisposition,
+) -> bool {
+    match disposition {
+        HttpPayloadDisposition::Request => is_status_code(state, prop_id),
+        HttpPayloadDisposition::Response => is_query(state, prop_id) || is_path(state, prop_id),
+        HttpPayloadDisposition::Multipart => {
+            is_path(state, prop_id) || is_query(state, prop_id) || is_status_code(state, prop_id)
+        }
+    }
+}
+
+fn scan_parameters(
+    checker: &Checker,
+    state: &StateAccessors,
+    model_id: TypeId,
+    top_level: bool,
+    disposition: HttpPayloadDisposition,
+    visited: &mut std::collections::HashSet<TypeId>,
+    scan: &mut ParamScan,
+) -> bool {
+    if !visited.insert(model_id) {
+        return false;
+    }
+    let model = match checker.get_type(model_id) {
+        Some(Type::Model(m)) => m.clone(),
+        _ => return false,
+    };
+    let mut found_body = false;
+    let mut found_body_property = false;
+    if let Some(base_id) = model.base_model {
+        let base = scan_parameters(checker, state, base_id, false, disposition, visited, scan);
+        found_body |= base;
+    }
+    for prop_name in &model.property_names {
+        let Some(&prop_id) = model.properties.get(prop_name) else {
+            continue;
+        };
+        let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id) else {
+            continue;
+        };
+        let prop_type = prop.r#type;
+
+        if is_body_ignore(state, prop_id) {
+            continue;
+        }
+
+        let kinds = annotation_kinds(state, prop_id);
+        if kinds.len() > 1 {
+            scan.duplicate_types.push((prop.name.clone(), kinds));
+            continue;
+        }
+
+        // Implicit response cookies are not supported and are ignored.
+        if disposition == HttpPayloadDisposition::Response && is_cookie(state, prop_id) {
+            scan.response_cookies.push(prop_id);
+            continue;
+        }
+
+        if is_body(state, prop_id) || is_body_root(state, prop_id) {
+            found_body = true;
+            scan.body_props.push(prop_id);
+            if is_body(state, prop_id) {
+                collect_ignored_metadata(checker, state, prop_type, disposition, visited, scan);
+            }
+            continue;
+        }
+
+        if is_multipart_body(state, prop_id) {
+            found_body = true;
+            scan.body_props.push(prop_id);
+            continue;
+        }
+
+        if is_content_type_property(state, prop_id) {
+            continue;
+        }
+
+        if is_treated_as_body_property(state, prop_id, disposition) {
+            found_body_property = true;
+            if top_level {
+                scan.unannotated.push(prop_id);
+            }
+            continue;
+        }
+
+        if matches!(checker.get_type(prop_type), Some(Type::Model(_))) {
+            let nested =
+                scan_parameters(checker, state, prop_type, false, disposition, visited, scan);
+            if nested {
+                found_body = true;
+                continue;
+            }
+        }
+
+        if !is_header(state, prop_id)
+            && !is_cookie(state, prop_id)
+            && !is_query(state, prop_id)
+            && !is_path(state, prop_id)
+            && !is_status_code(state, prop_id)
+        {
+            found_body_property = true;
+            if top_level {
+                scan.unannotated.push(prop_id);
+            }
+        }
+    }
+    found_body && !found_body_property
+}
+
+fn collect_ignored_metadata(
+    checker: &Checker,
+    state: &StateAccessors,
+    model_id: TypeId,
+    disposition: HttpPayloadDisposition,
+    visited: &mut std::collections::HashSet<TypeId>,
+    scan: &mut ParamScan,
+) {
+    if !visited.insert(model_id) {
+        return;
+    }
+    let model = match checker.get_type(model_id) {
+        Some(Type::Model(m)) => m.clone(),
+        _ => return,
+    };
+    for prop_name in &model.property_names {
+        let Some(&prop_id) = model.properties.get(prop_name) else {
+            continue;
+        };
+        let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id) else {
+            continue;
+        };
+        // validateBodyProperty() from payload.ts.
+        let kind = if is_header(state, prop_id) {
+            Some("header")
+        } else if (disposition == HttpPayloadDisposition::Request
+            || disposition == HttpPayloadDisposition::Response)
+            && is_cookie(state, prop_id)
+        {
+            Some("cookie")
+        } else if (disposition == HttpPayloadDisposition::Request
+            || disposition == HttpPayloadDisposition::Multipart)
+            && is_query(state, prop_id)
+        {
+            Some("query")
+        } else if disposition == HttpPayloadDisposition::Request && is_path(state, prop_id) {
+            Some("path")
+        } else if disposition == HttpPayloadDisposition::Response && is_status_code(state, prop_id)
+        {
+            Some("statusCode")
+        } else {
+            None
+        };
+        if let Some(kind) = kind {
+            scan.metadata_in_body.push((prop_id, kind));
+        }
+        if matches!(checker.get_type(prop.r#type), Some(Type::Model(_))) {
+            collect_ignored_metadata(checker, state, prop.r#type, disposition, visited, scan);
+        }
+    }
+}
+
+fn content_type_values(checker: &Checker, type_id: TypeId) -> Vec<String> {
+    match checker.get_type(checker.resolve_alias_chain(type_id)) {
+        Some(Type::String(s)) => vec![s.value.clone()],
+        Some(Type::Union(u)) => {
+            let mut values = Vec::new();
+            for name in &u.variant_names {
+                if let Some(&variant_id) = u.variants.get(name)
+                    && let Some(Type::UnionVariant(v)) = checker.get_type(variant_id)
+                {
+                    values.extend(content_type_values(checker, v.r#type));
+                }
+            }
+            values
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Returns true when the content type property is a string literal, a union of
+/// string literals, or the `string` scalar. Ported from `getContentTypes()`.
+fn is_valid_content_type(checker: &Checker, type_id: TypeId) -> bool {
+    match checker.get_type(checker.resolve_alias_chain(type_id)) {
+        Some(Type::String(_)) => true,
+        Some(Type::Scalar(scalar)) => scalar.name == "string",
+        Some(Type::Union(u)) => u.variant_names.iter().all(|name| {
+            u.variants.get(name).is_some_and(|&variant_id| {
+                matches!(checker.get_type(variant_id), Some(Type::UnionVariant(v)) if is_valid_content_type(checker, v.r#type))
+            })
+        }),
+        _ => false,
+    }
+}
+
+fn collect_content_type_diagnostics(
+    checker: &Checker,
+    payload: &HttpPayload,
+    node_of: &dyn Fn(TypeId) -> crate::ast::NodeId,
+    diagnostics: &mut Vec<HttpValidationDiagnostic>,
+) -> Vec<String> {
+    let mut content_types = Vec::new();
+    for &prop_id in &payload.content_type_props {
+        if let Some(Type::ModelProperty(prop)) = checker.get_type(prop_id) {
+            if !is_valid_content_type(checker, prop.r#type) {
+                diagnostics.push(HttpValidationDiagnostic {
+                    code: DIAG_CONTENT_TYPE_STRING,
+                    message:
+                        "contentType parameter must be a string literal or union of string literals"
+                            .to_string(),
+                    target: node_of(prop_id),
+                    severity: ValidationSeverity::Error,
+                });
+            }
+            content_types.extend(content_type_values(checker, prop.r#type));
+        }
+    }
+    content_types
+}
+
+fn validate_payload(
+    checker: &Checker,
+    state: &StateAccessors,
+    payload_type: TypeId,
+    disposition: HttpPayloadDisposition,
+    visibility: Visibility,
+    op_node: crate::ast::NodeId,
+) -> Vec<HttpValidationDiagnostic> {
+    let mut scan = ParamScan::default();
+    let mut visited = std::collections::HashSet::new();
+    scan_parameters(
+        checker,
+        state,
+        payload_type,
+        true,
+        disposition,
+        &mut visited,
+        &mut scan,
+    );
+
+    let payload = resolve_http_payload(checker, state, payload_type, visibility, disposition);
+
+    let mut diagnostics = Vec::new();
+    let node_of = |type_id: TypeId| {
+        checker
+            .get_type(type_id)
+            .and_then(|t| t.node_id_from_type())
+            .unwrap_or(op_node)
+    };
+
+    // `operation-param-duplicate-type` only applies to request parameters.
+    if disposition == HttpPayloadDisposition::Request {
+        for (name, kinds) in &scan.duplicate_types {
+            diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
+                message: format!("Param {} has multiple types: [{}]", name, kinds.join(", ")),
+                target: op_node,
+                severity: ValidationSeverity::Error,
+            });
+        }
+    }
+
+    for &prop_id in &scan.response_cookies {
+        let prop_name = checker
+            .get_type(prop_id)
+            .and_then(|t| t.name().map(|s| s.to_string()))
+            .unwrap_or_default();
+        diagnostics.push(HttpValidationDiagnostic {
+            code: DIAG_RESPONSE_COOKIE_NOT_SUPPORTED,
+            message: format!(
+                "@cookie on response is not supported. Property '{prop_name}' will be ignored in the body. If you need 'Set-Cookie', use @header instead."
+            ),
+            target: node_of(prop_id),
+            severity: ValidationSeverity::Warning,
+        });
+    }
+
+    if scan.body_props.len() > 1 {
+        for &prop_id in &scan.body_props {
+            diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_DUPLICATE_BODY,
+                message: "Operation has multiple @body parameters declared".to_string(),
+                target: node_of(prop_id),
+                severity: ValidationSeverity::Error,
+            });
+        }
+    } else if !scan.body_props.is_empty() && !scan.unannotated.is_empty() {
+        diagnostics.push(HttpValidationDiagnostic {
+            code: DIAG_DUPLICATE_BODY,
+            message: "Operation has a @body and an unannotated parameter. There can only be one representing the body".to_string(),
+            target: node_of(scan.unannotated[0]),
+            severity: ValidationSeverity::Error,
+        });
+    }
+
+    for &(prop_id, kind) in &scan.metadata_in_body {
+        diagnostics.push(HttpValidationDiagnostic {
+            code: DIAG_METADATA_IGNORED,
+            message: format!(
+                "{kind} property will be ignored as it is inside of a @body property. Use @bodyRoot instead if wanting to mix."
+            ),
+            target: node_of(prop_id),
+            severity: ValidationSeverity::Warning,
+        });
+    }
+
+    if !payload.content_type_props.is_empty() {
+        let content_types =
+            collect_content_type_diagnostics(checker, &payload, &node_of, &mut diagnostics);
+        let has_body = payload.body_type.is_some()
+            || !payload.body_property_props.is_empty()
+            || !payload.multipart_body_props.is_empty();
+
+        if !has_body {
+            let target = payload
+                .content_type_props
+                .first()
+                .copied()
+                .unwrap_or(op_node);
+            diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_CONTENT_TYPE_IGNORED,
+                message: "`Content-Type` header ignored because there is no body.".to_string(),
+                target: node_of(target),
+                severity: ValidationSeverity::Warning,
+            });
+        } else if payload.multipart_body_props.is_empty()
+            && content_types
+                .iter()
+                .any(|ct| crate::libs::content_types::is_multipart_content_type(ct))
+        {
+            diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_NO_IMPLICIT_MULTIPART,
+                message:
+                    "Using multipart payloads requires the use of @multipartBody and HttpPart<T> models."
+                        .to_string(),
+                target: op_node,
+                severity: ValidationSeverity::Error,
+            });
+        }
+    }
+
+    diagnostics
+}
+
+/// Validate the request payload of an HTTP operation.
+pub fn validate_http_operation(
+    checker: &Checker,
+    state: &StateAccessors,
+    operation_id: TypeId,
+) -> Vec<HttpValidationDiagnostic> {
+    let Some(Type::Operation(op)) = checker.get_type(operation_id) else {
+        return Vec::new();
+    };
+    let Some(params_id) = op.parameters else {
+        return Vec::new();
+    };
+    let op_node = op.node.unwrap_or(0);
+    validate_payload(
+        checker,
+        state,
+        params_id,
+        HttpPayloadDisposition::Request,
+        Visibility::Create,
+        op_node,
+    )
+}
+
+/// Validate the response payload of an HTTP operation.
+pub fn validate_http_response_operation(
+    checker: &Checker,
+    state: &StateAccessors,
+    operation_id: TypeId,
+) -> Vec<HttpValidationDiagnostic> {
+    let Some(Type::Operation(op)) = checker.get_type(operation_id) else {
+        return Vec::new();
+    };
+    let Some(return_type) = op.return_type else {
+        return Vec::new();
+    };
+    let op_node = op.node.unwrap_or(0);
+    let resolved = checker.resolve_alias_chain(return_type);
+    let mut diagnostics = Vec::new();
+    match checker.get_type(resolved) {
+        Some(Type::Model(_)) => diagnostics.extend(validate_payload(
+            checker,
+            state,
+            resolved,
+            HttpPayloadDisposition::Response,
+            Visibility::Read,
+            op_node,
+        )),
+        Some(Type::Union(union)) => {
+            for name in &union.variant_names {
+                if let Some(&variant_id) = union.variants.get(name)
+                    && let Some(Type::UnionVariant(variant)) = checker.get_type(variant_id)
+                {
+                    let variant_type = checker.resolve_alias_chain(variant.r#type);
+                    if matches!(checker.get_type(variant_type), Some(Type::Model(_))) {
+                        diagnostics.extend(validate_payload(
+                            checker,
+                            state,
+                            variant_type,
+                            HttpPayloadDisposition::Response,
+                            Visibility::Read,
+                            op_node,
+                        ));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    diagnostics
 }
 
 #[cfg(test)]
@@ -2655,6 +3141,319 @@ mod tests {
                     "Operation should inherit auth from namespace"
                 );
             }
+        }
+    }
+
+    // ---- Request payload validation (ported from parameters.test.ts) ----
+
+    fn diagnostics_with_code<'a>(
+        checker: &'a Checker,
+        code: &str,
+    ) -> Vec<&'a crate::diagnostics::Diagnostic> {
+        checker
+            .diagnostics()
+            .iter()
+            .filter(|d| d.code == code)
+            .collect()
+    }
+
+    #[test]
+    fn test_operation_param_duplicate_type() {
+        let checker = compile_http(
+            "@get op get(@body body: string, @path @query multiParam: string): string;",
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_OPERATION_PARAM_DUPLICATE_TYPE);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Param multiParam has multiple types: [query, path]"
+        );
+    }
+
+    #[test]
+    fn test_allows_deeply_nested_body() {
+        let checker = compile_http("op get(data: {nested: { @body param2: string }}): string;");
+        assert!(
+            diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY).is_empty(),
+            "unexpected duplicate-body: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_allows_deeply_nested_body_root() {
+        let checker = compile_http("op get(data: {nested: { @bodyRoot param2: string }}): string;");
+        assert!(
+            diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY).is_empty(),
+            "unexpected duplicate-body: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_body_ignore_does_not_mark_property_as_implicit_body() {
+        let checker = compile_http(
+            r#"
+            op test(
+                @bodyIgnore key: {
+                  @path path: string,
+                  @query query: string,
+                  @header header: string
+                },
+                @body body: bytes
+              ): void;
+            "#,
+        );
+        assert!(
+            diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY).is_empty(),
+            "unexpected duplicate-body: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_duplicate_body_with_unannotated_parameter() {
+        let checker = compile_http("@get op get(param1: string, @body param2: string): string;");
+        let diags = diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Operation has a @body and an unannotated parameter. There can only be one representing the body"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_body_with_nested_body_and_unannotated_parameter() {
+        let checker =
+            compile_http("@get op get(param1: string, nested: {@body param2: string}): void;");
+        let diags = diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Operation has a @body and an unannotated parameter. There can only be one representing the body"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_body_with_annotated_and_nested_body() {
+        let checker =
+            compile_http("@get op get(nested: {param1: string, @body param2: string}): void;");
+        let diags = diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Operation has a @body and an unannotated parameter. There can only be one representing the body"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_body_multiple_body_params() {
+        let checker = compile_http(
+            "@get op get(@query select: string, @body param1: string, @body param2: string): string;",
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY);
+        assert_eq!(diags.len(), 2, "diagnostics: {:?}", checker.diagnostics());
+        for diag in diags {
+            assert_eq!(
+                diag.message,
+                "Operation has multiple @body parameters declared"
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_implicit_multipart_from_string_content_type() {
+        let checker = compile_http(
+            r#"op get(@header contentType: "multipart/form-data", @body body: {name: string, avatar: bytes}): void;"#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_NO_IMPLICIT_MULTIPART);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "Using multipart payloads requires the use of @multipartBody and HttpPart<T> models."
+        );
+    }
+
+    #[test]
+    fn test_no_implicit_multipart_from_union_content_type() {
+        let checker = compile_http(
+            r#"op get(@header contentType: "multipart/form-data" | "application/json", @body body: {name: string, avatar: bytes}): void;"#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_NO_IMPLICIT_MULTIPART);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+    }
+
+    #[test]
+    fn test_content_type_ignored_without_body() {
+        let checker = compile_http(r#"@get op get(@header contentType: "image/png"): string;"#);
+        let diags = diagnostics_with_code(&checker, DIAG_CONTENT_TYPE_IGNORED);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "`Content-Type` header ignored because there is no body."
+        );
+    }
+
+    #[test]
+    fn test_metadata_ignored_in_body() {
+        for decorator in ["@header", "@cookie", "@query", "@path"] {
+            let source = format!(
+                "op read(@body explicit: {{ {decorator} id: string, other: string }}): void;"
+            );
+            let checker = compile_http(&source);
+            let diags = diagnostics_with_code(&checker, DIAG_METADATA_IGNORED);
+            assert_eq!(
+                diags.len(),
+                1,
+                "expected one metadata-ignored for {decorator}, diagnostics: {:?}",
+                checker.diagnostics()
+            );
+        }
+    }
+
+    #[test]
+    fn test_metadata_not_applicable_in_request() {
+        let checker = compile_http("op read(@statusCode id: 200): { };");
+        assert!(
+            diagnostics_with_code(&checker, DIAG_METADATA_IGNORED).is_empty(),
+            "unexpected metadata-ignored: {:?}",
+            checker.diagnostics()
+        );
+        assert!(
+            diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY).is_empty(),
+            "unexpected duplicate-body: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    // ---- Response payload validation (ported from responses.test.ts) ----
+
+    #[test]
+    fn test_response_duplicate_body() {
+        let checker = compile_http("op read(): { @body body1: string, @body body2: int32 };");
+        let diags = diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY);
+        assert_eq!(diags.len(), 2, "diagnostics: {:?}", checker.diagnostics());
+    }
+
+    #[test]
+    fn test_response_duplicate_body_root() {
+        let checker =
+            compile_http("op read(): { @bodyRoot body1: string, @bodyRoot body2: int32 };");
+        let diags = diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY);
+        assert_eq!(diags.len(), 2, "diagnostics: {:?}", checker.diagnostics());
+    }
+
+    #[test]
+    fn test_response_body_and_body_root() {
+        let checker = compile_http("op read(): { @bodyRoot body1: string, @body body2: int32 };");
+        let diags = diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY);
+        assert_eq!(diags.len(), 2, "diagnostics: {:?}", checker.diagnostics());
+    }
+
+    #[test]
+    fn test_response_allows_deeply_nested_body() {
+        let checker = compile_http("op get(): {data: {nested: { @body param2: string }}};");
+        assert!(
+            diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY).is_empty(),
+            "unexpected duplicate-body: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_response_allows_deeply_nested_body_root() {
+        let checker = compile_http("op get(): {data: {nested: { @bodyRoot param2: string }}};");
+        assert!(
+            diagnostics_with_code(&checker, DIAG_DUPLICATE_BODY).is_empty(),
+            "unexpected duplicate-body: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_response_metadata_ignored_in_body() {
+        for (decorator, prop) in [("@header", "id: string"), ("@statusCode", "_: 200")] {
+            let source = format!(
+                "op read(): {{ @body explicit: {{ {decorator} {prop}, other: string }} }};"
+            );
+            let checker = compile_http(&source);
+            let diags = diagnostics_with_code(&checker, DIAG_METADATA_IGNORED);
+            assert_eq!(
+                diags.len(),
+                1,
+                "expected one metadata-ignored for {decorator}, diagnostics: {:?}",
+                checker.diagnostics()
+            );
+        }
+    }
+
+    #[test]
+    fn test_response_path_inside_body_is_not_ignored() {
+        let checker = compile_http("op read(): { @body explicit: {@path id: string} };");
+        assert!(
+            diagnostics_with_code(&checker, DIAG_METADATA_IGNORED).is_empty(),
+            "unexpected metadata-ignored: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_response_implicit_cookie_not_supported() {
+        let checker = compile_http("op get(): { @cookie token: string };");
+        let diags = diagnostics_with_code(&checker, DIAG_RESPONSE_COOKIE_NOT_SUPPORTED);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "@cookie on response is not supported. Property 'token' will be ignored in the body. If you need 'Set-Cookie', use @header instead."
+        );
+    }
+
+    #[test]
+    fn test_response_explicit_cookie_in_body_is_metadata_ignored() {
+        let checker = compile_http("op get(): { @body explicit: { @cookie token: string } };");
+        assert!(
+            diagnostics_with_code(&checker, DIAG_RESPONSE_COOKIE_NOT_SUPPORTED).is_empty(),
+            "unexpected response-cookie-not-supported: {:?}",
+            checker.diagnostics()
+        );
+        assert_eq!(
+            diagnostics_with_code(&checker, DIAG_METADATA_IGNORED).len(),
+            1,
+            "diagnostics: {:?}",
+            checker.diagnostics()
+        );
+    }
+
+    #[test]
+    fn test_response_invalid_content_types() {
+        let checker = compile_http(
+            r#"
+            model Foo {
+              foo: string;
+            }
+
+            model TextPlain {
+              contentType: "text/plain";
+            }
+
+            @route("/test1")
+            @get
+            op test1(): { @header contentType: int32, @body body: Foo };
+            @route("/test2")
+            @get
+            op test2(): { @header contentType: 42, @body body: Foo };
+            @route("/test3")
+            @get
+            op test3(): { @header contentType: "application/json" | TextPlain, @body body: Foo };
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_CONTENT_TYPE_STRING);
+        assert_eq!(diags.len(), 3, "diagnostics: {:?}", checker.diagnostics());
+        for diag in diags {
+            assert_eq!(
+                diag.message,
+                "contentType parameter must be a string literal or union of string literals"
+            );
         }
     }
 }

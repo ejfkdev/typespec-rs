@@ -78,8 +78,14 @@ impl Checker {
     /// 4. Recursive search of all sub-namespaces under the global namespace
     /// 5. Dotted name walk: "TypeSpec.indexer", "TypeSpec.Prototypes.getter"
     pub(crate) fn resolve_decorator_by_name(&self, name: &str) -> Option<TypeId> {
-        // 1. Try direct lookup first (FQN-aware, simple names like "doc")
-        if let Some(id) = self.resolve_declared_name(name) {
+        // 1. Try direct lookup first (FQN-aware, simple names like "doc").
+        // Only accept the result immediately when it really is a decorator:
+        // a declaration may shadow the decorator name (e.g. `@get op get()`),
+        // and decorator names must keep resolving to the decorator.
+        let direct = self.resolve_declared_name(name);
+        if let Some(id) = direct
+            && matches!(self.get_type(id), Some(Type::Decorator(_)))
+        {
             return Some(id);
         }
 
@@ -109,7 +115,7 @@ impl Checker {
         // 4. Handle dotted names: "TypeSpec.indexer" or "TypeSpec.Prototypes.getter"
         let parts: Vec<&str> = name.split('.').collect();
         if parts.len() < 2 {
-            return None;
+            return direct;
         }
 
         // Walk the namespace chain to find the decorator
@@ -137,7 +143,7 @@ impl Checker {
             }
         }
 
-        None
+        direct
     }
 
     /// Resolve a decorator name via using declarations.

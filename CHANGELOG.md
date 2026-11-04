@@ -49,6 +49,10 @@ dependency refresh.
   fallback content types, nested-part detection, and the
   `multipart-invalid-content-type`, `multipart-model`, `multipart-part`,
   `multipart-nested`, and `formdata-no-part-name` diagnostics
+- `Http.File` models resolve to file bodies (content types, filename,
+  contents, `isText`) in requests and responses, and derived file models are
+  validated for extra properties, disallowed HTTP metadata, non-string
+  content types, and non-scalar contents
 
 ### Changed
 - Dependencies updated: regex 1.13.1, bitflags 2.13.2, anyhow 1.0.104,
@@ -89,6 +93,8 @@ dependency refresh.
   longer shadows the decorator during resolution
 - Array type arguments inside template argument lists (`Box<string[]>`) no
   longer swallow the `[]` suffix or mis-associate it with the outer type
+- `bytes` is now a standalone intrinsic scalar (it no longer extends
+  `string`), matching the official stdlib
 - Cloned types (for example properties merged by an intersection) inherit the
   source type's decorator state, so HTTP metadata survives the clone
 

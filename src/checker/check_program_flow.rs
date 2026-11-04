@@ -47,6 +47,12 @@ impl Checker {
 
     /// Report duplicate HTTP operations (same verb and path) within services.
     fn validate_http_services(&mut self) {
+        let file_diagnostics =
+            crate::libs::http::operations::validate_file_models(self, &self.state_accessors);
+        for diagnostic in file_diagnostics {
+            self.error_at(diagnostic.target, diagnostic.code, &diagnostic.message);
+        }
+
         let services = crate::libs::compiler::list_services(&self.state_accessors);
         if services.is_empty() {
             return;

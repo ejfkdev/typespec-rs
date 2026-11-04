@@ -116,7 +116,7 @@ impl Checker {
             ("float32", "float64"),
             ("decimal128", "decimal"),
             ("url", "string"),
-            ("bytes", "string"),
+            ("bytes", ""),
             ("utcDateTime", "string"),
             ("offsetDateTime", "string"),
             ("unixTimestamp32", "utcDateTime"),
@@ -124,7 +124,11 @@ impl Checker {
 
         for &(name, base_name) in derived_types {
             if !self.std_types.contains_key(name) {
-                let base_scalar = self.std_types.get(base_name).copied();
+                let base_scalar = if base_name.is_empty() {
+                    None
+                } else {
+                    self.std_types.get(base_name).copied()
+                };
                 let type_id = {
                     let mut s = ScalarType::new(
                         self.next_type_id(),

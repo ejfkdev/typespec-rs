@@ -835,6 +835,8 @@ pub struct HttpOperationTuplePart {
 pub struct HttpOperationFileBody {
     /// Content types
     pub content_types: Vec<String>,
+    /// The payload property that defined this body
+    pub property: Option<TypeId>,
     /// Content type property TypeId
     pub content_type_property: TypeId,
     /// The model type (is or extends Http.File)

@@ -21,7 +21,9 @@ use super::operation::*;
 use super::responses::ResponseIndex;
 use super::types::{
     DIAG_CONTENT_TYPE_IGNORED, DIAG_CONTENT_TYPE_STRING, DIAG_DOUBLE_SLASH, DIAG_DUPLICATE_BODY,
-    DIAG_FORMDATA_NO_PART_NAME, DIAG_INCOMPATIBLE_URI_PARAM, DIAG_METADATA_IGNORED,
+    DIAG_FORMDATA_NO_PART_NAME, DIAG_HTTP_FILE_CONTENT_TYPE_NOT_STRING,
+    DIAG_HTTP_FILE_CONTENTS_NOT_SCALAR, DIAG_HTTP_FILE_DISALLOWED_METADATA,
+    DIAG_HTTP_FILE_EXTRA_PROPERTY, DIAG_INCOMPATIBLE_URI_PARAM, DIAG_METADATA_IGNORED,
     DIAG_MISSING_URI_PARAM, DIAG_MULTIPART_INVALID_CONTENT_TYPE, DIAG_MULTIPART_MODEL,
     DIAG_MULTIPART_NESTED, DIAG_MULTIPART_PART, DIAG_MULTIPLE_STATUS_CODES,
     DIAG_NO_IMPLICIT_MULTIPART, DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
@@ -903,7 +905,7 @@ pub fn get_responses_for_operation(
 /// Creates a default 200 response with the type as the body.
 fn process_plain_response(
     checker: &Checker,
-    _state: &StateAccessors,
+    state: &StateAccessors,
     type_id: TypeId,
     description: Option<String>,
     response_index: &mut ResponseIndex,
@@ -944,15 +946,21 @@ fn process_plain_response(
         responses: vec![HttpOperationResponseContent {
             properties: Vec::new(),
             headers: Vec::new(),
-            body: Some(HttpPayloadBody::Single(HttpOperationBody {
-                content_types: vec!["application/json".to_string()],
-                content_type_property: None,
-                property: None,
-                body_type: type_id,
-                is_explicit: false,
-                contains_metadata_annotations: false,
-                body_kind: "single",
-            })),
+            body: Some(
+                resolve_file_body(checker, state, resolved, None)
+                    .map(HttpPayloadBody::File)
+                    .unwrap_or_else(|| {
+                        HttpPayloadBody::Single(HttpOperationBody {
+                            content_types: vec!["application/json".to_string()],
+                            content_type_property: None,
+                            property: None,
+                            body_type: type_id,
+                            is_explicit: false,
+                            contains_metadata_annotations: false,
+                            body_kind: "single",
+                        })
+                    }),
+            ),
         }],
     };
     response_index.set(super::operation::HttpStatusCodesEntry::Code(200), response);
@@ -995,15 +1003,19 @@ fn process_envelope_response(
 
     // Determine body
     let body = payload.body_type.map(|bt| {
-        HttpPayloadBody::Single(HttpOperationBody {
-            content_types: vec!["application/json".to_string()],
-            content_type_property: payload.content_type_props.first().copied(),
-            property: None,
-            body_type: bt,
-            is_explicit: payload.body_is_explicit,
-            contains_metadata_annotations: false,
-            body_kind: "single",
-        })
+        resolve_file_body(checker, state, bt, None)
+            .map(HttpPayloadBody::File)
+            .unwrap_or_else(|| {
+                HttpPayloadBody::Single(HttpOperationBody {
+                    content_types: vec!["application/json".to_string()],
+                    content_type_property: payload.content_type_props.first().copied(),
+                    property: None,
+                    body_type: bt,
+                    is_explicit: payload.body_is_explicit,
+                    contains_metadata_annotations: false,
+                    body_kind: "single",
+                })
+            })
     });
 
     // If no explicit status codes, infer them
@@ -1201,6 +1213,52 @@ fn resolve_operation_parameters(
     }
 }
 
+/// Resolve an HTTP File model into a file body. Ported from `getFileBody()`.
+fn resolve_file_body(
+    checker: &Checker,
+    state: &StateAccessors,
+    type_id: TypeId,
+    property: Option<TypeId>,
+) -> Option<HttpOperationFileBody> {
+    let resolved = checker.resolve_alias_chain(type_id);
+    if !is_file_model(checker, state, resolved) {
+        return None;
+    }
+    let content_type_property = find_model_property(checker, resolved, "contentType")?;
+    let filename = find_model_property(checker, resolved, "filename")?;
+    let contents = find_model_property(checker, resolved, "contents")?;
+
+    let content_types = match checker.get_type(content_type_property) {
+        Some(Type::ModelProperty(prop)) => {
+            let values = content_type_values(checker, prop.r#type);
+            if values.is_empty() {
+                // `string` (and any invalid value that produced no literal)
+                // falls back to `*/*`.
+                vec!["*/*".to_string()]
+            } else {
+                values
+            }
+        }
+        _ => vec!["*/*".to_string()],
+    };
+    let contents_type = match checker.get_type(contents) {
+        Some(Type::ModelProperty(prop)) => checker.resolve_alias_chain(prop.r#type),
+        _ => return None,
+    };
+    let is_text = scalar_extends(checker, contents_type, "string");
+
+    Some(HttpOperationFileBody {
+        content_types,
+        content_type_property,
+        model_type: resolved,
+        is_text,
+        filename,
+        contents,
+        property,
+        body_kind: "file",
+    })
+}
+
 /// Build HttpOperationParameters from a resolved payload.
 fn build_http_operation_parameters(
     checker: &Checker,
@@ -1263,15 +1321,19 @@ fn build_http_operation_parameters(
         })
     } else {
         payload.body_type.map(|bt| {
-            HttpPayloadBody::Single(HttpOperationBody {
-                content_types: vec!["application/json".to_string()],
-                content_type_property: payload.content_type_props.first().copied(),
-                property: None,
-                body_type: bt,
-                is_explicit: payload.body_is_explicit,
-                contains_metadata_annotations: false,
-                body_kind: "single",
-            })
+            resolve_file_body(checker, state, bt, None)
+                .map(HttpPayloadBody::File)
+                .unwrap_or_else(|| {
+                    HttpPayloadBody::Single(HttpOperationBody {
+                        content_types: vec!["application/json".to_string()],
+                        content_type_property: payload.content_type_props.first().copied(),
+                        property: None,
+                        body_type: bt,
+                        is_explicit: payload.body_is_explicit,
+                        contains_metadata_annotations: false,
+                        body_kind: "single",
+                    })
+                })
         })
     };
 
@@ -1922,7 +1984,7 @@ fn is_file_model(checker: &Checker, state: &StateAccessors, type_id: TypeId) -> 
                 if model.name == "File" {
                     return true;
                 }
-                current = model.base_model;
+                current = model.source_model.or(model.base_model);
             }
             _ => return false,
         }
@@ -2501,6 +2563,171 @@ pub fn validate_http_operation(
         operation_id,
         op_node,
     ));
+    diagnostics
+}
+
+/// Validate user models that derive from `Http.File`.
+/// Ported from TS `validateHttpFileModel()`.
+pub fn validate_file_models(
+    checker: &Checker,
+    state: &StateAccessors,
+) -> Vec<HttpValidationDiagnostic> {
+    let mut diagnostics = Vec::new();
+    for (type_id, t) in checker.type_store.iter() {
+        let Type::Model(model) = t else {
+            continue;
+        };
+        // Only validate named, non-instance models (instances share the
+        // declaration and would duplicate diagnostics).
+        if model.name.is_empty() || model.name == "File" || model.template_mapper.is_some() {
+            continue;
+        }
+        if !is_file_model(checker, state, type_id) {
+            continue;
+        }
+        // Validate inherited properties too: a derived file model inherits
+        // `contentType`/`contents` from the File instance in its base chain.
+        let mut properties: Vec<(String, TypeId)> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut current = Some(type_id);
+        while let Some(current_id) = current {
+            let Some(Type::Model(current_model)) = checker.get_type(current_id) else {
+                break;
+            };
+            for name in &current_model.property_names {
+                if seen.insert(name.clone())
+                    && let Some(&prop_id) = current_model.properties.get(name)
+                {
+                    properties.push((name.clone(), prop_id));
+                }
+            }
+            current = current_model.base_model;
+        }
+        for (name, prop_id) in &properties {
+            let target = checker
+                .get_type(*prop_id)
+                .and_then(|t| t.node_id_from_type())
+                .or(model.node)
+                .unwrap_or(0);
+            match name.as_str() {
+                "contentType" | "contents" => {
+                    let mut annotations = Vec::new();
+                    if is_header(state, *prop_id) {
+                        annotations.push("header");
+                    }
+                    if is_cookie(state, *prop_id) {
+                        annotations.push("cookie");
+                    }
+                    if is_query(state, *prop_id) {
+                        annotations.push("query");
+                    }
+                    if is_path(state, *prop_id) {
+                        annotations.push("path");
+                    }
+                    if is_body(state, *prop_id) {
+                        annotations.push("body");
+                    }
+                    if is_body_root(state, *prop_id) {
+                        annotations.push("bodyRoot");
+                    }
+                    if is_multipart_body(state, *prop_id) {
+                        annotations.push("multipartBody");
+                    }
+                    if is_status_code(state, *prop_id) {
+                        annotations.push("statusCode");
+                    }
+                    for metadata_type in annotations {
+                        diagnostics.push(HttpValidationDiagnostic {
+                            code: DIAG_HTTP_FILE_DISALLOWED_METADATA,
+                            message: format!(
+                                "File model cannot define HTTP metadata type '{metadata_type}' on property '{name}'."
+                            ),
+                            target,
+                            severity: ValidationSeverity::Error,
+                        });
+                    }
+                    let prop_type = match checker.get_type(*prop_id) {
+                        Some(Type::ModelProperty(prop)) => prop.r#type,
+                        _ => continue,
+                    };
+                    let resolved_prop = checker.resolve_alias_chain(prop_type);
+                    let valid = if name == "contentType" {
+                        match checker.get_type(resolved_prop) {
+                            Some(Type::String(_)) => true,
+                            Some(Type::Scalar(scalar)) => scalar.name == "string",
+                            Some(Type::Union(union)) => union.variant_names.iter().all(|variant| {
+                                union.variants.get(variant).is_some_and(|&variant_id| {
+                                    matches!(checker.get_type(variant_id), Some(Type::UnionVariant(v)) if matches!(checker.get_type(checker.resolve_alias_chain(v.r#type)), Some(Type::String(_))))
+                                })
+                            }),
+                            _ => false,
+                        }
+                    } else {
+                        matches!(checker.get_type(resolved_prop), Some(Type::Scalar(_)))
+                            && (scalar_extends(checker, resolved_prop, "string")
+                                || scalar_extends(checker, resolved_prop, "bytes"))
+                    };
+                    if !valid {
+                        let message = if name == "contentType" {
+                            format!(
+                                "The 'contentType' property of the file model must be 'TypeSpec.string', a string literal, or a union of string literals. Found '{}'.",
+                                checker.type_to_string(prop_type)
+                            )
+                        } else {
+                            format!(
+                                "The 'contents' property of the file model must be a scalar type that extends 'string' or 'bytes'. Found '{}'.",
+                                checker.type_to_string(prop_type)
+                            )
+                        };
+                        diagnostics.push(HttpValidationDiagnostic {
+                            code: if name == "contentType" {
+                                DIAG_HTTP_FILE_CONTENT_TYPE_NOT_STRING
+                            } else {
+                                DIAG_HTTP_FILE_CONTENTS_NOT_SCALAR
+                            },
+                            message,
+                            target,
+                            severity: ValidationSeverity::Error,
+                        });
+                    }
+                }
+                "filename" => {
+                    let mut annotations = Vec::new();
+                    if is_body(state, *prop_id) {
+                        annotations.push("body");
+                    }
+                    if is_body_root(state, *prop_id) {
+                        annotations.push("bodyRoot");
+                    }
+                    if is_multipart_body(state, *prop_id) {
+                        annotations.push("multipartBody");
+                    }
+                    if is_status_code(state, *prop_id) {
+                        annotations.push("statusCode");
+                    }
+                    if is_cookie(state, *prop_id) {
+                        annotations.push("cookie");
+                    }
+                    for metadata_type in annotations {
+                        diagnostics.push(HttpValidationDiagnostic {
+                            code: DIAG_HTTP_FILE_DISALLOWED_METADATA,
+                            message: format!(
+                                "File model cannot define HTTP metadata type '{metadata_type}' on property '{name}'."
+                            ),
+                            target,
+                            severity: ValidationSeverity::Error,
+                        });
+                    }
+                }
+                _ => diagnostics.push(HttpValidationDiagnostic {
+                    code: DIAG_HTTP_FILE_EXTRA_PROPERTY,
+                    message: format!("File model cannot define extra properties. Found '{name}'."),
+                    target,
+                    severity: ValidationSeverity::Error,
+                }),
+            }
+        }
+    }
     diagnostics
 }
 
@@ -5090,5 +5317,160 @@ mod tests {
             part_filename_optional(&checker, &body.parts[0]),
             Some(false)
         );
+    }
+
+    // ---- File model validation (ported from file.test.ts) ----
+
+    #[test]
+    fn test_file_extra_property() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model InvalidFile extends File {
+              @header extra: string;
+            }
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_HTTP_FILE_EXTRA_PROPERTY);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "File model cannot define extra properties. Found 'extra'."
+        );
+    }
+
+    #[test]
+    fn test_file_disallowed_metadata() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model MyFile extends File<Contents = string> {
+              @header contentType: string;
+            }
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_HTTP_FILE_DISALLOWED_METADATA);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "File model cannot define HTTP metadata type 'header' on property 'contentType'."
+        );
+    }
+
+    #[test]
+    fn test_file_contents_not_scalar() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model BadFile1 is File<Contents = string | bytes> {}
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_HTTP_FILE_CONTENTS_NOT_SCALAR);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "The 'contents' property of the file model must be a scalar type that extends 'string' or 'bytes'. Found 'string | bytes'."
+        );
+    }
+
+    #[test]
+    fn test_file_content_type_not_string() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            scalar myString extends string;
+            model BadFile1 is File<ContentType = myString> {}
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_HTTP_FILE_CONTENT_TYPE_NOT_STRING);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert!(
+            diags[0].message.contains("Found '"),
+            "message: {}",
+            diags[0].message
+        );
+    }
+
+    #[test]
+    fn test_valid_file_model_has_no_diagnostics() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model FileWithFilename extends File {
+              filename: string;
+            }
+            "#,
+        );
+        for code in [
+            DIAG_HTTP_FILE_EXTRA_PROPERTY,
+            DIAG_HTTP_FILE_DISALLOWED_METADATA,
+            DIAG_HTTP_FILE_CONTENTS_NOT_SCALAR,
+            DIAG_HTTP_FILE_CONTENT_TYPE_NOT_STRING,
+        ] {
+            assert!(
+                diagnostics_with_code(&checker, code).is_empty(),
+                "unexpected {code}: {:?}",
+                checker.diagnostics()
+            );
+        }
+    }
+
+    // ---- File body resolution (ported from file.test.ts) ----
+
+    fn first_response_body(op: &HttpOperation) -> Option<&HttpPayloadBody> {
+        op.responses
+            .first()
+            .and_then(|response| response.responses.first())
+            .and_then(|content| content.body.as_ref())
+    }
+
+    #[test]
+    fn test_file_body_extends_string_contents() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            scalar guid extends string;
+            model GoodFile extends File<Contents = guid> {}
+            op uploadFile(@body file: GoodFile): GoodFile;
+            "#,
+        );
+        let op_id = find_operation(&checker, "uploadFile").unwrap();
+        let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
+        match &op.parameters.body {
+            Some(HttpPayloadBody::File(file)) => {
+                assert_eq!(file.content_types, vec!["*/*".to_string()]);
+                assert!(file.is_text);
+            }
+            other => panic!("expected request file body, got {other:?}"),
+        }
+        match first_response_body(&op) {
+            Some(HttpPayloadBody::File(file)) => {
+                assert_eq!(file.content_types, vec!["*/*".to_string()]);
+                assert!(file.is_text);
+            }
+            other => panic!("expected response file body, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_file_body_extends_bytes_contents() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            scalar message extends bytes;
+            model GoodFile extends File<Contents = message> {}
+            op uploadFile(@body file: GoodFile): GoodFile;
+            "#,
+        );
+        let op_id = find_operation(&checker, "uploadFile").unwrap();
+        let op = get_http_operation(&checker, &checker.state_accessors, op_id).unwrap();
+        match &op.parameters.body {
+            Some(HttpPayloadBody::File(file)) => assert!(!file.is_text),
+            other => panic!("expected request file body, got {other:?}"),
+        }
+        match first_response_body(&op) {
+            Some(HttpPayloadBody::File(file)) => assert!(!file.is_text),
+            other => panic!("expected response file body, got {other:?}"),
+        }
     }
 }

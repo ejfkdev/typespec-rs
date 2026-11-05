@@ -34,7 +34,7 @@ This project is in **early development**. The core compiler pipeline works:
 | Programmatic Decorator API | Working |
 | Auto Decorators (`auto dec`) | Working |
 
-3,300+ tests passing (synced with `@typespec/compiler` 1.17.0, upstream `microsoft/typespec@a22c5330`).
+3,400+ tests passing (synced with `@typespec/compiler` 1.17.0, upstream `microsoft/typespec@a22c5330`).
 
 **MSRV:** Rust 1.97. **Upstream sync:** `@typespec/compiler` 1.17.0.
 
@@ -46,7 +46,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-typespec_rs = "0.5.7"
+typespec_rs = "0.6.0"
 ```
 
 Parse TypeSpec and emit YAML/JSON:
@@ -74,7 +74,7 @@ JSON Schema output needs the `json-schema` feature, which adds `serde_json`:
 
 ```toml
 [dependencies]
-typespec_rs = { version = "0.5.7", features = ["json-schema"] }
+typespec_rs = { version = "0.6.0", features = ["json-schema"] }
 ```
 
 ```rust
@@ -282,7 +282,7 @@ let result = Parser::new(source, ParseOptions::new(vec![])
 
 ```toml
 [dependencies]
-tspc = { version = "0.5.7", features = ["wasm-extensions"] }
+tspc = { version = "0.6.0", features = ["wasm-extensions"] }
 ```
 
 ```bash
@@ -395,7 +395,22 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 - CLI with cross-platform binary releases (UPX compressed)
 - `fn` function declarations with `extern` modifier and call validation
 - `internal` access control with project/library visibility scoping
-- HTTP response handling: union variant flattening, plain body detection, response indexing
+- HTTP response handling: union variant flattening, plain body detection,
+  response indexing, `@returnsDoc`/`@errorsDoc` precedence, wildcard error
+  responses, and default status-code descriptions
+- HTTP operation validation: duplicate parameter annotations/bodies,
+  metadata ignored inside `@body`, content-type errors, implicit multipart,
+  response cookies, status-code ranges, URI-template parameters and options,
+  duplicate routes/operations, verb duplicates, shared-route consistency,
+  and server URL parameters
+- Multipart request bodies: `HttpPart<T, Options>` in tuple and model form,
+  part names/headers/filenames/`multi`, default part content types, and
+  `multipart-*` / `formdata-no-part-name` diagnostics
+- `Http.File` models: file body resolution (content types, filename,
+  contents, `isText`), derived-model validation, and structured-body
+  fallback for explicit `Content-Type` headers or unions
+- HTTP overloads: `@overload(base)` route/verb inheritance, bidirectional
+  links, and endpoint-aware duplicate-route checks
 - Linter rule options with JSON Schema validation and default value merging
 - OpenAPI emitter with HTTP-protocol-aware verb/route/parameter resolution
 - Protobuf proto3 `optional` label logic with array/map warnings
@@ -421,6 +436,8 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 
 What's not yet ported:
 
+- Merge-patch model transforms (`MergePatchUpdate` / `applyMergePatch`) and
+  their diagnostics
 - Full `Program` pipeline (multi-file compilation, import resolution)
 - Language Server Protocol (LSP) support
 - Source loader (async I/O)

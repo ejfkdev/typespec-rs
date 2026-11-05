@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Sync with upstream TypeSpec `a22c5330` (`@typespec/compiler` 1.17.0) and
-dependency refresh.
+## [0.6.0] - 2026-11-05
+
+Sync with upstream TypeSpec `a22c5330` (`@typespec/compiler` 1.17.0),
+dependency refresh, and broad `@typespec/http` alignment. This release
+contains a breaking change to decorator argument marshalling (see below).
 
 ### Added
 - Suppression inspection APIs (#12095): `collect_suppressions` returns each
@@ -70,6 +73,10 @@ dependency refresh.
 - MSRV raised to Rust 1.97 (`rust-toolchain.toml`, both crates, and CI),
   the minimum required by wasmtime 50.
 - CI uses `actions/checkout@v7`.
+- macOS tests moved to a separate advisory workflow (weekly and on demand)
+  because GitHub's macOS runners are frequently capacity-constrained; the
+  required CI matrix now runs on Linux and Windows so a runner that is never
+  acquired cannot fail main-branch CI.
 
 ### Fixed
 - Declaration expressions (microsoft/typespec#11019) now fully track their

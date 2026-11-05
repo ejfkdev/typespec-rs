@@ -26,7 +26,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # macOS is covered by the separate `macos.yml` workflow. GitHub's
+        # macOS runners are frequently capacity-constrained, and a job that
+        # never acquires a runner cancels after ~15 minutes and fails the
+        # whole run. Keeping the required matrix on Linux/Windows makes
+        # main-branch CI deterministic while macOS still runs weekly and on
+        # demand.
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7

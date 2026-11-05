@@ -1,0 +1,19 @@
+name: macOS
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Monday 03:00 UTC. GitHub macOS runners can take a long time to
+    # acquire; this workflow is advisory and does not gate pushes or PRs.
+    - cron: "0 3 * * 1"
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --lib
+      - run: cargo test --lib --features json-schema
+      - run: cargo test -p tspc
+      - run: cargo test --examples

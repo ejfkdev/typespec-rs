@@ -6168,4 +6168,140 @@ mod tests {
         );
         assert!(source.is_some());
     }
+
+    #[test]
+    fn test_merge_patch_array_elements_are_not_optional() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Child { value: string; }
+            model Foo { children?: Child[]; }
+            @patch op update(@body body: MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        let body = operation_body(&checker, "update");
+        let body_type = checker.resolve_alias_chain(body.body_type);
+        let children_id = match checker.get_type(body_type) {
+            Some(Type::Model(model)) => model.properties["children"],
+            _ => panic!(),
+        };
+        let Type::ModelProperty(children) = checker.get_type(children_id).unwrap() else {
+            panic!()
+        };
+        let union = match checker.get_type(checker.resolve_alias_chain(children.r#type)) {
+            Some(Type::Union(union)) => union,
+            _ => panic!("expected nullable array union"),
+        };
+        let array_id = union
+            .variant_names
+            .iter()
+            .filter_map(|name| union.variants.get(name).copied())
+            .find_map(|variant_id| match checker.get_type(variant_id) {
+                Some(Type::UnionVariant(variant)) => {
+                    let resolved = checker.resolve_alias_chain(variant.r#type);
+                    matches!(checker.get_type(resolved), Some(Type::Model(_))).then_some(resolved)
+                }
+                _ => None,
+            })
+            .unwrap();
+        let element_id = match checker.get_type(array_id) {
+            Some(Type::Model(model)) => model.indexer.unwrap().1,
+            _ => panic!(),
+        };
+        let element_type = checker.resolve_alias_chain(element_id);
+        match checker.get_type(element_type) {
+            Some(Type::Model(model)) => {
+                let value = checker.get_type(model.properties["value"]).unwrap();
+                let Type::ModelProperty(value) = value else {
+                    panic!()
+                };
+                assert!(!value.optional);
+                assert!(!nullable_union(&checker, value.r#type));
+            }
+            _ => panic!("expected transformed element model"),
+        }
+    }
+
+    #[test]
+    fn test_merge_patch_default_value_is_nullable() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo { count: int32 = 1; }
+            @patch op update(@body body: MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        let body = operation_body(&checker, "update");
+        let body_type = checker.resolve_alias_chain(body.body_type);
+        let count_id = match checker.get_type(body_type) {
+            Some(Type::Model(model)) => model.properties["count"],
+            _ => panic!(),
+        };
+        let Type::ModelProperty(count) = checker.get_type(count_id).unwrap() else {
+            panic!()
+        };
+        assert!(count.optional);
+        assert!(count.default_value.is_none());
+        assert!(nullable_union(&checker, count.r#type));
+    }
+
+    #[test]
+    fn test_merge_patch_content_type_for_body_root_and_implicit() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo { id: string; name: string; }
+            @patch op explicit(@bodyRoot body: MergePatchUpdate<Foo>): void;
+            @patch op implicit(body: MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        for name in ["explicit", "implicit"] {
+            let body = operation_body(&checker, name);
+            assert_eq!(
+                body.content_types,
+                vec!["application/merge-patch+json".to_string()],
+                "operation {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_merge_patch_union_content_type() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo { id: string; name: string; }
+            @patch op update(@body body: MergePatchUpdate<Foo> | null): void;
+            "#,
+        );
+        let body = operation_body(&checker, "update");
+        assert_eq!(
+            body.content_types,
+            vec!["application/merge-patch+json".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_merge_patch_create_or_update_content_type() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo { id: string; name: string; }
+            @patch op update(@body body: MergePatchCreateOrUpdate<Foo>): void;
+            "#,
+        );
+        let body = operation_body(&checker, "update");
+        assert_eq!(
+            body.content_types,
+            vec!["application/merge-patch+json".to_string()]
+        );
+        let body_type = checker.resolve_alias_chain(body.body_type);
+        assert!(
+            crate::libs::http::merge_patch::get_merge_patch_source(
+                &checker.state_accessors,
+                body_type
+            )
+            .is_some()
+        );
+    }
 }

@@ -265,7 +265,8 @@ impl Transform<'_> {
             .checker
             .get_type(self.checker.resolve_alias_chain(key))
             .is_some_and(|t| matches!(t, Type::Scalar(s) if s.name == "string"));
-        let new_value = self.transform(value, is_record || optionalize);
+        let _ = optionalize;
+        let new_value = self.transform(value, is_record);
         let id = self.checker.next_type_id();
         let mut clone = model.clone();
         clone.id = id;

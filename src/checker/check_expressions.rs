@@ -601,6 +601,17 @@ impl Checker {
         let (ast, call_node) = require_ast_node!(self, node_id, CallExpression, self.error_type);
         let (target_id, arguments) = (call_node.target, call_node.arguments.clone());
 
+        // `applyMergePatchTransform` is a compiler-provided function used by
+        // the MergePatchUpdate aliases. There is no JS function implementation
+        // to call, so handle it directly.
+        if matches!(ast.id_to_node(target_id), Some(AstNode::Identifier(_)))
+            && Self::get_identifier_name(&ast, target_id) == "applyMergePatchTransform"
+        {
+            return crate::libs::http::merge_patch::check_merge_patch_call(
+                self, ctx, node_id, &arguments,
+            );
+        }
+
         // Resolve the call target. Function declarations are valid call
         // targets even though they are not valid type references, so resolve
         // identifier targets directly before falling back to the type-checking

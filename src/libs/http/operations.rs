@@ -24,10 +24,11 @@ use super::types::{
     DIAG_FORMDATA_NO_PART_NAME, DIAG_HTTP_FILE_CONTENT_TYPE_NOT_STRING,
     DIAG_HTTP_FILE_CONTENTS_NOT_SCALAR, DIAG_HTTP_FILE_DISALLOWED_METADATA,
     DIAG_HTTP_FILE_EXTRA_PROPERTY, DIAG_HTTP_FILE_STRUCTURED, DIAG_INCOMPATIBLE_URI_PARAM,
-    DIAG_METADATA_IGNORED, DIAG_MISSING_URI_PARAM, DIAG_MULTIPART_INVALID_CONTENT_TYPE,
-    DIAG_MULTIPART_MODEL, DIAG_MULTIPART_NESTED, DIAG_MULTIPART_PART, DIAG_MULTIPLE_STATUS_CODES,
-    DIAG_NO_IMPLICIT_MULTIPART, DIAG_OPERATION_PARAM_DUPLICATE_TYPE,
-    DIAG_RESPONSE_COOKIE_NOT_SUPPORTED, DIAG_STATUS_CODE_INVALID, DIAG_USE_URI_TEMPLATE, HttpVerb,
+    DIAG_MERGE_PATCH_CONTENT_TYPE, DIAG_METADATA_IGNORED, DIAG_MISSING_URI_PARAM,
+    DIAG_MULTIPART_INVALID_CONTENT_TYPE, DIAG_MULTIPART_MODEL, DIAG_MULTIPART_NESTED,
+    DIAG_MULTIPART_PART, DIAG_MULTIPLE_STATUS_CODES, DIAG_NO_IMPLICIT_MULTIPART,
+    DIAG_OPERATION_PARAM_DUPLICATE_TYPE, DIAG_RESPONSE_COOKIE_NOT_SUPPORTED,
+    DIAG_STATUS_CODE_INVALID, DIAG_USE_URI_TEMPLATE, HttpVerb,
 };
 use super::visibility::{Visibility, get_default_visibility_for_verb};
 // Import from parent mod.rs
@@ -1027,7 +1028,7 @@ fn process_envelope_response(
             .map(HttpPayloadBody::File)
             .unwrap_or_else(|| {
                 HttpPayloadBody::Single(HttpOperationBody {
-                    content_types: vec!["application/json".to_string()],
+                    content_types: body_content_types(checker, state, &payload, bt),
                     content_type_property: payload.content_type_props.first().copied(),
                     property: None,
                     body_type: bt,
@@ -1318,6 +1319,30 @@ fn resolve_file_body(
     })
 }
 
+fn body_content_types(
+    checker: &Checker,
+    state: &StateAccessors,
+    payload: &HttpPayload,
+    body_type: TypeId,
+) -> Vec<String> {
+    let explicit: Vec<String> = payload
+        .content_type_props
+        .iter()
+        .filter_map(|&prop_id| match checker.get_type(prop_id) {
+            Some(Type::ModelProperty(prop)) => Some(content_type_values(checker, prop.r#type)),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    if !explicit.is_empty() {
+        explicit
+    } else if crate::libs::http::merge_patch::is_merge_patch_body(checker, state, body_type) {
+        vec!["application/merge-patch+json".to_string()]
+    } else {
+        vec!["application/json".to_string()]
+    }
+}
+
 /// Build HttpOperationParameters from a resolved payload.
 fn build_http_operation_parameters(
     checker: &Checker,
@@ -1388,7 +1413,7 @@ fn build_http_operation_parameters(
                 .map(HttpPayloadBody::File)
                 .unwrap_or_else(|| {
                     HttpPayloadBody::Single(HttpOperationBody {
-                        content_types: vec!["application/json".to_string()],
+                        content_types: body_content_types(checker, state, payload, bt),
                         content_type_property: payload.content_type_props.first().copied(),
                         property: None,
                         body_type: bt,
@@ -2028,6 +2053,34 @@ fn validate_payload(
                         .to_string(),
                 target: op_node,
                 severity: ValidationSeverity::Error,
+            });
+        }
+    }
+
+    if let Some(body_type) = payload.body_type
+        && crate::libs::http::merge_patch::is_merge_patch_body(checker, state, body_type)
+        && !payload.content_type_props.is_empty()
+    {
+        let content_types: Vec<String> = payload
+            .content_type_props
+            .iter()
+            .filter_map(|&prop_id| match checker.get_type(prop_id) {
+                Some(Type::ModelProperty(prop)) => Some(content_type_values(checker, prop.r#type)),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        if let Some(bad) = content_types
+            .iter()
+            .find(|content_type| !content_type.starts_with("application/merge-patch+json"))
+        {
+            diagnostics.push(HttpValidationDiagnostic {
+                code: DIAG_MERGE_PATCH_CONTENT_TYPE,
+                message: format!(
+                    "The content-type of a request using a merge-patch template should be 'application/merge-patch+json' detected a header with content-type '{bad}'."
+                ),
+                target: op_node,
+                severity: ValidationSeverity::Warning,
             });
         }
     }
@@ -5909,5 +5962,210 @@ mod tests {
             response_descriptions(&checker, "read"),
             vec![Some("Explicit doc".to_string())]
         );
+    }
+
+    // ---- Merge-patch transform (ported from merge-patch.test.ts) ----
+
+    fn operation_body(checker: &Checker, op_name: &str) -> HttpOperationBody {
+        let op_id = find_operation(checker, op_name).unwrap();
+        let op = get_http_operation(checker, &checker.state_accessors, op_id).unwrap();
+        match op.parameters.body {
+            Some(HttpPayloadBody::Single(body)) => body,
+            other => panic!("expected single body, got {other:?}"),
+        }
+    }
+
+    fn nullable_union(checker: &Checker, type_id: TypeId) -> bool {
+        match checker.get_type(checker.resolve_alias_chain(type_id)) {
+            Some(Type::Union(union)) => {
+                union.variant_names.len() == 2
+                    && union.variant_names.iter().any(|name| {
+                        union.variants.get(name).is_some_and(|&variant_id| {
+                            matches!(checker.get_type(variant_id), Some(Type::UnionVariant(v)) if checker.resolve_alias_chain(v.r#type) == checker.null_type)
+                        })
+                    })
+            }
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn test_merge_patch_content_type() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo { id: string; name: string; description?: string; }
+            @patch op update(@body body: MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        assert!(
+            diagnostics_with_code(&checker, DIAG_MERGE_PATCH_CONTENT_TYPE).is_empty(),
+            "unexpected merge-patch-content-type: {:?}",
+            checker.diagnostics()
+        );
+        let body = operation_body(&checker, "update");
+        assert_eq!(
+            body.content_types,
+            vec!["application/merge-patch+json".to_string()]
+        );
+        let body_type = checker.resolve_alias_chain(body.body_type);
+        assert_eq!(
+            crate::libs::compiler::get_media_type_hint(&checker.state_accessors, body_type)
+                .as_deref(),
+            Some("application/merge-patch+json")
+        );
+    }
+
+    #[test]
+    fn test_merge_patch_transforms_properties() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Child { value: string; note?: string; }
+            model Foo {
+              id: string;
+              name: string;
+              description?: string;
+              child: Child;
+              children?: Child[];
+            }
+            @patch op update(@body body: MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        let body = operation_body(&checker, "update");
+        let body_type = checker.resolve_alias_chain(body.body_type);
+        let props = match checker.get_type(body_type) {
+            Some(Type::Model(model)) => model.properties.clone(),
+            _ => panic!("expected model body"),
+        };
+        let id = checker.get_type(props["id"]).unwrap();
+        let name = checker.get_type(props["name"]).unwrap();
+        let description = checker.get_type(props["description"]).unwrap();
+        let Type::ModelProperty(id) = id else {
+            panic!()
+        };
+        let Type::ModelProperty(name) = name else {
+            panic!()
+        };
+        let Type::ModelProperty(description) = description else {
+            panic!()
+        };
+        assert!(id.optional);
+        assert!(!nullable_union(&checker, id.r#type));
+        assert!(name.optional);
+        assert!(!nullable_union(&checker, name.r#type));
+        assert!(description.optional);
+        assert!(nullable_union(&checker, description.r#type));
+
+        let children = checker.get_type(props["children"]).unwrap();
+        let Type::ModelProperty(children) = children else {
+            panic!()
+        };
+        assert!(children.optional);
+        assert!(nullable_union(&checker, children.r#type));
+    }
+
+    #[test]
+    fn test_merge_patch_metadata_diagnostic() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo {
+              @path id: string;
+              @query q: string;
+              @header h: string;
+              @cookie c: string;
+              @statusCode status: 200;
+              name: string;
+            }
+            @patch op update(@body body: MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        let diags = diagnostics_with_code(
+            &checker,
+            crate::libs::http::types::DIAG_MERGE_PATCH_CONTAINS_METADATA,
+        );
+        assert_eq!(diags.len(), 5, "diagnostics: {:?}", checker.diagnostics());
+    }
+
+    #[test]
+    fn test_merge_patch_null_diagnostic() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo { value: string | null; }
+            @patch op update(@body body: MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        let diags = diagnostics_with_code(
+            &checker,
+            crate::libs::http::types::DIAG_MERGE_PATCH_CONTAINS_NULL,
+        );
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+    }
+
+    #[test]
+    fn test_merge_patch_content_type_warning() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo { id: string; name: string; }
+            @patch op update(
+              @header("Content-type") contentType: "application/json",
+              @body body: MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        let diags = diagnostics_with_code(&checker, DIAG_MERGE_PATCH_CONTENT_TYPE);
+        assert_eq!(diags.len(), 1, "diagnostics: {:?}", checker.diagnostics());
+        assert_eq!(
+            diags[0].message,
+            "The content-type of a request using a merge-patch template should be 'application/merge-patch+json' detected a header with content-type 'application/json'."
+        );
+    }
+
+    #[test]
+    fn test_merge_patch_spread_content_type() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo { id: string; name: string; description?: string; }
+            @patch op update(...MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        let body = operation_body(&checker, "update");
+        assert_eq!(
+            body.content_types,
+            vec!["application/merge-patch+json".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_merge_patch_source_links() {
+        let checker = compile_http_library(
+            r#"
+            using TypeSpec.Http;
+            model Foo { id: string; name: string; description?: string; }
+            @patch op update(@body body: MergePatchUpdate<Foo>): void;
+            "#,
+        );
+        let foo_id = checker.declared_types.get("Foo").copied().unwrap();
+        let body = operation_body(&checker, "update");
+        let body_type = checker.resolve_alias_chain(body.body_type);
+        assert_eq!(
+            crate::libs::http::merge_patch::get_merge_patch_source(
+                &checker.state_accessors,
+                body_type
+            ),
+            Some(foo_id)
+        );
+        let props = match checker.get_type(body_type) {
+            Some(Type::Model(model)) => model.properties.clone(),
+            _ => panic!(),
+        };
+        let source = crate::libs::http::merge_patch::get_merge_patch_property_source(
+            &checker.state_accessors,
+            props["id"],
+        );
+        assert!(source.is_some());
     }
 }

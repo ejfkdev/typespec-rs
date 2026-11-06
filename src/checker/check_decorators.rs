@@ -749,28 +749,32 @@ impl Checker {
                     }
                 }
                 "patch" => {
-                    // Check if {implicitOptionality: false} was explicitly passed
-                    let mut explicit_opt_out = false;
-                    if let Some(arg) = args.first() {
-                        if let Some(DecoratorMarshalledValue::Record(ref map)) = arg.js_value {
-                            if let Some(_type_id) = map.get("implicitOptionality") {
-                                // User explicitly passed the option, treat as opt-out of warning
-                                explicit_opt_out = true;
-                            }
-                        } else if let Some(DecoratorMarshalledValue::Boolean(b)) = arg.js_value {
-                            // Edge case: @patch(false) — also opt out
-                            explicit_opt_out = !b;
-                        }
-                    }
+                    // Upstream only warns when the legacy behavior is opted
+                    // into explicitly with `#{ implicitOptionality: true }`.
+                    let implicit_optionality =
+                        match args.first().and_then(|arg| arg.js_value.as_ref()) {
+                            Some(DecoratorMarshalledValue::Record(record)) => record
+                                .properties
+                                .iter()
+                                .find(|(key, _)| key == "implicitOptionality")
+                                .and_then(|(_, value)| {
+                                    match self.get_type(self.resolve_alias_chain(*value)) {
+                                        Some(Type::Boolean(b)) => Some(b.value),
+                                        _ => None,
+                                    }
+                                })
+                                .unwrap_or(false),
+                            _ => false,
+                        };
                     crate::libs::http::operation::apply_patch(
                         &mut self.state_accessors,
                         type_id,
                         None,
                     );
-                    if !explicit_opt_out {
+                    if implicit_optionality {
                         self.warning(
                             "deprecated-implicit-optionality",
-                            "@patch with implicit optionality is deprecated. Pass {implicitOptionality: false} to opt out.",
+                            "The implicitOptionality option is deprecated. To preserve previous behavior, use an explicit patch model with optional properties. For actual merge-patch semantics, use MergePatchUpdate<T> for the @body type.",
                         );
                     }
                 }
@@ -892,6 +896,45 @@ impl Checker {
                 }
                 "multipartBody" => {
                     crate::libs::http::apply_multipart_body(&mut self.state_accessors, type_id);
+                }
+
+                // ---- Merge-patch state decorators ----
+                "mergePatchModel" | "mergePatchProperty" => {
+                    let source = args.first().and_then(|arg| match &arg.js_value {
+                        Some(DecoratorMarshalledValue::Type(id))
+                        | Some(DecoratorMarshalledValue::Value(id)) => Some(*id),
+                        _ => None,
+                    });
+                    if let Some(source) = source {
+                        let key = if dec_name == "mergePatchModel" {
+                            crate::libs::http::types::STATE_MERGE_PATCH_MODEL
+                        } else {
+                            crate::libs::http::types::STATE_MERGE_PATCH_PROPERTY
+                        };
+                        self.state_accessors
+                            .set_state(key, type_id, source.to_string());
+                    }
+                }
+
+                // ---- Deprecated @applyMergePatch decorator ----
+                "applyMergePatch" => {
+                    let source = args.first().and_then(|arg| match &arg.js_value {
+                        Some(DecoratorMarshalledValue::Type(id))
+                        | Some(DecoratorMarshalledValue::Value(id)) => Some(*id),
+                        _ => None,
+                    });
+                    let name_template = args.get(1).and_then(|arg| match &arg.js_value {
+                        Some(DecoratorMarshalledValue::String(value)) => Some(value.clone()),
+                        _ => None,
+                    });
+                    if let (Some(source), Some(name_template)) = (source, name_template) {
+                        crate::libs::http::merge_patch::adopt_transformed_model(
+                            self,
+                            type_id,
+                            source,
+                            &name_template,
+                        );
+                    }
                 }
 
                 // ---- HTTP private httpFile decorator ----

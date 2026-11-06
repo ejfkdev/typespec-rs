@@ -36,6 +36,7 @@ pub use auth::*;
 pub mod visibility;
 pub use visibility::*;
 
+pub mod merge_patch;
 pub mod operations;
 pub use operations::*;
 

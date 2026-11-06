@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- JSON Merge Patch support: `MergePatchUpdate<T>` and
+  `MergePatchCreateOrUpdate<T>` transform resource models into the upstream
+  optional/nullable shape (recursively through models, arrays, records,
+  unions, and tuples), set the `application/merge-patch+json` media type and
+  source links, and emit `merge-patch-contains-null`,
+  `merge-patch-contains-metadata`, and `merge-patch-content-type`
+- `@patch` now warns about `implicitOptionality` only when explicitly set to
+  `true`, matching upstream
+
+### Fixed
+- `applyMergePatchTransform` calls in the merge-patch aliases are evaluated
+  natively instead of failing as unresolved function calls
+
 ## [0.6.0] - 2026-11-05
 
 Sync with upstream TypeSpec `a22c5330` (`@typespec/compiler` 1.17.0),

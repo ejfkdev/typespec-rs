@@ -411,6 +411,12 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
   fallback for explicit `Content-Type` headers or unions
 - HTTP overloads: `@overload(base)` route/verb inheritance, bidirectional
   links, and endpoint-aware duplicate-route checks
+- JSON Merge Patch: `MergePatchUpdate<T>` / `MergePatchCreateOrUpdate<T>`
+  transforms resource models into optional, nullable property graphs
+  (recursively through models, arrays, records, unions, and tuples), sets the
+  `application/merge-patch+json` media type, records source links, and emits
+  the `merge-patch-contains-null`, `merge-patch-contains-metadata`, and
+  `merge-patch-content-type` diagnostics
 - Linter rule options with JSON Schema validation and default value merging
 - OpenAPI emitter with HTTP-protocol-aware verb/route/parameter resolution
 - Protobuf proto3 `optional` label logic with array/map warnings
@@ -436,8 +442,8 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 
 What's not yet ported:
 
-- Merge-patch model transforms (`MergePatchUpdate` / `applyMergePatch`) and
-  their diagnostics
+- Visibility-aware merge-patch mutator filtering (`@visibility`/lifecycle
+  filtering during the transform)
 - Full `Program` pipeline (multi-file compilation, import resolution)
 - Language Server Protocol (LSP) support
 - Source loader (async I/O)

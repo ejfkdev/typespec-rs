@@ -349,4 +349,14 @@ model NoAuth {
   /** No authentication. */
   type: AuthType.noAuth;
 }
+
+alias MergePatchUpdate<
+  T extends TypeSpec.Reflection.Model,
+  NameTemplate extends valueof string = "{name}MergePatchUpdate"
+> = applyMergePatchTransform(T, NameTemplate, "Update");
+
+alias MergePatchCreateOrUpdate<
+  T extends TypeSpec.Reflection.Model,
+  NameTemplate extends valueof string = "{name}MergePatchCreateOrUpdate"
+> = applyMergePatchTransform(T, NameTemplate, "CreateOrUpdate");
 "#;

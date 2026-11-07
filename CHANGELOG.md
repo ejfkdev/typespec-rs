@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `/** ... */` doc comments now populate documentation: the main description
+  applies to models, properties, scalars, enums/members, unions/variants,
+  operations, interfaces, and namespaces; `@param`/`@prop`/`@returns`/
+  `@errors` tags populate parameters, properties, return docs, and error
+  docs. Explicit `@doc`/`@returnsDoc`/`@errorsDoc` decorators still win, and
+  template instances inherit their declaration's comment
 - JSON Merge Patch support: `MergePatchUpdate<T>` and
   `MergePatchCreateOrUpdate<T>` transform resource models into the upstream
   optional/nullable shape (recursively through models, arrays, records,

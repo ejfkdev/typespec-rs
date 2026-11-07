@@ -82,6 +82,7 @@ impl Checker {
         self.current_namespace = prev_namespace;
 
         self.check_and_store_decorators(ctx, type_id, &node.decorators);
+        self.apply_doc_comment(type_id, node_id);
 
         self.finish_type(type_id);
         type_id

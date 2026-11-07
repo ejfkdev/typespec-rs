@@ -98,6 +98,7 @@ impl Checker {
 
                     // Check member decorators
                     self.check_and_store_decorators(ctx, member_type_id, &member_node.decorators);
+                    self.apply_doc_comment(member_type_id, member_id);
                 }
                 Some(AstNode::EnumSpreadMember(spread_node)) => {
                     let spread_node = spread_node.clone();

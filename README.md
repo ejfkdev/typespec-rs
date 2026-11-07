@@ -381,6 +381,10 @@ Source Code → Scanner → Parser → AST → Checker → Typed AST → Emitter
 What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec):
 
 - Full scanner with doc comments, string templates, conflict markers
+- `/** ... */` doc comments populate `@doc` on models, properties, scalars,
+  enums/members, unions/variants, operations, interfaces, and namespaces;
+  `@param`/`@prop`/`@returns`/`@errors` tags populate parameter, property,
+  return, and error documentation, and explicit decorators take precedence
 - Complete parser for all declaration types
 - Type system with 25+ type kinds (Model, Interface, Enum, Union, Scalar, Template, etc.)
 - Type relation/assignability checking

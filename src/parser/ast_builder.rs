@@ -43,6 +43,23 @@ pub struct AstBuilder {
     pub library_feature_ranges: Vec<LibraryFeatureRange>,
     /// Cached byte offsets of the start of each line (line 1 = offset 0, etc.)
     line_starts: Vec<usize>,
+    /// Parsed doc comments keyed by the declaration node they precede.
+    pub docs: HashMap<u32, ParsedDoc>,
+}
+
+/// A parsed `/** ... */` doc comment.
+#[derive(Debug, Clone, Default)]
+pub struct ParsedDoc {
+    /// Main description before the first tag.
+    pub main: String,
+    /// `@param` tag descriptions.
+    pub params: HashMap<String, String>,
+    /// `@prop` tag descriptions.
+    pub props: HashMap<String, String>,
+    /// `@returns` description.
+    pub returns: Option<String>,
+    /// `@errors` description.
+    pub errors: Option<String>,
 }
 
 /// Line range of one injected library source and the compiler features the
@@ -218,6 +235,7 @@ impl AstBuilder {
             library_line_offset: 0,
             library_feature_ranges: Vec::new(),
             line_starts,
+            docs: HashMap::new(),
         }
     }
 
@@ -1106,6 +1124,11 @@ impl AstBuilder {
         });
         self.nodes.insert(id, node);
         id
+    }
+
+    /// Attach a parsed doc comment to a declaration node.
+    pub fn attach_doc(&mut self, node_id: u32, doc: ParsedDoc) {
+        self.docs.insert(node_id, doc);
     }
 
     pub fn create_doc(&mut self, content: Vec<u32>, tags: Vec<u32>, span: Span) -> u32 {

@@ -2441,8 +2441,110 @@ impl Checker {
         mapper: Option<&TypeMapper>,
     ) {
         self.check_and_store_decorators(ctx, type_id, decorators);
+        self.apply_doc_comment(type_id, node_id);
         self.finish_template_or_type(type_id, node_id, template_params, decorators, mapper);
         self.pending_type_checks.remove(&node_id);
+    }
+
+    /// Apply a leading `/** ... */` doc comment to a declaration.
+    fn apply_doc_comment(&mut self, type_id: TypeId, node_id: NodeId) {
+        let Some(doc) = self
+            .ast
+            .as_ref()
+            .and_then(|ast| ast.docs.get(&node_id))
+            .cloned()
+        else {
+            return;
+        };
+
+        if !doc.main.is_empty() {
+            self.set_doc_comment_text(type_id, &doc.main);
+        }
+
+        match self.get_type(type_id).cloned() {
+            Some(Type::Operation(op)) => {
+                if let Some(params_id) = op.parameters {
+                    for (name, text) in &doc.params {
+                        if let Some(prop_id) = self.get_type(params_id).and_then(|t| match t {
+                            Type::Model(model) => model.properties.get(name).copied(),
+                            _ => None,
+                        }) {
+                            self.set_doc_comment_text(prop_id, text);
+                        }
+                    }
+                }
+                if let Some(text) = doc.returns {
+                    crate::libs::compiler::apply_returns_doc(
+                        &mut self.state_accessors,
+                        type_id,
+                        &text,
+                    );
+                }
+                if let Some(text) = doc.errors {
+                    crate::libs::compiler::apply_errors_doc(
+                        &mut self.state_accessors,
+                        type_id,
+                        &text,
+                    );
+                }
+            }
+            Some(Type::Model(model)) => {
+                for (name, text) in &doc.props {
+                    if let Some(&prop_id) = model.properties.get(name) {
+                        self.set_doc_comment_text(prop_id, text);
+                    }
+                }
+            }
+            Some(Type::Interface(iface)) => {
+                for (name, text) in &doc.params {
+                    if let Some(&op_id) = iface.operations.get(name)
+                        && let Some(Type::Operation(op)) = self.get_type(op_id)
+                        && let Some(params_id) = op.parameters
+                        && let Some(prop_id) = self.get_type(params_id).and_then(|t| match t {
+                            Type::Model(model) => model.properties.get(name).copied(),
+                            _ => None,
+                        })
+                    {
+                        self.set_doc_comment_text(prop_id, text);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Set doc text from a comment unless a `@doc` decorator already set one.
+    fn set_doc_comment_text(&mut self, target: TypeId, text: &str) {
+        use crate::intrinsic_type_state::{DocSource, DocTarget};
+        if let Some(data) = crate::intrinsic_type_state::get_doc_data(
+            &self.state_accessors,
+            target,
+            DocTarget::Self_,
+        ) && data.source == DocSource::Decorator
+        {
+            return;
+        }
+        crate::libs::compiler::apply_doc_with_source(
+            &mut self.state_accessors,
+            target,
+            text,
+            DocSource::Comment,
+        );
+        if let Some(t) = self.get_type_mut(target) {
+            match t {
+                Type::Model(model) => model.doc = Some(text.to_string()),
+                Type::ModelProperty(prop) => prop.doc = Some(text.to_string()),
+                Type::Enum(enum_) => enum_.doc = Some(text.to_string()),
+                Type::EnumMember(member) => member.doc = Some(text.to_string()),
+                Type::Scalar(scalar) => scalar.doc = Some(text.to_string()),
+                Type::Union(union) => union.doc = Some(text.to_string()),
+                Type::UnionVariant(variant) => variant.doc = Some(text.to_string()),
+                Type::Operation(op) => op.doc = Some(text.to_string()),
+                Type::Interface(iface) => iface.doc = Some(text.to_string()),
+                Type::Namespace(ns) => ns.doc = Some(text.to_string()),
+                _ => {}
+            }
+        }
     }
 
     /// Infer scalar type from constraint for a value.

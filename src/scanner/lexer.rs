@@ -450,6 +450,7 @@ pub struct Lexer<'a> {
     chars_consumed: usize,
     current_token_kind: TokenKind,
     current_token_flags: TokenFlags,
+    pending_doc_comment: Option<String>,
     keywords: &'static std::collections::HashMap<&'static str, TokenKind>,
 }
 
@@ -472,6 +473,7 @@ impl<'a> Lexer<'a> {
             chars_consumed: 0,
             current_token_kind: TokenKind::None,
             current_token_flags: TokenFlags::NONE,
+            pending_doc_comment: None,
             keywords: get_keywords(),
         }
     }
@@ -484,6 +486,11 @@ impl<'a> Lexer<'a> {
     /// Get the current byte offset in the source
     pub fn offset(&self) -> usize {
         self.chars_consumed
+    }
+
+    /// Take the most recent `/** ... */` doc comment skipped as trivia.
+    pub fn take_doc_comment(&mut self) -> Option<String> {
+        self.pending_doc_comment.take()
     }
 
     /// Get the byte offset of the current token's start
@@ -973,11 +980,13 @@ impl<'a> Lexer<'a> {
                     Some('*') => {
                         // Multi-line comment
                         drop(lookahead);
+                        let start = self.chars_consumed;
                         self.chars.next();
                         self.chars_consumed += 1;
                         self.position.column += 1;
                         self.chars.next(); // consume *
                         self.chars_consumed += 1;
+                        let is_doc = self.chars.peek() == Some(&'*');
                         while let Some(ch) = self.chars.next() {
                             self.chars_consumed += ch.len_utf8();
                             self.position.column += 1;
@@ -991,6 +1000,10 @@ impl<'a> Lexer<'a> {
                                 self.position.line += 1;
                                 self.position.column = 0;
                             }
+                        }
+                        if is_doc {
+                            self.pending_doc_comment =
+                                Some(self.source[start..self.chars_consumed].to_string());
                         }
                     }
                     _ => break,
@@ -1023,27 +1036,37 @@ impl<'a> Lexer<'a> {
         self.chars_consumed += 1;
 
         // Check for doc comment: /**
-        if let Some(&'*') = self.chars.peek() {
+        let is_doc = if let Some(&'*') = self.chars.peek() {
             // This is a doc comment /** ... */
             self.current_token_flags.insert(TokenFlags::DOC_COMMENT);
-        }
+            true
+        } else {
+            false
+        };
 
-        while let Some(ch) = self.chars.next() {
-            self.chars_consumed += ch.len_utf8();
-            if ch == '*' {
-                if let Some(&'/') = self.chars.peek() {
-                    self.chars.next();
-                    self.chars_consumed += 1;
-                    return self.finish_token(TokenKind::MultiLineComment);
+        let kind = loop {
+            if let Some(ch) = self.chars.next() {
+                self.chars_consumed += ch.len_utf8();
+                if ch == '*' {
+                    if let Some(&'/') = self.chars.peek() {
+                        self.chars.next();
+                        self.chars_consumed += 1;
+                        break self.finish_token(TokenKind::MultiLineComment);
+                    }
+                } else if is_line_break(ch) {
+                    self.position.line += 1;
+                    self.position.column = 0;
                 }
-            } else if is_line_break(ch) {
-                self.position.line += 1;
-                self.position.column = 0;
+            } else {
+                // Unterminated comment
+                break self.finish_token(TokenKind::MultiLineComment);
             }
+        };
+        if is_doc {
+            let start = self.current_span_start;
+            self.pending_doc_comment = Some(self.source[start..self.chars_consumed].to_string());
         }
-
-        // Unterminated comment
-        self.finish_token(TokenKind::MultiLineComment)
+        kind
     }
 
     fn scan_number(&mut self) -> TokenKind {

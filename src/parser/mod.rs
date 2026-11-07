@@ -309,6 +309,14 @@ impl<'a> Parser<'a> {
         self.token_start = self.lexer.token_start_offset();
     }
 
+    /// Take and parse the doc comment captured by the lexer before the
+    /// current token.
+    fn take_pending_doc(&mut self) -> Option<crate::parser::ast_builder::ParsedDoc> {
+        self.lexer
+            .take_doc_comment()
+            .and_then(|raw| parse_doc_comment(&raw))
+    }
+
     /// Skip trivia tokens (comments, newlines, whitespace) at the current position
     fn skip_trivia(&mut self) {
         while self.current_token().is_trivia() {
@@ -372,6 +380,7 @@ impl<'a> Parser<'a> {
             }
 
             let prev_pos = self.token_start_position();
+            let pending_doc = self.take_pending_doc();
 
             let directives = self.parse_directive_list();
             let decorators = self.parse_decorator_list();
@@ -385,6 +394,10 @@ impl<'a> Parser<'a> {
                 &directives,
                 /* top_level */ true,
             );
+
+            if let Some(doc) = pending_doc {
+                self.builder.attach_doc(stmt_id, doc);
+            }
 
             let stmt_line = self.builder.offset_to_line(pos);
             let in_main = stmt_line >= main_start_line;
@@ -591,6 +604,7 @@ impl<'a> Parser<'a> {
             && self.current_token() != TokenKind::EndOfFile
         {
             let prev_pos = self.token_start_position();
+            let pending_doc = self.take_pending_doc();
 
             let directives = self.parse_directive_list();
             let decorators = self.parse_decorator_list();
@@ -604,6 +618,10 @@ impl<'a> Parser<'a> {
                 &directives,
                 /* top_level */ false,
             );
+
+            if let Some(doc) = pending_doc {
+                self.builder.attach_doc(stmt_id, doc);
+            }
 
             // Blockless namespaces are only allowed at the top level.
             if matches!(
@@ -708,6 +726,7 @@ impl<'a> Parser<'a> {
         let mut properties = Vec::new();
 
         while self.current_token() != end_token && self.current_token() != TokenKind::EndOfFile {
+            let pending_doc = self.take_pending_doc();
             if self.check_token(TokenKind::Ellipsis) {
                 let pos = self.token_start_position();
                 self.next_token();
@@ -742,6 +761,9 @@ impl<'a> Parser<'a> {
                     .create_model_property(name, value, decorators, optional, default, span);
                 if !directives.is_empty() {
                     self.builder.attach_directives(prop_id, directives);
+                }
+                if let Some(doc) = pending_doc {
+                    self.builder.attach_doc(prop_id, doc);
                 }
                 properties.push(prop_id);
             }
@@ -943,6 +965,7 @@ impl<'a> Parser<'a> {
         while self.current_token() != TokenKind::CloseBrace
             && self.current_token() != TokenKind::EndOfFile
         {
+            let pending_doc = self.take_pending_doc();
             let directives = self.parse_directive_list();
             let decorators = self.parse_decorator_list();
             let pos = self.token_start_position();
@@ -997,6 +1020,9 @@ impl<'a> Parser<'a> {
             if !directives.is_empty() {
                 self.builder.attach_directives(variant_id, directives);
             }
+            if let Some(doc) = pending_doc {
+                self.builder.attach_doc(variant_id, doc);
+            }
             variants.push(variant_id);
 
             // Handle delimiter
@@ -1040,6 +1066,7 @@ impl<'a> Parser<'a> {
         while self.current_token() != TokenKind::CloseBrace
             && self.current_token() != TokenKind::EndOfFile
         {
+            let pending_doc = self.take_pending_doc();
             if self.check_token(TokenKind::Ellipsis) {
                 let pos = self.token_start_position();
                 self.next_token();
@@ -1066,6 +1093,9 @@ impl<'a> Parser<'a> {
                     .create_enum_member(name, value, decorators, span);
                 if !directives.is_empty() {
                     self.builder.attach_directives(member_id, directives);
+                }
+                if let Some(doc) = pending_doc {
+                    self.builder.attach_doc(member_id, doc);
                 }
                 members.push(member_id);
             }
@@ -2315,4 +2345,116 @@ pub fn parse_with_libraries(source: &str, libraries: Vec<String>) -> ParseResult
 /// feature flags, ...), bypassing the global registry.
 pub fn parse_with_options(source: &str, options: ParseOptions) -> ParseResult {
     Parser::new(source, options).parse()
+}
+
+/// Parse a `/** ... */` comment into its main description and supported tags.
+fn parse_doc_comment(raw: &str) -> Option<crate::parser::ast_builder::ParsedDoc> {
+    let inner = raw.strip_prefix("/**")?.strip_suffix("*/")?;
+    let mut lines: Vec<String> = Vec::new();
+    for line in inner.lines() {
+        let mut line = line.trim_start();
+        if let Some(rest) = line.strip_prefix('*') {
+            line = rest;
+        }
+        lines.push(line.trim_end().to_string());
+    }
+    while lines.first().is_some_and(|line| line.is_empty()) {
+        lines.remove(0);
+    }
+    while lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+
+    enum Target {
+        Main,
+        Param(String),
+        Prop(String),
+        Returns,
+        Errors,
+        Other,
+    }
+
+    let mut doc = crate::parser::ast_builder::ParsedDoc::default();
+    let mut main_lines: Vec<String> = Vec::new();
+    let mut tag_lines: Vec<String> = Vec::new();
+    let mut target = Target::Main;
+
+    for line in lines {
+        let trimmed = line.trim_start();
+        if let Some(tag) = trimmed.strip_prefix('@') {
+            let text = tag_lines.join("\n").trim().to_string();
+            tag_lines.clear();
+            if !text.is_empty() {
+                match &target {
+                    Target::Param(name) => {
+                        doc.params.insert(name.clone(), text);
+                    }
+                    Target::Prop(name) => {
+                        doc.props.insert(name.clone(), text);
+                    }
+                    Target::Returns => doc.returns = Some(text),
+                    Target::Errors => doc.errors = Some(text),
+                    _ => {}
+                }
+            }
+            let mut parts = tag.splitn(2, char::is_whitespace);
+            let tag_name = parts.next().unwrap_or("");
+            let rest = parts.next().unwrap_or("").trim();
+            target = match tag_name {
+                "param" | "prop" => {
+                    let mut words = rest.splitn(2, char::is_whitespace);
+                    let name = words.next().unwrap_or("").to_string();
+                    let desc = words.next().unwrap_or("").trim_start_matches('-').trim();
+                    if !desc.is_empty() {
+                        tag_lines.push(desc.to_string());
+                    }
+                    if tag_name == "param" {
+                        Target::Param(name)
+                    } else {
+                        Target::Prop(name)
+                    }
+                }
+                "returns" => {
+                    if !rest.is_empty() {
+                        tag_lines.push(rest.to_string());
+                    }
+                    Target::Returns
+                }
+                "errors" => {
+                    if !rest.is_empty() {
+                        tag_lines.push(rest.to_string());
+                    }
+                    Target::Errors
+                }
+                _ => {
+                    if !rest.is_empty() {
+                        tag_lines.push(rest.to_string());
+                    }
+                    Target::Other
+                }
+            };
+        } else {
+            match target {
+                Target::Main => main_lines.push(line),
+                _ => tag_lines.push(line),
+            }
+        }
+    }
+    // Flush the final target.
+    let text = tag_lines.join("\n").trim().to_string();
+    if !text.is_empty() {
+        match &target {
+            Target::Param(name) => {
+                doc.params.insert(name.clone(), text);
+            }
+            Target::Prop(name) => {
+                doc.props.insert(name.clone(), text);
+            }
+            Target::Returns => doc.returns = Some(text),
+            Target::Errors => doc.errors = Some(text),
+            _ => {}
+        }
+    }
+    doc.main = main_lines.join("\n").trim().to_string();
+    Some(doc)
 }

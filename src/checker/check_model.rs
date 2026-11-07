@@ -784,6 +784,7 @@ impl Checker {
 
         // Check decorators
         self.check_and_store_decorators(ctx, placeholder_id, &node.decorators);
+        self.apply_doc_comment(placeholder_id, node_id);
 
         self.finish_type(placeholder_id);
         placeholder_id

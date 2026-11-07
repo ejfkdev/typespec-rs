@@ -561,3 +561,136 @@ fn test_prop_doc_applies_to_distinct_properties() {
     // getDoc(program, Base.name) === "This is the name prop doc."
     // getDoc(program, Base.age) === "This is the age prop doc."
 }
+
+// ============================================================================
+// Doc comment execution (ported from doc-comment.test.ts)
+// ============================================================================
+
+fn doc_of(
+    checker: &crate::checker::Checker,
+    type_id: crate::checker::types::TypeId,
+) -> Option<String> {
+    crate::libs::compiler::get_doc(&checker.state_accessors, type_id)
+}
+
+#[test]
+fn test_doc_comment_applies_to_model() {
+    let checker = check(
+        "\n        /**\n         * This is a doc comment.\n         */\n        model Foo {}\n    ",
+    );
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
+    assert_eq!(
+        doc_of(&checker, foo_id).as_deref(),
+        Some("This is a doc comment.")
+    );
+}
+
+#[test]
+fn test_doc_comment_applies_to_model_property() {
+    let checker =
+        check("model Foo {\n  /**\n   * This is a doc comment.\n   */\n  name: string;\n}");
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
+    let prop_id = checker.get_model_property(foo_id, "name").unwrap();
+    assert_eq!(
+        doc_of(&checker, prop_id).as_deref(),
+        Some("This is a doc comment.")
+    );
+}
+
+#[test]
+fn test_doc_comment_applies_to_scalar_enum_and_interface() {
+    let checker = check(
+        "/** Scalar doc */ scalar unreal;\n/** Enum doc */ enum E { a }\n/** Interface doc */ interface I {}",
+    );
+    for name in ["unreal", "E", "I"] {
+        let id = checker.get_type_by_name(name).unwrap();
+        assert_eq!(
+            doc_of(&checker, id).as_deref(),
+            Some(match name {
+                "unreal" => "Scalar doc",
+                "E" => "Enum doc",
+                _ => "Interface doc",
+            })
+        );
+    }
+}
+
+#[test]
+fn test_doc_comment_applies_to_operation() {
+    let checker = check("/** Operation doc */ op foo(): string;");
+    let op_id = checker.get_type_by_name("foo").unwrap();
+    assert_eq!(doc_of(&checker, op_id).as_deref(), Some("Operation doc"));
+}
+
+#[test]
+fn test_doc_comment_param_and_returns_tags() {
+    let checker = check(
+        "/**\n * Operation doc.\n * @param one Param doc.\n * @returns Returns doc.\n * @errors Errors doc.\n */\nop foo(one: string): string;",
+    );
+    let op_id = checker.get_type_by_name("foo").unwrap();
+    assert_eq!(doc_of(&checker, op_id).as_deref(), Some("Operation doc."));
+    let op = match checker.get_type(op_id) {
+        Some(crate::checker::types::Type::Operation(op)) => op.clone(),
+        _ => panic!(),
+    };
+    let params = op.parameters.unwrap();
+    let one = match checker.get_type(params) {
+        Some(crate::checker::types::Type::Model(model)) => model.properties["one"],
+        _ => panic!(),
+    };
+    assert_eq!(doc_of(&checker, one).as_deref(), Some("Param doc."));
+    assert_eq!(
+        crate::libs::compiler::get_returns_doc(&checker.state_accessors, op_id).as_deref(),
+        Some("Returns doc.")
+    );
+    assert_eq!(
+        crate::libs::compiler::get_errors_doc(&checker.state_accessors, op_id).as_deref(),
+        Some("Errors doc.")
+    );
+}
+
+#[test]
+fn test_doc_comment_prop_tag() {
+    let checker =
+        check("/**\n * Model doc.\n * @prop name Name doc.\n */\nmodel Foo { name: string; }");
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
+    let prop_id = checker.get_model_property(foo_id, "name").unwrap();
+    assert_eq!(doc_of(&checker, prop_id).as_deref(), Some("Name doc."));
+}
+
+#[test]
+fn test_doc_decorator_overrides_comment_execution() {
+    let checker = check("/** Comment doc */\n@doc(\"Decorator doc\")\nmodel Foo {}");
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
+    assert_eq!(doc_of(&checker, foo_id).as_deref(), Some("Decorator doc"));
+}
+
+#[test]
+fn test_templated_model_instance_inherits_comment() {
+    let checker = check("/** Template doc */\nmodel Foo<T> {}\nmodel Bar { foo: Foo<string>; }");
+    let bar_id = checker.get_type_by_name("Bar").unwrap();
+    let prop_id = checker.get_model_property(bar_id, "foo").unwrap();
+    let prop_type = checker.get_property_type(prop_id);
+    assert_eq!(doc_of(&checker, prop_type).as_deref(), Some("Template doc"));
+}
+
+#[test]
+fn test_doc_comment_applies_to_enum_member_and_union_variant() {
+    let checker = check(
+        "enum E {\n  /** Member doc */\n  a,\n}\nunion U {\n  /** Variant doc */\n  v: string,\n}\n/** Namespace doc */\nnamespace N {}",
+    );
+    let e_id = checker.get_type_by_name("E").unwrap();
+    let member_id = match checker.get_type(e_id) {
+        Some(crate::checker::types::Type::Enum(e)) => e.members["a"],
+        _ => panic!(),
+    };
+    assert_eq!(doc_of(&checker, member_id).as_deref(), Some("Member doc"));
+    let u_id = checker.get_type_by_name("U").unwrap();
+    let variant_id = match checker.get_type(u_id) {
+        Some(crate::checker::types::Type::Union(u)) => u.variants["v"],
+        _ => panic!(),
+    };
+    assert_eq!(doc_of(&checker, variant_id).as_deref(), Some("Variant doc"));
+    let n_id = checker.get_type_by_name("N").unwrap();
+    assert_eq!(doc_of(&checker, n_id).as_deref(), Some("Namespace doc"));
+}

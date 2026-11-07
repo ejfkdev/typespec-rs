@@ -208,6 +208,7 @@ impl Checker {
 
             // Check variant decorators
             self.check_and_store_decorators(ctx, variant_type_id, &variant_node.decorators);
+            self.apply_doc_comment(variant_type_id, variant_id);
 
             variants.insert(variant_key.clone(), variant_type_id);
             variant_names.push(variant_key);

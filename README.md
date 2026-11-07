@@ -381,6 +381,8 @@ Source Code → Scanner → Parser → AST → Checker → Typed AST → Emitter
 What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec):
 
 - Full scanner with doc comments, string templates, conflict markers
+- Augment decorators (`@@doc`, `@@summary`, `@@returnsDoc`, `@@errorsDoc`)
+  apply after declaration decorators, including member/`::parameters` targets
 - `/** ... */` doc comments populate `@doc` on models, properties, scalars,
   enums/members, unions/variants, operations, interfaces, and namespaces;
   `@param`/`@prop`/`@returns`/`@errors` tags populate parameter, property,
@@ -446,6 +448,8 @@ What's ported from the [TypeSpec compiler](https://github.com/microsoft/typespec
 
 What's not yet ported:
 
+- General `@@augment` execution for arbitrary custom decorators (documentation
+  decorators are supported)
 - Visibility-aware merge-patch mutator filtering (`@visibility`/lifecycle
   filtering during the transform)
 - Full `Program` pipeline (multi-file compilation, import resolution)

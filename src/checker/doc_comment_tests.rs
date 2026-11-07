@@ -694,3 +694,54 @@ fn test_doc_comment_applies_to_enum_member_and_union_variant() {
     let n_id = checker.get_type_by_name("N").unwrap();
     assert_eq!(doc_of(&checker, n_id).as_deref(), Some("Namespace doc"));
 }
+
+#[test]
+fn test_augment_doc_overrides_prop_comment() {
+    let checker = check(
+        "/**\n * @prop one Comment doc.\n */\nmodel Foo { one: string }\n@@doc(Foo.one, \"Override\");",
+    );
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
+    let prop_id = checker.get_model_property(foo_id, "one").unwrap();
+    assert_eq!(doc_of(&checker, prop_id).as_deref(), Some("Override"));
+}
+
+#[test]
+fn test_augment_doc_overrides_param_comment() {
+    let checker = check(
+        "/**\n * @param one Comment doc.\n */\nop foo(one: string): void;\n@@doc(foo::parameters.one, \"Override\");",
+    );
+    let op_id = checker.get_type_by_name("foo").unwrap();
+    let params = match checker.get_type(op_id) {
+        Some(crate::checker::types::Type::Operation(op)) => op.parameters.unwrap(),
+        _ => panic!(),
+    };
+    let one = match checker.get_type(params) {
+        Some(crate::checker::types::Type::Model(model)) => model.properties["one"],
+        _ => panic!(),
+    };
+    assert_eq!(doc_of(&checker, one).as_deref(), Some("Override"));
+}
+
+#[test]
+fn test_augment_doc_on_model() {
+    let checker = check("model Foo {}\n@@doc(Foo, \"Override\");");
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
+    assert_eq!(doc_of(&checker, foo_id).as_deref(), Some("Override"));
+}
+
+#[test]
+fn test_augment_doc_last_wins() {
+    let checker = check("model Foo {}\n@@doc(Foo, \"First\");\n@@doc(Foo, \"Second\");");
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
+    assert_eq!(doc_of(&checker, foo_id).as_deref(), Some("Second"));
+}
+
+#[test]
+fn test_augment_summary() {
+    let checker = check("model Foo {}\n@@summary(Foo, \"Summary\");");
+    let foo_id = checker.get_type_by_name("Foo").unwrap();
+    assert_eq!(
+        crate::libs::compiler::get_summary(&checker.state_accessors, foo_id).as_deref(),
+        Some("Summary")
+    );
+}

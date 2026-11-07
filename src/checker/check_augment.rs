@@ -349,8 +349,171 @@ impl Checker {
         }
 
         // Check decorator arguments
+        let mut evaluated_args = Vec::new();
         for &arg_id in &node.arguments {
-            self.check_node(ctx, arg_id);
+            let arg_type = self.check_node(ctx, arg_id);
+            evaluated_args.push(arg_type);
+        }
+
+        // Augment decorators are applied after the target declaration's own
+        // decorators. Only decorators with built-in implementations can be
+        // executed in this port.
+        let augment_target = if resolved_type == self.error_type {
+            self.resolve_augment_target_ast(&ast, node.target_type)
+                .unwrap_or(self.error_type)
+        } else {
+            resolved_type
+        };
+        if augment_target != self.error_type {
+            self.apply_augment_decorator(augment_target, &decorator_name, &evaluated_args);
+        }
+    }
+
+    /// Best-effort target resolution for augment member expressions such as
+    /// `Foo.name`, `foo::parameters.bar`, and `Foo.nested::type.name`.
+    fn resolve_augment_target_ast(
+        &self,
+        ast: &crate::parser::AstBuilder,
+        node_id: crate::ast::NodeId,
+    ) -> Option<TypeId> {
+        match ast.id_to_node(node_id)? {
+            AstNode::TypeReference(reference) if reference.arguments.is_empty() => {
+                self.resolve_augment_target_ast(ast, reference.name)
+            }
+            AstNode::Identifier(identifier) => {
+                if identifier.value == "global" {
+                    return self.global_namespace_type;
+                }
+                self.resolve_declared_name(&identifier.value)
+            }
+            AstNode::MemberExpression(member) => {
+                let base = self.resolve_augment_target_ast(ast, member.object)?;
+                let property_name = Self::get_identifier_name(ast, member.property);
+                let base = self.resolve_alias_chain_member_target(base);
+                match member.selector {
+                    MemberSelector::Dot => {
+                        let resolved = self.resolve_alias_chain(base);
+                        match self.get_type(resolved) {
+                            Some(Type::Model(model)) => {
+                                model.properties.get(&property_name).copied()
+                            }
+                            Some(Type::Operation(op)) => {
+                                if property_name == "parameters" {
+                                    op.parameters
+                                } else {
+                                    None
+                                }
+                            }
+                            Some(Type::Interface(iface)) => {
+                                iface.operations.get(&property_name).copied()
+                            }
+                            Some(Type::Enum(enum_)) => enum_.members.get(&property_name).copied(),
+                            Some(Type::Union(union)) => union.variants.get(&property_name).copied(),
+                            _ => None,
+                        }
+                    }
+                    MemberSelector::DoubleColon => match property_name.as_str() {
+                        "parameters" => match self.get_type(self.resolve_alias_chain(base)) {
+                            Some(Type::Operation(op)) => op.parameters,
+                            _ => None,
+                        },
+                        "type" => match self.get_type(self.resolve_alias_chain(base)) {
+                            Some(Type::ModelProperty(prop)) => Some(prop.r#type),
+                            _ => Some(base),
+                        },
+                        "returnType" => match self.get_type(self.resolve_alias_chain(base)) {
+                            Some(Type::Operation(op)) => op.return_type,
+                            _ => None,
+                        },
+                        _ => {
+                            let resolved = self.resolve_alias_chain(base);
+                            match self.get_type(resolved) {
+                                Some(Type::Model(model)) => {
+                                    model.properties.get(&property_name).copied()
+                                }
+                                Some(Type::Namespace(ns)) => ns.models.get(&property_name).copied(),
+                                _ => None,
+                            }
+                        }
+                    },
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn resolve_alias_chain_member_target(&self, type_id: TypeId) -> TypeId {
+        self.resolve_alias_chain(type_id)
+    }
+
+    /// Execute the subset of decorators with built-in implementations.
+    fn apply_augment_decorator(&mut self, target: TypeId, decorator_name: &str, args: &[TypeId]) {
+        let name = decorator_name.rsplit('.').next().unwrap_or(decorator_name);
+        match name {
+            "doc" | "summary" => {
+                let Some(text) = args.first().and_then(|&id| self.string_literal_value(id)) else {
+                    return;
+                };
+                if name == "doc" {
+                    crate::libs::compiler::apply_doc_with_source(
+                        &mut self.state_accessors,
+                        target,
+                        &text,
+                        crate::intrinsic_type_state::DocSource::Decorator,
+                    );
+                } else {
+                    crate::libs::compiler::apply_summary(&mut self.state_accessors, target, &text);
+                }
+                if let Some(t) = self.get_type_mut(target) {
+                    match (name, t) {
+                        ("doc", Type::Model(model)) => model.doc = Some(text.clone()),
+                        ("doc", Type::ModelProperty(prop)) => prop.doc = Some(text.clone()),
+                        ("doc", Type::Enum(value)) => value.doc = Some(text.clone()),
+                        ("doc", Type::EnumMember(value)) => value.doc = Some(text.clone()),
+                        ("doc", Type::Scalar(value)) => value.doc = Some(text.clone()),
+                        ("doc", Type::Union(value)) => value.doc = Some(text.clone()),
+                        ("doc", Type::UnionVariant(value)) => value.doc = Some(text.clone()),
+                        ("doc", Type::Operation(value)) => value.doc = Some(text.clone()),
+                        ("doc", Type::Interface(value)) => value.doc = Some(text.clone()),
+                        ("doc", Type::Namespace(value)) => value.doc = Some(text.clone()),
+                        ("doc", _) => {}
+                        ("summary", Type::Model(value)) => value.summary = Some(text.clone()),
+                        ("summary", Type::ModelProperty(value)) => {
+                            value.summary = Some(text.clone())
+                        }
+                        ("summary", Type::Enum(value)) => value.summary = Some(text.clone()),
+                        ("summary", Type::EnumMember(value)) => value.summary = Some(text.clone()),
+                        ("summary", Type::Scalar(value)) => value.summary = Some(text.clone()),
+                        ("summary", Type::Union(value)) => value.summary = Some(text.clone()),
+                        ("summary", Type::UnionVariant(value)) => {
+                            value.summary = Some(text.clone())
+                        }
+                        ("summary", Type::Operation(value)) => value.summary = Some(text.clone()),
+                        ("summary", Type::Interface(value)) => value.summary = Some(text.clone()),
+                        ("summary", Type::Namespace(value)) => value.summary = Some(text.clone()),
+                        _ => {}
+                    }
+                }
+            }
+            "returnsDoc" => {
+                if let Some(text) = args.first().and_then(|&id| self.string_literal_value(id)) {
+                    crate::libs::compiler::apply_returns_doc(
+                        &mut self.state_accessors,
+                        target,
+                        &text,
+                    );
+                }
+            }
+            "errorsDoc" => {
+                if let Some(text) = args.first().and_then(|&id| self.string_literal_value(id)) {
+                    crate::libs::compiler::apply_errors_doc(
+                        &mut self.state_accessors,
+                        target,
+                        &text,
+                    );
+                }
+            }
+            _ => {}
         }
     }
 

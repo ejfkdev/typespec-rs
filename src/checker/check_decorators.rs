@@ -1158,7 +1158,7 @@ impl Checker {
         }
     }
 
-    fn string_literal_value(&self, type_id: TypeId) -> Option<String> {
+    pub(crate) fn string_literal_value(&self, type_id: TypeId) -> Option<String> {
         match self.get_type(self.resolve_alias_chain(type_id)) {
             Some(Type::String(s)) => Some(s.value.clone()),
             _ => None,

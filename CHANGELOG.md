@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `true`, matching upstream
 
 ### Fixed
+- `@@doc`, `@@summary`, `@@returnsDoc`, and `@@errorsDoc` augment decorators
+  now execute (after declaration decorators, last one wins), including
+  `Foo.name`, `foo::parameters.bar`, and nested `::type` member targets
 - `applyMergePatchTransform` calls in the merge-patch aliases are evaluated
   natively instead of failing as unresolved function calls
 
